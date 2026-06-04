@@ -1,10 +1,16 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 
 const LOAD_DURATION_MS = 1500;
+const BRAND_GREEN = '#2ECC71';
+const BRAND_GREEN_TRACK = '#2ECC7140';
 
 export function MonikeSplashScreen() {
-  const progress = useRef(new Animated.Value(0)).current;
+  const [progress] = useState(() => new Animated.Value(0));
+  const progressWidth = useMemo(
+    () => progress.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
+    [progress]
+  );
 
   useEffect(() => {
     Animated.timing(progress, {
@@ -26,7 +32,7 @@ export function MonikeSplashScreen() {
         <Animated.View
           style={[
             styles.progressFill,
-            { width: progress.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) },
+            { width: progressWidth },
           ]}
         />
       </View>
@@ -57,7 +63,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
   arrow: {
-    color: '#2ECC71',
+    color: BRAND_GREEN,
     fontSize: 16,
     fontWeight: '700',
     marginTop: -16,
@@ -66,13 +72,13 @@ const styles = StyleSheet.create({
     width: 220,
     height: 2,
     borderRadius: 99,
-    backgroundColor: '#2ECC7140',
+    backgroundColor: BRAND_GREEN_TRACK,
     overflow: 'hidden',
     marginBottom: 16,
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#2ECC71',
+    backgroundColor: BRAND_GREEN,
   },
   tagline: {
     color: '#8A8A8A',
