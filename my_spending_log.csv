@@ -1,0 +1,2 @@
+date,total_debit,total_credit,num_transactions,max_single,p2p_spend,pos_spend,data_spend,savings_out,online_spend,family_spend,airtime_spend,dow,dom,month,is_weekend,discretionary,rolling_7d_avg,rolling_14d_avg,prev_day_spend,prev_week_same_day,high_spend
+2026-06-03,5900.0,4200.0,2,4900.0,4900.0,0.0,1000.0,0,0.0,0.0,0.0,2,3,6,0,4900.0,0,0,0,0,0
