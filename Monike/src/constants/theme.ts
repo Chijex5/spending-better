@@ -1,26 +1,41 @@
-/**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
- */
-
 import '@/global.css';
 
 import { Platform } from 'react-native';
 
+export const MonikeColors = {
+  bgVoid: '#080A0C',
+  bgSurface: '#0F1214',
+  bgElevated: '#161A1D',
+  bgOverlay: '#1C2126',
+  bgStripe: '#0D1013',
+  inkPrimary: '#E8EBF0',
+  inkSecondary: '#8B939E',
+  inkMuted: '#4A5260',
+  inkGhost: '#2A3040',
+  accentPulse: '#00E676',
+  accentGlow: '#00C853',
+  accentNeon: '#69FF9C',
+  signalAmber: '#FFB300',
+  signalAmberDim: '#A07000',
+  signalRed: '#FF3D3D',
+  signalRedDim: '#8B0000',
+  signalBlue: '#4FC3F7',
+} as const;
+
 export const Colors = {
   light: {
-    text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
+    text: MonikeColors.inkPrimary,
+    background: MonikeColors.bgVoid,
+    backgroundElement: MonikeColors.bgSurface,
+    backgroundSelected: MonikeColors.bgElevated,
+    textSecondary: MonikeColors.inkSecondary,
   },
   dark: {
-    text: '#ffffff',
-    background: '#000000',
-    backgroundElement: '#212225',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
+    text: MonikeColors.inkPrimary,
+    background: MonikeColors.bgVoid,
+    backgroundElement: MonikeColors.bgSurface,
+    backgroundSelected: MonikeColors.bgElevated,
+    textSecondary: MonikeColors.inkSecondary,
   },
 } as const;
 
@@ -28,26 +43,24 @@ export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
 
 export const Fonts = Platform.select({
   ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: 'ui-monospace',
+    sans: 'DM Sans',
+    heading: 'Sora',
+    mono: 'DM Mono',
   },
-  default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
+  android: {
+    sans: 'sans-serif',
+    heading: 'sans-serif-medium',
     mono: 'monospace',
   },
   web: {
-    sans: 'var(--font-display)',
-    serif: 'var(--font-serif)',
-    rounded: 'var(--font-rounded)',
-    mono: 'var(--font-mono)',
+    sans: 'var(--font-body)',
+    heading: 'var(--font-heading)',
+    mono: 'var(--font-display)',
+  },
+  default: {
+    sans: 'sans-serif',
+    heading: 'sans-serif',
+    mono: 'monospace',
   },
 });
 
@@ -55,11 +68,15 @@ export const Spacing = {
   half: 2,
   one: 4,
   two: 8,
-  three: 16,
-  four: 24,
-  five: 32,
-  six: 64,
+  three: 12,
+  four: 16,
+  five: 20,
+  six: 24,
+  seven: 32,
+  eight: 48,
 } as const;
 
-export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
-export const MaxContentWidth = 800;
+export const BottomTabInset = 72;
+export const CardRadius = 16;
+export const ScreenPadding = 20;
+export const MaxContentWidth = 390;
