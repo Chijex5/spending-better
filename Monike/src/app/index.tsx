@@ -58,7 +58,7 @@ function AnimatedCounter({ target, suffix = '' }: { target: number; suffix?: str
     return () => {
       value.removeListener(sub);
     };
-  }, [target, value]);
+  }, [target]);
 
   return (
     <Text style={styles.heroAmount}>
@@ -99,7 +99,7 @@ function SkeletonPulse() {
         useNativeDriver: true,
       })
     ).start();
-  }, [shimmer]);
+  }, []);
 
   return (
     <View style={styles.skeleton}>

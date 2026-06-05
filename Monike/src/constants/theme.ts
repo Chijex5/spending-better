@@ -41,8 +41,6 @@ export const spacing = {
 } as const;
 
 export const layout = {
-  screenWidth: 390,
-  screenHeight: 844,
   horizontalPadding: 20,
   statusBarClearance: 48,
   cardRadius: 16,
@@ -95,4 +93,4 @@ export const Spacing = {
 } as const;
 
 export const BottomTabInset = layout.bottomNavHeight;
-export const MaxContentWidth = layout.screenWidth;
+export const MaxContentWidth = 390;

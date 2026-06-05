@@ -1,6 +1,6 @@
 import { BlurView } from 'expo-blur';
-import { SplashScreen, Tabs } from 'expo-router';
 import { useFonts } from 'expo-font';
+import { SplashScreen, Tabs } from 'expo-router';
 import { DMMono_500Medium, DMMono_700Bold } from '@expo-google-fonts/dm-mono';
 import { DMSans_400Regular, DMSans_500Medium } from '@expo-google-fonts/dm-sans';
 import { Sora_600SemiBold } from '@expo-google-fonts/sora';
@@ -55,7 +55,7 @@ export default function RootLayout() {
           marginBottom: 8,
         },
         tabBarStyle: {
-          backgroundColor: 'rgba(15, 18, 20, 0.9)',
+          backgroundColor: `${monikeColors.bgSurface}E6`,
           borderTopColor: monikeColors.inkGhost,
           borderTopWidth: 1,
           height: layout.bottomNavHeight,
