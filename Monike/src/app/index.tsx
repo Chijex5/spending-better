@@ -1,6 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { TriangleAlert, WalletCards } from 'lucide-react-native';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Animated,
   Pressable,
@@ -42,7 +42,7 @@ function RiskBadge({ level }: { level: RiskLevel }) {
 }
 
 function AnimatedCounter({ target, suffix = '' }: { target: number; suffix?: string }) {
-  const value = useRef(new Animated.Value(0)).current;
+  const [value] = useState(() => new Animated.Value(0));
   const [displayValue, setDisplayValue] = useState(0);
 
   useEffect(() => {
@@ -89,7 +89,7 @@ function ProgressBar({ ratio, overspend = false }: { ratio: number; overspend?: 
 }
 
 function SkeletonPulse() {
-  const shimmer = useRef(new Animated.Value(-160)).current;
+  const [shimmer] = useState(() => new Animated.Value(-160));
 
   useEffect(() => {
     Animated.loop(
