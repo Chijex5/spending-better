@@ -18,11 +18,7 @@ import {
   ChevronRight,
   CreditCard,
   Globe,
-  Home,
-  LineChart,
-  LogIn,
   Phone,
-  Settings,
   ShoppingBag,
   TrendingDown,
   TrendingUp,
@@ -32,6 +28,7 @@ import {
   Zap,
 } from 'lucide-react-native';
 
+import { BottomNavigation } from '@/components/bottom-navigation';
 import { BottomTabInset, CardRadius, Fonts, MonikeColors, ScreenPadding } from '@/constants/theme';
 
 type Category =
@@ -662,31 +659,6 @@ function DayDetailSheet({ day, summary, visible, onClose }: {
   );
 }
 
-function BottomNavigation({ activeTab = 1 }: { activeTab?: number }) {
-  const insets = useSafeAreaInsets();
-  const tabs = [
-    { label: 'Home', Icon: Home },
-    { label: 'Insights', Icon: LineChart },
-    { label: 'Log', Icon: LogIn },
-    { label: 'Settings', Icon: Settings },
-  ];
-
-  return (
-    <View style={[styles.bottomNav, { paddingBottom: Math.max(insets.bottom, 8) }] }>
-      {tabs.map(({ label, Icon }, index) => {
-        const active = index === activeTab;
-        return (
-          <PressScale key={label} style={styles.navItem}>
-            <Icon size={24} color={active ? MonikeColors.accentPulse : MonikeColors.inkMuted} strokeWidth={active ? 2 : 1.6} />
-            <Text style={[styles.navLabel, active && styles.navLabelActive]}>{label}</Text>
-            {active ? <View style={styles.navDot} /> : null}
-          </PressScale>
-        );
-      })}
-    </View>
-  );
-}
-
 export default function MonthlySummaryScreen() {
   const [summaryIndex, setSummaryIndex] = useState(0);
   const [selectedDay, setSelectedDay] = useState<DaySpend | null>(null);
@@ -766,7 +738,7 @@ export default function MonthlySummaryScreen() {
         </ScrollView>
       </SafeAreaView>
       <Toast message="No data yet" visible={toastVisible} />
-      <BottomNavigation activeTab={1} />
+      <BottomNavigation activeRoute="explore" />
       <DayDetailSheet day={selectedDay} summary={summary} visible={sheetVisible} onClose={() => setSheetVisible(false)} />
     </View>
   );
@@ -1034,24 +1006,6 @@ const styles = StyleSheet.create({
   transactionRight: { alignItems: 'flex-end', minWidth: 88 },
   transactionAmount: { fontFamily: Fonts.mono, fontSize: 14, fontWeight: '600' },
   transactionTime: { marginTop: 5, color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 10 },
-  bottomNav: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#0F1214F2',
-    borderTopWidth: 1,
-    borderTopColor: MonikeColors.inkGhost,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingTop: 8,
-  },
-  navItem: { width: 78, alignItems: 'center', justifyContent: 'center', gap: 3, paddingVertical: 4 },
-  navLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11, fontWeight: '700' },
-  navLabelActive: { color: MonikeColors.accentPulse },
-  navDot: { width: 3, height: 3, borderRadius: 2, backgroundColor: MonikeColors.accentPulse },
   sheetBackdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
   backdropTint: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: '#00000099' },
   daySheet: {

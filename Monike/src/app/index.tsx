@@ -16,13 +16,9 @@ import {
   Bell,
   CreditCard,
   Globe,
-  Home,
-  LineChart,
-  LogIn,
   Phone,
   PieChart,
   PlusCircle,
-  Settings,
   ShoppingBag,
   TrendingDown,
   TrendingUp,
@@ -33,6 +29,7 @@ import {
   Minus,
 } from 'lucide-react-native';
 
+import { BottomNavigation } from '@/components/bottom-navigation';
 import { BottomTabInset, CardRadius, Fonts, MonikeColors, ScreenPadding } from '@/constants/theme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -118,7 +115,6 @@ const dayDetailTransactions: Transaction[] = [
 ];
 
 const categoryPalette = ['#00E676', '#FFB300', '#FF3D3D', '#4FC3F7', '#69FF9C', '#A07000', '#8B0000', '#8B939E'];
-const navTabs = ['Home', 'Insights', 'Log', 'Settings'] as const;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -815,41 +811,6 @@ function DayDetailSheet({
   );
 }
 
-// ─── Bottom Navigation ────────────────────────────────────────────────────────
-
-function BottomNavigation({ activeTab = 0 }: { activeTab?: number }) {
-  const insets = useSafeAreaInsets();
-
-  const tabs: {
-    label: string;
-    Icon: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
-  }[] = [
-    { label: 'Home',     Icon: Home     },
-    { label: 'Insights', Icon: LineChart },
-    { label: 'Log',      Icon: LogIn    },
-    { label: 'Settings', Icon: Settings },
-  ];
-
-  return (
-    <View style={[styles.bottomNav, { paddingBottom: Math.max(insets.bottom, 8) }]}>
-      {tabs.map(({ label, Icon }, index) => {
-        const active = index === activeTab;
-        return (
-          <PressScale key={label} style={styles.navItem}>
-            <Icon
-              size={24}
-              color={active ? MonikeColors.accentPulse : MonikeColors.inkMuted}
-              strokeWidth={active ? 2 : 1.6}
-            />
-            <Text style={[styles.navLabel, active && styles.navLabelActive]}>{label}</Text>
-            {active && <View style={styles.navDot} />}
-          </PressScale>
-        );
-      })}
-    </View>
-  );
-}
-
 // ─── Dashboard Screen ─────────────────────────────────────────────────────────
 
 function DashboardScreen() {
@@ -881,7 +842,7 @@ function DashboardScreen() {
         </ScrollView>
       </SafeAreaView>
 
-      <BottomNavigation activeTab={0} />
+      <BottomNavigation activeRoute="home" />
       <DayDetailSheet day={selectedDay} visible={sheetVisible} onClose={() => setSheetVisible(false)} />
     </View>
   );
@@ -1253,30 +1214,6 @@ const styles = StyleSheet.create({
   transactionRight:  { alignItems: 'flex-end', minWidth: 86 },
   transactionAmount: { fontFamily: Fonts.mono, fontSize: 14, fontWeight: '600' },
   transactionTime:   { marginTop: 5, color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 10 },
-
-  // ── Bottom Nav ───────────────────────────────────────────────────────────────
-  bottomNav: {
-    position: 'absolute',
-    left: 0, right: 0, bottom: 0,
-    backgroundColor: '#0F1214F2',
-    borderTopWidth: 1,
-    borderTopColor: MonikeColors.inkGhost,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingTop: 8,
-  },
-  navItem: {
-    width: 78,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
-    paddingVertical: 4,
-  },
-  navLabel:       { color: MonikeColors.inkMuted,    fontFamily: Fonts.sans, fontSize: 11, fontWeight: '700' },
-  navLabelActive: { color: MonikeColors.accentPulse },
-  navDot:         { width: 3, height: 3, borderRadius: 2, backgroundColor: MonikeColors.accentPulse },
 
   // ── Day Sheet ────────────────────────────────────────────────────────────────
   sheetBackdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
