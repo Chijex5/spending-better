@@ -5,6 +5,7 @@ import Svg, { Circle, Defs, Path, RadialGradient, Stop, Text as SvgText } from '
 import { AlertTriangle, CheckCircle2, MessageSquare, PiggyBank, Zap } from 'lucide-react-native';
 
 import { BottomNavigation } from '@/components/bottom-navigation';
+import { MonikeHeader } from '@/components/monike-header';
 import { BottomTabInset, CardRadius, Fonts, MonikeColors, ScreenPadding } from '@/constants/theme';
 
 type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH';
@@ -296,10 +297,7 @@ export default function ForecastScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + BottomTabInset + 22 }]}
         >
-          <View style={styles.header}>
-            <Text style={styles.title}>RISK FORECAST</Text>
-            <Text style={styles.tomorrow}>{prediction.tomorrow}</Text>
-          </View>
+          <MonikeHeader title="Risk" />
 
           <Gauge probability={prediction.probability} risk={risk} />
 

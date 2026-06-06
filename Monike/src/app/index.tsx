@@ -30,6 +30,7 @@ import {
 } from 'lucide-react-native';
 
 import { BottomNavigation } from '@/components/bottom-navigation';
+import { MonikeHeader } from '@/components/monike-header';
 import { BottomTabInset, CardRadius, Fonts, MonikeColors, ScreenPadding } from '@/constants/theme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -345,27 +346,8 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
 
 // ─── Top Bar ──────────────────────────────────────────────────────────────────
 
-function TopBar({ onSettings }: { onSettings: () => void }) {
-  const greeting = getGreeting();
-  const emoji    = getGreetingEmoji();
-
-  return (
-    <View style={styles.topBar}>
-      {/* Left: Avatar */}
-      <PressScale style={styles.avatarButton} onPress={onSettings}>
-        <Text style={styles.avatarText}>C</Text>
-      </PressScale>
-
-      {/* Center: wordmark */}
-      <Text style={styles.topBrand}>MONIKE</Text>
-
-      {/* Right: Bell */}
-      <PressScale style={styles.bellButton}>
-        <Bell size={20} color={MonikeColors.inkSecondary} strokeWidth={1.8} />
-        <View style={styles.alertDot} />
-      </PressScale>
-    </View>
-  );
+function TopBar({ onSettings: _onSettings }: { onSettings: () => void }) {
+  return <MonikeHeader title="Home" home />;
 }
 
 // ─── Hero Card ────────────────────────────────────────────────────────────────
