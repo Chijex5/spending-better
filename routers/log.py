@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Path
 from cache import invalidate
 from config import HIGH_SPEND_THRESHOLD
 from models import DeleteLogResponse, LogEntry, LogListItem, LogWriteRequest
-from routers.utils import as_float, execute, fetch_row, fetch_rows
+from routers.utils import COMBINED_CTE, as_float, execute, fetch_row, fetch_rows
 
 router = APIRouter()
 
@@ -73,7 +73,20 @@ async def _fetch_log_list() -> list[LogListItem]:
 
 
 async def _fetch_log_entry(date_str: str) -> LogEntry:
-    row = await fetch_row("SELECT * FROM daily_log WHERE date = $1", date_cls.fromisoformat(date_str))
+    entry_date = date_cls.fromisoformat(date_str)
+    row = await fetch_row("SELECT * FROM daily_log WHERE date = $1", entry_date)
+    if row is None:
+        row = await fetch_row(
+            f"""
+            {COMBINED_CTE}
+            SELECT date, total_debit, total_credit, p2p_spend, pos_spend,
+                   data_spend, airtime_spend, online_spend, family_spend,
+                   savings_out, high_spend, 'backend' AS source
+            FROM combined
+            WHERE date = $1
+            """,
+            entry_date,
+        )
     if row is None:
         raise HTTPException(status_code=404, detail="No entry for date")
     return _entry_from_row(row)
