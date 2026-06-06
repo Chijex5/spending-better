@@ -11,16 +11,16 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Home, LineChart, PieChart } from 'lucide-react-native';
+import { Activity, Home, LineChart, PieChart } from 'lucide-react-native';
 
 import { Fonts, MonikeColors } from '@/constants/theme';
 
-type RouteName = 'home' | 'explore' | 'categories';
+type RouteName = 'home' | 'explore' | 'categories' | 'patterns';
 
 type NavigationTab = {
   key: RouteName;
   label: string;
-  route: '/' | '/explore' | '/categories';
+  route: '/' | '/explore' | '/categories' | '/patterns';
   Icon: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
 };
 
@@ -28,6 +28,7 @@ const tabs: NavigationTab[] = [
   { key: 'home', label: 'Home', route: '/', Icon: Home },
   { key: 'explore', label: 'Explore', route: '/explore', Icon: LineChart },
   { key: 'categories', label: 'Categories', route: '/categories', Icon: PieChart },
+  { key: 'patterns', label: 'Patterns', route: '/patterns', Icon: Activity },
 ];
 
 function PressScale({
@@ -113,12 +114,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 12,
+    gap: 4,
+    paddingHorizontal: 8,
     paddingTop: 10,
   },
   navItem: {
-    minWidth: 96,
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
