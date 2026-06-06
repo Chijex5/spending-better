@@ -37,10 +37,17 @@ def train_model(daily: pd.DataFrame):
 
     return rf
 
+
+def _weekday(value) -> int:
+    if hasattr(value, "dayofweek"):
+        return int(value.dayofweek)
+    return int(value.weekday())
+
+
 def predict_tomorrow(rf, daily: pd.DataFrame) -> dict:
     last      = daily.iloc[-1]
     tomorrow  = last['date'] + timedelta(days=1)
-    dow       = tomorrow.dayofweek
+    dow       = _weekday(tomorrow)
     dom       = tomorrow.day
     month     = tomorrow.month
     same_dow  = daily[daily['dow'] == dow]['total_debit']
@@ -56,5 +63,8 @@ def predict_tomorrow(rf, daily: pd.DataFrame) -> dict:
         'rolling_14d_avg':     last['rolling_14d_avg'],
         'total_credit':        0,
     })
-    prob = rf.predict_proba(pd.DataFrame([row]))[0][1]
+    if rf is None:
+        prob = 0.0
+    else:
+        prob = rf.predict_proba(pd.DataFrame([row]))[0][1]
     return {'date': tomorrow, 'prob': prob, 'dow': dow}
