@@ -11,22 +11,23 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Home, LineChart } from 'lucide-react-native';
+import { Home, LineChart, PieChart } from 'lucide-react-native';
 
 import { Fonts, MonikeColors } from '@/constants/theme';
 
-type RouteName = 'home' | 'explore';
+type RouteName = 'home' | 'explore' | 'categories';
 
 type NavigationTab = {
   key: RouteName;
   label: string;
-  route: '/' | '/explore';
+  route: '/' | '/explore' | '/categories';
   Icon: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
 };
 
 const tabs: NavigationTab[] = [
   { key: 'home', label: 'Home', route: '/', Icon: Home },
   { key: 'explore', label: 'Explore', route: '/explore', Icon: LineChart },
+  { key: 'categories', label: 'Categories', route: '/categories', Icon: PieChart },
 ];
 
 function PressScale({
@@ -112,12 +113,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 22,
-    paddingHorizontal: 20,
+    gap: 10,
+    paddingHorizontal: 12,
     paddingTop: 10,
   },
   navItem: {
-    minWidth: 112,
+    minWidth: 96,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
