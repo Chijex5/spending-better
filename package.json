@@ -1,0 +1,12 @@
+{
+    "scripts": {
+    "start": "cd Monike && pnpm start",
+    "reset-project": "cd Monike && pnpm reset-project",
+    "android": "cd Monike && pnpm android",
+    "ios": "cd Monike && pnpm ios",
+    "web": "cd Monike && pnpm web",
+    "lint": "cd Monike && pnpm lint",
+    "typecheck": "cd Monike && pnpm typecheck",
+    "build": "cd Monike && pnpm build"
+  }
+}
