@@ -14,6 +14,7 @@ import Svg, { Circle, Defs, G, Line, LinearGradient, Path, Polygon, Rect, Stop, 
 import { Bell, Clock, Crown, Moon, TrendingUp } from 'lucide-react-native';
 
 import { BottomNavigation } from '@/components/bottom-navigation';
+import { MonikeHeader } from '@/components/monike-header';
 import { BottomTabInset, CardRadius, Fonts, MonikeColors, ScreenPadding } from '@/constants/theme';
 
 type PatternTab = 'DAY OF WEEK' | 'MONTHLY' | 'TIME OF DAY';
@@ -92,20 +93,7 @@ function PressScale({ children, onPress }: { children: ReactNode; onPress?: () =
 }
 
 function TopBar() {
-  return (
-    <View style={styles.topBar}>
-      <PressScale>
-        <View style={styles.avatarButton}><Text style={styles.avatarText}>C</Text></View>
-      </PressScale>
-      <Text style={styles.topBrand}>MONIKE</Text>
-      <PressScale>
-        <View style={styles.bellButton}>
-          <Bell size={20} color={MonikeColors.inkSecondary} strokeWidth={1.8} />
-          <View style={styles.notificationDot} />
-        </View>
-      </PressScale>
-    </View>
-  );
+  return <MonikeHeader title="Patterns" />;
 }
 
 function TabSelector({ activeTab, onChange }: { activeTab: PatternTab; onChange: (tab: PatternTab) => void }) {

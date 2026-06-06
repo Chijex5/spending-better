@@ -30,6 +30,7 @@ import {
 } from 'lucide-react-native';
 
 import { BottomNavigation } from '@/components/bottom-navigation';
+import { MonikeHeader } from '@/components/monike-header';
 import { BottomTabInset, CardRadius, Fonts, MonikeColors, ScreenPadding } from '@/constants/theme';
 
 type Period = 'This Month' | '3 Months' | 'All Time';
@@ -313,18 +314,7 @@ function PressScale({ children, style, onPress }: { children: ReactNode; style?:
 }
 
 function TopBar() {
-  return (
-    <View style={styles.topBar}>
-      <PressScale style={styles.avatarButton}>
-        <Text style={styles.avatarText}>C</Text>
-      </PressScale>
-      <Text style={styles.topBrand}>MONIKE</Text>
-      <PressScale style={styles.bellButton}>
-        <Bell size={20} color={MonikeColors.inkSecondary} strokeWidth={1.8} />
-        <View style={styles.notificationDot} />
-      </PressScale>
-    </View>
-  );
+  return <MonikeHeader title="Categories" />;
 }
 
 function PeriodToggle({ activePeriod, onChange }: { activePeriod: Period; onChange: (period: Period) => void }) {
