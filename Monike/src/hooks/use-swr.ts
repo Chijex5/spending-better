@@ -1,3 +1,4 @@
+// src/hooks/use-swr.ts
 import { useCallback, useEffect, useState } from 'react';
 import { AppState } from 'react-native';
 

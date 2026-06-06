@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import get_pool, close_pool
 from ml import train_model
-from routers import categories, dashboard, flow, log, patterns, prediction, recipients, retrain, summary
+from routers import categories, dashboard, flow, log, log_upload, patterns, prediction, recipients, retrain, summary
 from routers.utils import combined_dataframe
 
 @asynccontextmanager
@@ -46,6 +46,14 @@ app.include_router(prediction.router)
 app.include_router(log.router)
 app.include_router(retrain.router)
 app.include_router(flow.router)
+app.include_router(log_upload.router)
+
+@app.post("/upload")
+async def upload_file(file: UploadFile):
+    return {
+        "filename": file.filename,
+        "content_type": file.content_type
+    }
 
 if __name__ == "__main__":
     import uvicorn

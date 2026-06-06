@@ -246,3 +246,20 @@ class RetrainQueuedResponse(BaseModel):
 class RetrainStatusResponse(BaseModel):
     status: str
     trained_on_days: int
+
+# ── Add these to models.py ────────────────────────────────────────────────────
+
+
+class CategoryTransaction(BaseModel):
+    trans_date: str          # ISO date string  e.g. "2026-06-05"
+    description: str
+    debit: float
+    credit: float
+
+
+class CategoryTransactionsResponse(BaseModel):
+    category: str
+    period_label: str
+    total: float
+    transaction_count: int
+    items: list[CategoryTransaction]

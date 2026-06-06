@@ -1,6 +1,10 @@
+// src/services/api.ts  
 import { Platform } from 'react-native';
+import { File, Paths } from 'expo-file-system';
+import { UploadType } from 'expo-file-system';
 
-const DEFAULT_API_BASE_URL = Platform.OS === 'android' ? 'http://10.0.2.2:8000' : 'http://localhost:8000';
+
+const DEFAULT_API_BASE_URL = Platform.OS === 'android' ? 'http://192.168.167.58:8000' : 'http://localhost:8000';
 
 export const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? DEFAULT_API_BASE_URL;
 
@@ -61,6 +65,97 @@ export type LogEntry = {
   savings_out: number;
   high_spend: boolean;
   source: string;
+};
+
+// ─── New types to add to your existing api.ts ───────────────────────────────
+
+export type CategoryItem = {
+  category: string;
+  total: number;
+  share_pct: number;
+  transaction_count: number;
+  avg_per_transaction: number;
+};
+
+export type CategoriesResponse = {
+  period_label: string;
+  total_real_spend: number;
+  items: CategoryItem[];
+};
+
+export type UploadResult = {
+  total_rows_in_file: number;
+  new_days_inserted: number;
+  days_updated: number;
+  duplicate_transactions_skipped: number;
+  date_range_start: string;   // "2026-01-01"
+  date_range_end: string;     // "2026-06-05"
+  high_spend_days_detected: number;
+};
+ 
+// ─── API function ─────────────────────────────────────────────────────────────
+ 
+/**
+ * Upload an account statement file (xlsx / xls / csv) to the backend.
+ *
+ * The backend will:
+ *   1. Parse the file with analyze_statement.analyze()
+ *   2. Deduplicate against existing statement_transactions rows
+ *   3. Upsert daily_log rows for any new/updated days
+ *   4. Return a summary of what changed
+ *
+ * @param uri      — local file URI from expo-document-picker / expo-file-system
+ * @param filename — original filename, e.g. "statement_june.xlsx"
+ * @param mimeType — e.g. "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+ */
+
+export async function uploadStatement(
+  uri: string,
+  filename: string,
+  mimeType: string,
+): Promise<UploadResult> {
+  const file = new File(uri);   // wrap the DocumentPicker URI directly
+
+  const result = await file.upload(`${API_BASE_URL}/log/upload`, {
+    uploadType: UploadType.MULTIPART,
+    fieldName: 'file',
+    mimeType,
+    httpMethod: 'POST',
+  });
+
+  console.log('UPLOAD STATUS:', result.status);
+
+  if (result.status !== 200) {
+    throw new Error(result.body || `Upload failed with status ${result.status}`);
+  }
+
+  return JSON.parse(result.body) as UploadResult;
+}
+
+// ─── Period param helper ─────────────────────────────────────────────────────
+// Maps the UI Period string → the backend query param value
+export type ApiPeriod = 'month' | '3months' | 'all';
+
+export const periodToApiParam: Record<string, ApiPeriod> = {
+  'This Month': 'month',
+  '3 Months': '3months',
+  'All Time': 'all',
+};
+
+export type CategoryTransaction = {
+  trans_date: string;       // "2026-06-05"
+  description: string;
+  debit: number;
+  credit: number;
+  balance: number | null;
+};
+ 
+export type CategoryTransactionsResponse = {
+  category: string;
+  period_label: string;
+  total: number;
+  transaction_count: number;
+  items: CategoryTransaction[];
 };
 
 export async function apiFetch<T>(path: string): Promise<T> {

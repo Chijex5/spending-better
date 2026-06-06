@@ -12,3 +12,4 @@ venv/
 *.bak
 *.swp
 node_modules
+*.pem
