@@ -17,11 +17,19 @@ async def _fetch_training_frame():
 
 
 async def _retrain_background(request: Request) -> None:
-    df = await _fetch_training_frame()
-    model = train_model(df)
-    request.app.state.rf_model = model
-    invalidate("prediction")
-    print(f"Model retrained on {len(df)} days")
+    try:
+        df = await _fetch_training_frame()
+
+        model = train_model(df)
+
+        if model is not None:
+            request.app.state.rf_model = model
+            invalidate("prediction")
+
+        print(f"Model retrained on {len(df)} days")
+
+    except Exception as exc:
+        print(f"Retraining failed: {exc}")
 
 
 async def _fetch_retrain(background_tasks: BackgroundTasks, request: Request) -> RetrainQueuedResponse:
