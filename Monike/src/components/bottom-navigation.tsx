@@ -11,16 +11,16 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Activity, Home, LineChart, PieChart } from 'lucide-react-native';
+import { Activity, Home, LineChart, PieChart, Users } from 'lucide-react-native';
 
 import { Fonts, MonikeColors } from '@/constants/theme';
 
-type RouteName = 'home' | 'explore' | 'categories' | 'patterns';
+type RouteName = 'home' | 'explore' | 'categories' | 'patterns' | 'recipients';
 
 type NavigationTab = {
   key: RouteName;
   label: string;
-  route: '/' | '/explore' | '/categories' | '/patterns';
+  route: '/' | '/explore' | '/categories' | '/patterns' | '/recipients';
   Icon: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
 };
 
@@ -29,6 +29,7 @@ const tabs: NavigationTab[] = [
   { key: 'explore', label: 'Explore', route: '/explore', Icon: LineChart },
   { key: 'categories', label: 'Categories', route: '/categories', Icon: PieChart },
   { key: 'patterns', label: 'Patterns', route: '/patterns', Icon: Activity },
+  { key: 'recipients', label: 'Paid', route: '/recipients', Icon: Users },
 ];
 
 function PressScale({
