@@ -8,6 +8,7 @@ import {
 } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Easing,
   Modal,
@@ -48,7 +49,7 @@ import {
 import { BottomNavigation } from '@/components/bottom-navigation';
 import { BottomTabInset, CardRadius, Fonts, MonikeColors, ScreenPadding } from '@/constants/theme';
 import { useUploadStatement, type UploadProgress, type UploadDedup } from '@/hooks/use-upload-statement';
-import type { UploadResult } from '@/services/api';
+import { type UploadResult, postLog } from '@/services/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -129,7 +130,7 @@ function spendPalette(total: number) {
 export default function LogScreen() {
   const insets    = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
-
+  
   // ── FIX: one stable Map for all refs — never recreated, never causes re-renders ──
   // Using a Map instead of a plain object + useCallback factories means each
   // TextInput gets the same ref-setter function object across every render.
@@ -261,11 +262,36 @@ export default function LogScreen() {
     }).start();
   }, [modeSwitchAnim]);
 
-  const saveEntry = useCallback(() => {
+  const saveEntry = useCallback(async () => {
     if (!hasData || saving) return;
     setSaving(true);
-    setTimeout(() => { setSaving(false); setSuccessVisible(true); }, 480);
-  }, [hasData, saving]);
+
+    try {
+      await postLog({
+        date: dateKey(selectedDate),
+        p2p_spend:           parseAmount(values.person),
+        pos_spend:           parseAmount(values.pos),
+        data_spend:          parseAmount(values.data),
+        airtime_spend:       parseAmount(values.airtime),
+        food_spend:          parseAmount(values.food),
+        online_spend:        parseAmount(values.online),
+        family_spend:        0,           // no UI field yet
+        electricity_spend:   parseAmount(values.electricity),
+        subscription_spend:  0,           // no UI field yet
+        loan_spend:          0,           // no UI field yet
+        other_spend:         parseAmount(values.other),
+        savings_out:         parseAmount(values.savings),
+        total_credit:        parseAmount(values.income),
+      });
+      setSuccessVisible(true);
+    } catch (e) {
+      // surface the error — you can swap this for a toast later
+      console.error('[saveEntry]', e);
+      Alert.alert('Save failed', e instanceof Error ? e.message : 'Unknown error');
+    } finally {
+      setSaving(false);
+    }
+  }, [hasData, saving, selectedDate, values]);
 
   const clearForm = useCallback(() => {
     setValues({ person: '', pos: '', data: '', airtime: '', food: '', online: '', electricity: '', other: '', savings: '', income: '' });
@@ -288,7 +314,17 @@ export default function LogScreen() {
   // the parent rendered. Previously these were inline arrow functions.
   const handleFocus = useCallback((key: EntryKey) => setFocusedKey(key), []);
   const handleBlur  = useCallback(() => setFocusedKey(null), []);
+  // ── Debug: track what triggers LogScreen re-renders ─────────────────────────
+const logScreenRenderCount = useRef(0);
+logScreenRenderCount.current += 1;
 
+const prevLogScreenState = useRef<any>({});
+const logScreenState = { focusedKey, values, spendTotal, entryMode, otherOpen, saving };
+const changedLogScreenState: string[] = [];
+for (const [k, v] of Object.entries(logScreenState)) {
+  if (prevLogScreenState.current[k] !== v) changedLogScreenState.push(k);
+}
+prevLogScreenState.current = logScreenState;
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -497,6 +533,10 @@ function SectionLabel({ icon, label }: { icon: string; label: string }) {
 // The row's Pressable only covers the non-input area so it doesn't
 // fight with the TextInput for touch events.
 
+// ─── CategoryRow ──────────────────────────────────────────────────────────────
+
+// ─── CategoryRow ──────────────────────────────────────────────────────────────
+
 function CategoryRow({
   category,
   focused,
@@ -519,10 +559,19 @@ function CategoryRow({
   const entered = parseAmount(value) > 0;
   const Icon    = category.Icon;
 
+  const renderCount = useRef(0);
+  renderCount.current += 1;
+
+  // Track which props changed between renders
+  const prevProps = useRef<any>({});
+  const changedProps: string[] = [];
+  const cur = { focused, onChange, onFocus, onBlur, onPress, refSetter, value, 'category.key': category.key };
+  for (const [k, v] of Object.entries(cur)) {
+    if (prevProps.current[k] !== v) changedProps.push(k);
+  }
+  prevProps.current = cur;
+
   return (
-    // ── FIX: the outer View is no longer a Pressable that calls focusInput.
-    // Only the icon + label area is pressable, so tapping the label focuses
-    // the input without racing against TextInput's own touch handler.
     <View style={[s.categoryRow, entered && s.categoryRowEntered, focused && s.categoryRowFocused]}>
       <Pressable
         style={s.categoryPressArea}
@@ -540,8 +589,12 @@ function CategoryRow({
         focused={focused}
         value={value}
         onChange={(v) => onChange(category.key, v)}
-        onFocus={() => onFocus(category.key)}
-        onBlur={onBlur}
+        onFocus={() => {
+          onFocus(category.key);
+        }}
+        onBlur={() => {
+          onBlur();
+        }}
         refSetter={refSetter}
         tint={MonikeColors.accentPulse}
       />
@@ -568,9 +621,14 @@ function SavingsRow({
   refSetter: (node: TextInput | null) => void;
   value: string;
 }) {
+  // ── FIX: same as CategoryRow — memoize the 'savings' key closures
+  const handleFocus  = useCallback(() => onFocus('savings'),  [onFocus]);
+  const handlePress  = useCallback(() => onPress('savings'),  [onPress]);
+  const handleChange = useCallback((v: string) => onChange('savings', v), [onChange]);
+
   return (
     <View style={[s.categoryRow, s.savingsRow, parseAmount(value) > 0 && s.savingsRowEntered, focused && s.savingsRowFocused]}>
-      <Pressable style={s.categoryPressArea} onPress={() => onPress('savings')}>
+      <Pressable style={s.categoryPressArea} onPress={handlePress}>
         <View style={[s.categoryIconShell, s.savingsIconShell]}>
           <TrendingUp size={18} color={MonikeColors.signalBlue} strokeWidth={2} />
         </View>
@@ -582,8 +640,8 @@ function SavingsRow({
       <CurrencyInput
         focused={focused}
         value={value}
-        onChange={(v) => onChange('savings', v)}
-        onFocus={() => onFocus('savings')}
+        onChange={handleChange}
+        onFocus={handleFocus}
         onBlur={onBlur}
         refSetter={refSetter}
         tint={MonikeColors.signalBlue}
@@ -591,11 +649,6 @@ function SavingsRow({
     </View>
   );
 }
-
-// ─── CurrencyInput ────────────────────────────────────────────────────────────
-// FIX: no longer calls any external focus/blur side-effects beyond what's
-// passed in. The TextInput is NOT wrapped in a Pressable — it handles its
-// own touch. pointerEvents="box-none" on the shell lets taps through to the input.
 
 function CurrencyInput({
   focused,
@@ -620,7 +673,6 @@ function CurrencyInput({
       style={[
         s.inputShell,
         focused && { borderColor: tint },
-        focused && s.inputShellFocused,
         entered && s.inputShellEntered,
       ]}
       // ── FIX: box-none lets touch events pass through to the TextInput child
@@ -1020,7 +1072,7 @@ const s = StyleSheet.create({
   categoryAverage:     { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 10, marginTop: 3 },
 
   inputShell:        { width: 116, height: 42, borderRadius: 10, backgroundColor: MonikeColors.bgElevated, borderWidth: 1, borderColor: MonikeColors.inkGhost, flexDirection: 'row', alignItems: 'center', paddingLeft: 10, paddingRight: 6 },
-  inputShellFocused: { shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.25, shadowRadius: 6, elevation: 3 },
+  inputShellFocused: { shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.25, shadowRadius: 6},
   inputShellEntered: { backgroundColor: 'transparent' },
   currencyPrefix:    { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 15 },
   amountInput:       { flex: 1, color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 15, fontWeight: '700', textAlign: 'right', paddingVertical: 0 },

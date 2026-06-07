@@ -307,3 +307,24 @@ export async function uploadStatement(
 
   return JSON.parse(result.body) as UploadJobStarted;
 }
+
+export async function postLog(body: LogWriteRequest): Promise<LogEntry> {
+  return apiPost<LogEntry>('/log', body);
+}
+
+export type LogWriteRequest = {
+  date: string;
+  p2p_spend: number;
+  pos_spend: number;
+  data_spend: number;
+  airtime_spend: number;
+  food_spend: number;
+  online_spend: number;
+  family_spend: number;
+  electricity_spend: number;
+  subscription_spend: number;
+  loan_spend: number;
+  other_spend: number;
+  savings_out: number;
+  total_credit: number;
+};

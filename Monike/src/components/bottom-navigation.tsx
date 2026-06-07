@@ -6,7 +6,7 @@ import {
   type StyleProp, type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Activity, Compass, House, PieChart, Plus, ShieldCheck } from 'lucide-react-native';
+import { Activity, Telescope, House, PieChart, Plus, ShieldCheck } from 'lucide-react-native';
 import { Fonts, MonikeColors } from '@/constants/theme';
 
 type RouteName = 'home' | 'explore' | 'categories' | 'patterns' | 'forecast' | 'log';
@@ -21,11 +21,13 @@ type NavigationTab = {
 
 const tabs: NavigationTab[] = [
   { key: 'home',       label: 'Home',       route: '/',           Icon: House },
-  { key: 'explore',    label: 'Explore',    route: '/explore',    Icon: Compass },
-  { key: 'categories', label: 'Categories', route: '/categories', Icon: PieChart },
-  { key: 'patterns',   label: 'Patterns',   route: '/patterns',   Icon: Activity },
-  { key: 'forecast',   label: 'Risk',       route: '/forecast',   Icon: ShieldCheck },
+  { key: 'explore',    label: 'Explore',    route: '/explore',    Icon: Telescope },
+
   { key: 'log',        label: 'Log',        route: '/log',        Icon: Plus, special: true },
+  { key: 'categories', label: 'Categories', route: '/categories', Icon: PieChart },
+
+  { key: 'forecast',   label: 'Risk',       route: '/forecast',   Icon: ShieldCheck },
+
 ];
 
 // ─── PressScale ──────────────────────────────────────────────────

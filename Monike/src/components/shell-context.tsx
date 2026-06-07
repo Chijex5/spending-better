@@ -13,7 +13,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronRight, Pencil, RefreshCw, Settings, X } from 'lucide-react-native';
+import { ChevronRight, Pencil, DollarSign, RefreshCw, Settings, X, Activity } from 'lucide-react-native';
 
 import { Fonts, MonikeColors } from '@/constants/theme';
 
@@ -102,6 +102,11 @@ export function MonikeShellProvider({ children }: { children: ReactNode }) {
     closeDrawer();
     router.navigate('/settings');
   };
+
+  const navigateToBudget = () => {
+    closeDrawer();
+    router.navigate('/flow-velocity');
+  }
 
   const retrainModel = async () => {
     if (retraining) return;
@@ -213,6 +218,23 @@ export function MonikeShellProvider({ children }: { children: ReactNode }) {
                 subtitle={retraining ? 'Training…' : 'Update risk predictions with new data'}
                 right={retraining ? <ActivityIndicator size="small" color={MonikeColors.accentPulse} /> : undefined}
                 onPress={retrainModel}
+              />
+
+              <ActionRow
+                icon={<DollarSign size={17} color={MonikeColors.inkSecondary} strokeWidth={1.7} />}
+                title="Flow Velocity"
+                subtitle="Set limits and track spending"
+                onPress={navigateToBudget}
+              />
+
+              <ActionRow
+                icon={<Activity size={17} color={MonikeColors.inkSecondary} strokeWidth={1.7} />}
+                title="Patternns"
+                subtitle="See detailed patterns in your transactions"
+                onPress={() => {
+                  closeDrawer();
+                  router.navigate('/patterns');
+                }}
               />
 
               {toastVisible && (

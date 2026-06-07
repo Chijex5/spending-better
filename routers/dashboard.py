@@ -1,6 +1,3 @@
-# Called: app launch, every foreground resume,
-#         after POST /log succeeds.
-# Cached 5 min. Safe to call on every app focus.
 from __future__ import annotations
 
 import asyncio
@@ -73,48 +70,6 @@ async def _fetch_seven_day_bars() -> list[DailyBar]:
     return sorted(bars, key=lambda bar: bar.date)
 
 
-async def _fetch_spend_health(total_current: float, total_previous: float) -> SpendHealth:
-    today = date.today()
-    days_elapsed = max(today.day, 1)
-    days_last_month = calendar.monthrange(today.year if today.month > 1 else today.year - 1, today.month - 1 or 12)[1]
-    current_rate = total_current / days_elapsed if days_elapsed else 0.0
-    previous_rate = total_previous / days_last_month if days_last_month else 0.0
-    if previous_rate == 0:
-        pace = "On Track"
-    elif current_rate > previous_rate * 1.1:
-        pace = "Ahead"
-    elif current_rate >= previous_rate * 0.9:
-        pace = "On Track"
-    else:
-        pace = "Over"
-
-    rows = await fetch_rows(
-        f"""
-        {COMBINED_CTE}
-        SELECT date::text AS date, high_spend
-        FROM combined
-        WHERE date <= CURRENT_DATE
-        ORDER BY date DESC
-        """
-    )
-    streak_days = 0
-    for row in rows:
-        if bool(row["high_spend"]):
-            break
-        streak_days += 1
-
-    saved = await fetch_row(
-        f"""
-        {COMBINED_CTE}
-        SELECT COALESCE(SUM(savings_out), 0) AS saved_this_month
-        FROM combined
-        WHERE month = EXTRACT(MONTH FROM NOW())::int
-          AND EXTRACT(YEAR FROM date) = EXTRACT(YEAR FROM NOW())
-        """
-    )
-    return SpendHealth(pace=pace, streak_days=streak_days, saved_this_month=as_float(saved["saved_this_month"] if saved else 0))
-
-
 async def _fetch_recent_transactions() -> list[RecentTransaction]:
     rows = await fetch_rows(
         """
@@ -136,21 +91,106 @@ async def _fetch_recent_transactions() -> list[RecentTransaction]:
     ]
 
 
-async def _fetch_dashboard(request: Request) -> DashboardResponse:
-    month_totals_task = _fetch_month_totals()
-    daily_stats_task = _fetch_daily_stats()
-    seven_day_task = _fetch_seven_day_bars()
-    recent_task = _fetch_recent_transactions()
-
-    (total_current, total_previous, month_label), (avg_daily, high_days), seven_day_bars, recent_transactions = await asyncio.gather(
-        month_totals_task,
-        daily_stats_task,
-        seven_day_task,
-        recent_task,
+async def _fetch_streak_and_saved() -> dict:
+    """
+    Single query replacing the two sequential DB calls that were inside
+    _fetch_spend_health. Streak is computed set-wise in Postgres instead
+    of fetching all rows into Python and looping.
+    """
+    row = await fetch_row(
+        f"""
+        {COMBINED_CTE},
+        streak AS (
+            SELECT COALESCE(
+                MIN(grp.pos) - 1,
+                COUNT(*)
+            ) AS streak_days
+            FROM (
+                SELECT
+                    ROW_NUMBER() OVER (ORDER BY date DESC) AS pos,
+                    high_spend
+                FROM combined
+                WHERE date <= CURRENT_DATE
+            ) grp
+            WHERE grp.high_spend = TRUE
+        ),
+        saved AS (
+            SELECT COALESCE(SUM(savings_out), 0) AS saved_this_month
+            FROM combined
+            WHERE month = EXTRACT(MONTH FROM NOW())::int
+              AND EXTRACT(YEAR FROM date) = EXTRACT(YEAR FROM NOW())
+        )
+        SELECT
+            (SELECT streak_days FROM streak)       AS streak_days,
+            (SELECT saved_this_month FROM saved)   AS saved_this_month
+        """
     )
-    spend_health, prediction = await asyncio.gather(
-        _fetch_spend_health(total_current, total_previous),
+    return {
+        "streak_days": as_int(row["streak_days"] if row else 0),
+        "saved_this_month": as_float(row["saved_this_month"] if row else 0.0),
+    }
+
+
+def _build_spend_health(
+    total_current: float,
+    total_previous: float,
+    today: date,
+    streak_days: int,
+    saved_this_month: float,
+) -> SpendHealth:
+    """Pure Python — no DB calls. Called after all queries resolve."""
+    days_elapsed = max(today.day, 1)
+    days_last_month = calendar.monthrange(
+        today.year if today.month > 1 else today.year - 1,
+        today.month - 1 or 12,
+    )[1]
+    current_rate = total_current / days_elapsed
+    previous_rate = total_previous / days_last_month if days_last_month else 0.0
+
+    if previous_rate == 0:
+        pace = "On Track"
+    elif current_rate > previous_rate * 1.1:
+        pace = "Ahead"
+    elif current_rate >= previous_rate * 0.9:
+        pace = "On Track"
+    else:
+        pace = "Over"
+
+    return SpendHealth(
+        pace=pace,
+        streak_days=streak_days,
+        saved_this_month=saved_this_month,
+    )
+
+
+async def _fetch_dashboard(request: Request) -> DashboardResponse:
+    today = date.today()
+
+    # All 6 DB calls fire simultaneously — total latency = slowest single query.
+    # Previously: gather1 finished → gather2 started → spend_health ran 2 more
+    # serial queries inside. That was 3 sequential round-trips minimum.
+    (
+        (total_current, total_previous, month_label),
+        (avg_daily, high_days),
+        seven_day_bars,
+        recent_transactions,
+        streak_and_saved,
+        prediction,
+    ) = await asyncio.gather(
+        _fetch_month_totals(),
+        _fetch_daily_stats(),
+        _fetch_seven_day_bars(),
+        _fetch_recent_transactions(),
+        _fetch_streak_and_saved(),
         get_cached("prediction", TTL_PREDICTION, lambda: _fetch_prediction(request)),
+    )
+
+    spend_health = _build_spend_health(
+        total_current,
+        total_previous,
+        today,
+        streak_and_saved["streak_days"],
+        streak_and_saved["saved_this_month"],
     )
 
     return DashboardResponse(
