@@ -1,42 +1,83 @@
-# Called: when user taps "Retrain Model" in Log screen
-#         or Settings. Returns immediately, runs in background.
+# routers/retrain.py  (replace the whole file)
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, Request
+import time
+from datetime import datetime
+
+from fastapi import APIRouter, Request
+from pydantic import BaseModel
 
 from cache import invalidate
 from ml import train_model
-from models import RetrainQueuedResponse
-from routers.utils import combined_dataframe
+from routers.utils import execute, fetch_row, combined_dataframe
 
 router = APIRouter()
 
 
-async def _fetch_training_frame():
-    return await combined_dataframe()
+class RetrainResult(BaseModel):
+    success: bool
+    message: str
+    training_rows: int
+    accuracy: float
+    duration_ms: int
 
 
-async def _retrain_background(request: Request) -> None:
-    try:
-        df = await _fetch_training_frame()
+@router.post("/retrain", response_model=RetrainResult)
+async def retrain_model(request: Request) -> RetrainResult:
+    t0 = time.monotonic()
 
-        model = train_model(df)
+    df = await combined_dataframe()
+    if df.empty:
+        return RetrainResult(
+            success=False,
+            message="No training data found.",
+            training_rows=0,
+            accuracy=0.0,
+            duration_ms=0,
+        )
 
-        if model is not None:
-            request.app.state.rf_model = model
-            invalidate("prediction")
+    training_rows = len(df)
+    clf = train_model(df)
 
-        print(f"Model retrained on {len(df)} days")
+    if clf is None:
+        return RetrainResult(
+            success=False,
+            message="Insufficient class variance to train (need both HIGH and non-HIGH days).",
+            training_rows=training_rows,
+            accuracy=0.0,
+            duration_ms=int((time.monotonic() - t0) * 1000),
+        )
 
-    except Exception as exc:
-        print(f"Retraining failed: {exc}")
+    # Hot-swap on app.state — same object prediction.py reads
+    request.app.state.rf_model = clf
 
+    # Compute holdout accuracy for the metadata record
+    from sklearn.metrics import accuracy_score
+    import pandas as pd
+    from config import FEATURES
+    X = df[FEATURES].fillna(0)
+    y = df["high_spend"]
+    accuracy = accuracy_score(y, clf.predict(X))  # training accuracy; fine for small datasets
 
-async def _fetch_retrain(background_tasks: BackgroundTasks, request: Request) -> RetrainQueuedResponse:
-    background_tasks.add_task(_retrain_background, request)
-    return RetrainQueuedResponse(status="queued")
+    version_tag = f"v{datetime.utcnow().strftime('%Y%m%d%H%M')}"
+    duration_ms = int((time.monotonic() - t0) * 1000)
 
+    await execute(
+        """
+        INSERT INTO model_metadata (trained_at, training_rows, accuracy, model_version)
+        VALUES (NOW(), $1, $2, $3)
+        """,
+        training_rows,
+        round(float(accuracy), 6),
+        version_tag,
+    )
 
-@router.post("/retrain", response_model=RetrainQueuedResponse)
-async def post_retrain(background_tasks: BackgroundTasks, request: Request) -> RetrainQueuedResponse:
-    return await _fetch_retrain(background_tasks, request)
+    invalidate("prediction", "dashboard")
+
+    return RetrainResult(
+        success=True,
+        message=f"Trained on {training_rows} rows in {duration_ms}ms",
+        training_rows=training_rows,
+        accuracy=round(float(accuracy), 6),
+        duration_ms=duration_ms,
+    )

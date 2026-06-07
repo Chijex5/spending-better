@@ -1,226 +1,240 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  Animated,
+  Easing,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle, Defs, Path, RadialGradient, Stop, Text as SvgText } from 'react-native-svg';
-import { AlertTriangle, CheckCircle2, MessageSquare, PiggyBank, Zap } from 'lucide-react-native';
+import Svg, {
+  Circle,
+  Defs,
+  Path,
+  RadialGradient,
+  Stop,
+  Text as SvgText,
+} from 'react-native-svg';
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowRight,
+  ArrowUp,
+  CheckCircle2,
+  MessageSquare,
+  RefreshCw,
+  TrendingDown,
+  TrendingUp,
+  Zap,
+} from 'lucide-react-native';
 
 import { BottomNavigation } from '@/components/bottom-navigation';
 import { MonikeHeader } from '@/components/monike-header';
 import { BottomTabInset, CardRadius, Fonts, MonikeColors, ScreenPadding } from '@/constants/theme';
+import { usePrediction } from '@/hooks/use-prediction';
+import type { FeatureImportance, PredictionResponse, WeekOutlookDay } from '@/services/api';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH';
-type FeatureKey =
-  | 'rolling_7d_avg'
-  | 'prev_day_spend'
-  | 'rolling_14d_avg'
-  | 'max_single'
-  | 'discretionary'
-  | 'num_transactions'
-  | 'total_credit'
-  | 'savings_out'
-  | 'is_weekend'
-  | 'dow';
 
-type Feature = {
-  key: FeatureKey;
-  value: string;
-  importance: number;
-};
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-type OutlookDay = {
-  day: string;
-  risk: RiskLevel;
-  probability: number;
-};
-
-const prediction = {
-  probability: 73,
-  risk: 'HIGH' as RiskLevel,
-  tomorrow: 'Tomorrow · Sunday, 07 Jun 2026',
-};
-
-const featureLabels: Record<FeatureKey, string> = {
-  rolling_7d_avg: 'Your 7-day trend',
-  prev_day_spend: "Yesterday's spending",
-  rolling_14d_avg: '2-week average',
-  max_single: 'Largest recent transaction',
-  discretionary: 'Discretionary transfers (P2P, POS)',
-  num_transactions: 'Transaction frequency',
-  total_credit: 'Money received recently',
-  savings_out: 'Amount moved to savings',
-  is_weekend: 'Weekend effect',
-  dow: 'Day of week pattern',
-};
-
-const features: Feature[] = [
-  { key: 'rolling_7d_avg', value: '₦38,422 avg', importance: 86 },
-  { key: 'discretionary', value: '₦71,844 P2P/POS', importance: 74 },
-  { key: 'prev_day_spend', value: '₦27,900 yesterday', importance: 62 },
-  { key: 'max_single', value: '₦48,115 largest send', importance: 48 },
-  { key: 'dow', value: 'Sunday pattern rising', importance: 31 },
-];
-
-const advisorTips: Record<RiskLevel, { icon: ReactNode; text: string }[]> = {
-  LOW: [
-    { icon: <CheckCircle2 size={16} color={MonikeColors.inkSecondary} strokeWidth={1.8} />, text: "Low risk days are perfect for moving money to savings." },
-    { icon: <PiggyBank size={16} color={MonikeColors.inkSecondary} strokeWidth={1.8} />, text: "Consider prepaying recurring bills while you're ahead." },
-  ],
-  MEDIUM: [
-    { icon: <Zap size={16} color={MonikeColors.inkSecondary} strokeWidth={1.8} />, text: 'Your 7-day average is running elevated — stay mindful.' },
-    { icon: <Zap size={16} color={MonikeColors.inkSecondary} strokeWidth={1.8} />, text: 'Data and airtime tend to cluster. Buy in bulk today.' },
-  ],
-  HIGH: [
-    { icon: <AlertTriangle size={16} color={MonikeColors.inkSecondary} strokeWidth={1.8} />, text: 'Set a ₦15,000 mental cap on discretionary sends.' },
-    { icon: <AlertTriangle size={16} color={MonikeColors.inkSecondary} strokeWidth={1.8} />, text: 'Delay any non-urgent transfers by 24 hours.' },
-    { icon: <AlertTriangle size={16} color={MonikeColors.inkSecondary} strokeWidth={1.8} />, text: 'Ask yourself: is this spend necessary or reactive?' },
-  ],
-};
-
-const outlook: OutlookDay[] = [
-  { day: 'Sun', risk: 'HIGH', probability: 73 },
-  { day: 'Mon', risk: 'MEDIUM', probability: 54 },
-  { day: 'Tue', risk: 'MEDIUM', probability: 58 },
-  { day: 'Wed', risk: 'HIGH', probability: 69 },
-  { day: 'Thu', risk: 'LOW', probability: 32 },
-  { day: 'Fri', risk: 'HIGH', probability: 77 },
-  { day: 'Sat', risk: 'LOW', probability: 28 },
-];
+function normaliseRisk(raw: string): RiskLevel {
+  const u = raw.toUpperCase();
+  if (u === 'LOW' || u === 'MEDIUM' || u === 'HIGH') return u;
+  return 'LOW';
+}
 
 function riskColor(risk: RiskLevel) {
-  if (risk === 'LOW') return MonikeColors.accentPulse;
+  if (risk === 'HIGH')   return MonikeColors.signalRed;
   if (risk === 'MEDIUM') return MonikeColors.signalAmber;
-  return MonikeColors.signalRed;
+  return MonikeColors.accentPulse;
 }
 
 function riskGlow(risk: RiskLevel) {
-  if (risk === 'LOW') return 'rgb(0,230,118)';
+  if (risk === 'HIGH')   return 'rgb(255,61,61)';
   if (risk === 'MEDIUM') return 'rgb(255,179,0)';
-  return 'rgb(255,61,61)';
+  return 'rgb(0,230,118)';
 }
 
 function riskSentence(risk: RiskLevel) {
-  if (risk === 'LOW') return 'Smooth sailing tomorrow. Spend wisely.';
+  if (risk === 'HIGH')   return 'High probability of overspending tomorrow.';
   if (risk === 'MEDIUM') return 'Moderate risk detected. Stay aware.';
-  return 'High probability of overspending tomorrow.';
+  return 'Smooth sailing tomorrow. Spend wisely.';
 }
 
 function riskEmoji(risk: RiskLevel) {
-  if (risk === 'LOW') return '🟢';
+  if (risk === 'HIGH')   return '🔴';
   if (risk === 'MEDIUM') return '🟡';
-  return '🔴';
+  return '🟢';
 }
 
-function polar(cx: number, cy: number, radius: number, degrees: number) {
-  const radians = (degrees * Math.PI) / 180;
-  return { x: cx + radius * Math.cos(radians), y: cy - radius * Math.sin(radians) };
+function formatNaira(value: number): string {
+  return new Intl.NumberFormat('en-NG', { maximumFractionDigits: 0 }).format(Math.abs(value));
 }
 
-function arcSegment(cx: number, cy: number, outerRadius: number, innerRadius: number, startDegrees: number, endDegrees: number) {
-  const outerStart = polar(cx, cy, outerRadius, startDegrees);
-  const outerEnd = polar(cx, cy, outerRadius, endDegrees);
-  const innerStart = polar(cx, cy, innerRadius, endDegrees);
-  const innerEnd = polar(cx, cy, innerRadius, startDegrees);
-  const largeArc = Math.abs(endDegrees - startDegrees) > 180 ? 1 : 0;
+function polar(cx: number, cy: number, r: number, deg: number) {
+  const rad = (deg * Math.PI) / 180;
+  return { x: cx + r * Math.cos(rad), y: cy - r * Math.sin(rad) };
+}
 
+function arcSegment(
+  cx: number, cy: number,
+  outerR: number, innerR: number,
+  startDeg: number, endDeg: number,
+) {
+  const os = polar(cx, cy, outerR, startDeg);
+  const oe = polar(cx, cy, outerR, endDeg);
+  const is = polar(cx, cy, innerR, endDeg);
+  const ie = polar(cx, cy, innerR, startDeg);
+  const large = Math.abs(endDeg - startDeg) > 180 ? 1 : 0;
   return [
-    `M ${outerStart.x} ${outerStart.y}`,
-    `A ${outerRadius} ${outerRadius} 0 ${largeArc} 1 ${outerEnd.x} ${outerEnd.y}`,
-    `L ${innerStart.x} ${innerStart.y}`,
-    `A ${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${innerEnd.x} ${innerEnd.y}`,
+    `M ${os.x} ${os.y}`,
+    `A ${outerR} ${outerR} 0 ${large} 1 ${oe.x} ${oe.y}`,
+    `L ${is.x} ${is.y}`,
+    `A ${innerR} ${innerR} 0 ${large} 0 ${ie.x} ${ie.y}`,
     'Z',
   ].join(' ');
 }
 
+// ─── Shimmer skeleton ─────────────────────────────────────────────────────────
+
+function Shimmer({ style }: { style?: object }) {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(anim, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 0, duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [anim]);
+  const opacity = anim.interpolate({ inputRange: [0, 1], outputRange: [0.06, 0.14] });
+  return <Animated.View style={[{ backgroundColor: MonikeColors.inkPrimary, borderRadius: 6, opacity }, style]} />;
+}
+
+function ForecastSkeleton() {
+  return (
+    <View style={{ paddingTop: 18, gap: 18 }}>
+      <View style={sk.gaugeStage}>
+        <Shimmer style={sk.gaugeDisk} />
+        <Shimmer style={sk.badgePill} />
+        <Shimmer style={sk.line} />
+      </View>
+      {/* velocity card */}
+      <Shimmer style={{ height: 88, borderRadius: CardRadius }} />
+      {/* features */}
+      <Shimmer style={sk.sectionLabel} />
+      <View style={sk.card}>
+        {[0,1,2,3,4].map((i) => (
+          <View key={i} style={sk.featureRow}>
+            <View style={{ flex: 1, gap: 6 }}>
+              <Shimmer style={{ height: 11, width: '55%' }} />
+              <Shimmer style={{ height: 10, width: '38%' }} />
+            </View>
+            <View style={{ width: 74, alignItems: 'flex-end', gap: 6 }}>
+              <Shimmer style={{ height: 11, width: 28 }} />
+              <Shimmer style={{ height: 5, width: 60, borderRadius: 3 }} />
+            </View>
+          </View>
+        ))}
+      </View>
+      {/* advisor */}
+      <Shimmer style={sk.sectionLabel} />
+      <View style={{ gap: 8 }}>
+        {[0,1,2].map((i) => <Shimmer key={i} style={{ height: 54, borderRadius: 14 }} />)}
+      </View>
+      {/* outlook */}
+      <Shimmer style={sk.sectionLabel} />
+      <View style={sk.outlookRow}>
+        {[0,1,2,3,4,5,6].map((i) => <Shimmer key={i} style={sk.outlookCell} />)}
+      </View>
+    </View>
+  );
+}
+
+const sk = StyleSheet.create({
+  gaugeStage:   { alignItems: 'center', gap: 12 },
+  gaugeDisk:    { width: 260, height: 140, borderRadius: 140 },
+  badgePill:    { width: 140, height: 36, borderRadius: 18 },
+  line:         { width: 220, height: 12, borderRadius: 6 },
+  sectionLabel: { height: 12, width: 140, borderRadius: 4 },
+  card:         { borderRadius: CardRadius, backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: '#21282F', overflow: 'hidden' },
+  featureRow:   { minHeight: 52, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: '#20262C' },
+  outlookRow:   { flexDirection: 'row', justifyContent: 'space-between', gap: 6 },
+  outlookCell:  { width: 44, height: 76, borderRadius: 8 },
+});
+
+// ─── Gauge ────────────────────────────────────────────────────────────────────
+
 function Gauge({ probability, risk }: { probability: number; risk: RiskLevel }) {
-  const needle = useRef(new Animated.Value(0)).current;
-  const count = useRef(new Animated.Value(0)).current;
-  const pulse = useRef(new Animated.Value(0)).current;
+  const needle     = useRef(new Animated.Value(0)).current;
+  const count      = useRef(new Animated.Value(0)).current;
+  const pulse      = useRef(new Animated.Value(0)).current;
   const badgePulse = useRef(new Animated.Value(0)).current;
-  const [displayProbability, setDisplayProbability] = useState(0);
-  const color = riskColor(risk);
-  const finalRotation = -90 + probability * 1.8;
+  const [displayPct, setDisplayPct] = useState(0);
+  const color        = riskColor(risk);
+  const finalRot     = -90 + probability * 1.8;
 
   useEffect(() => {
-    const countListener = count.addListener(({ value }) => setDisplayProbability(Math.round(value * probability)));
-
-    Animated.spring(needle, {
-      toValue: 1,
-      stiffness: 80,
-      damping: 12,
-      mass: 1,
-      useNativeDriver: true,
-    }).start();
-
-    Animated.timing(count, {
-      toValue: 1,
-      duration: 800,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-
-    const glowLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 1500, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0, duration: 1500, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      ]),
-    );
-    const badgeLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(badgePulse, { toValue: 1, duration: 1000, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(badgePulse, { toValue: 0, duration: 1000, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      ]),
-    );
-
-    glowLoop.start();
-    badgeLoop.start();
-
-    return () => {
-      count.removeListener(countListener);
-      glowLoop.stop();
-      badgeLoop.stop();
-    };
+    const id = count.addListener(({ value }) => setDisplayPct(Math.round(value * probability)));
+    Animated.spring(needle, { toValue: 1, stiffness: 80, damping: 12, mass: 1, useNativeDriver: true }).start();
+    Animated.timing(count, { toValue: 1, duration: 800, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
+    const gl = Animated.loop(Animated.sequence([
+      Animated.timing(pulse,      { toValue: 1, duration: 1500, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(pulse,      { toValue: 0, duration: 1500, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+    ]));
+    const bl = Animated.loop(Animated.sequence([
+      Animated.timing(badgePulse, { toValue: 1, duration: 1000, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(badgePulse, { toValue: 0, duration: 1000, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+    ]));
+    gl.start(); bl.start();
+    return () => { count.removeListener(id); gl.stop(); bl.stop(); };
   }, [badgePulse, count, needle, probability, pulse]);
 
-  const needleRotation = needle.interpolate({ inputRange: [0, 1], outputRange: ['-90deg', `${finalRotation}deg`] });
-  const glowOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.04, 0.1] });
+  const needleRot  = needle.interpolate({ inputRange: [0, 1], outputRange: ['-90deg', `${finalRot}deg`] });
+  const glowOpac   = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.04, 0.1] });
   const badgeScale = badgePulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.02] });
 
   return (
     <View style={styles.gaugeStage}>
-      <Animated.View style={[styles.radialGlow, { opacity: glowOpacity }]}>
+      <Animated.View style={[styles.radialGlow, { opacity: glowOpac }]}>
         <Svg width="100%" height="100%" viewBox="0 0 340 260">
           <Defs>
-            <RadialGradient id="riskGlow" cx="50%" cy="56%" r="50%">
-              <Stop offset="0%" stopColor={riskGlow(risk)} stopOpacity="1" />
-              <Stop offset="62%" stopColor={riskGlow(risk)} stopOpacity="0.52" />
+            <RadialGradient id="rg" cx="50%" cy="56%" r="50%">
+              <Stop offset="0%"   stopColor={riskGlow(risk)} stopOpacity="1" />
+              <Stop offset="62%"  stopColor={riskGlow(risk)} stopOpacity="0.52" />
               <Stop offset="100%" stopColor={riskGlow(risk)} stopOpacity="0" />
             </RadialGradient>
           </Defs>
-          <Circle cx="170" cy="156" r="154" fill="url(#riskGlow)" />
+          <Circle cx="170" cy="156" r="154" fill="url(#rg)" />
         </Svg>
       </Animated.View>
 
       <View style={styles.gaugeWrap}>
         <Svg width={340} height={210} viewBox="0 0 340 210">
-          <Path d={arcSegment(170, 170, 150, 100, 180, 120)} fill={MonikeColors.accentPulse} opacity={0.3} />
-          <Path d={arcSegment(170, 170, 150, 100, 120, 60)} fill={MonikeColors.signalAmber} opacity={0.3} />
-          <Path d={arcSegment(170, 170, 150, 100, 60, 0)} fill={MonikeColors.signalRed} opacity={0.3} />
+          <Path d={arcSegment(170, 170, 150, 100, 180, 120)} fill={MonikeColors.accentPulse}  opacity={0.3} />
+          <Path d={arcSegment(170, 170, 150, 100, 120,  60)} fill={MonikeColors.signalAmber} opacity={0.3} />
+          <Path d={arcSegment(170, 170, 150, 100,  60,   0)} fill={MonikeColors.signalRed}   opacity={0.3} />
           {[120, 60].map((angle) => {
-            const start = polar(170, 170, 98, angle);
-            const end = polar(170, 170, 152, angle);
-            return <Path key={angle} d={`M ${start.x} ${start.y} L ${end.x} ${end.y}`} stroke={MonikeColors.inkGhost} strokeWidth={1} />;
+            const s = polar(170, 170, 98,  angle);
+            const e = polar(170, 170, 152, angle);
+            return <Path key={angle} d={`M ${s.x} ${s.y} L ${e.x} ${e.y}`} stroke={MonikeColors.inkGhost} strokeWidth={1} />;
           })}
-          <SvgText x="54" y="72" fill={MonikeColors.accentPulse} fontFamily={Fonts.mono} fontSize={10} fontWeight="700">LOW</SvgText>
-          <SvgText x="158" y="23" fill={MonikeColors.signalAmber} fontFamily={Fonts.mono} fontSize={10} fontWeight="700">MED</SvgText>
-          <SvgText x="275" y="72" fill={MonikeColors.signalRed} fontFamily={Fonts.mono} fontSize={10} fontWeight="700">HIGH</SvgText>
+          <SvgText x="54"  y="72" fill={MonikeColors.accentPulse}  fontFamily={Fonts.mono} fontSize={10} fontWeight="700">LOW</SvgText>
+          <SvgText x="158" y="23" fill={MonikeColors.signalAmber}  fontFamily={Fonts.mono} fontSize={10} fontWeight="700">MED</SvgText>
+          <SvgText x="275" y="72" fill={MonikeColors.signalRed}    fontFamily={Fonts.mono} fontSize={10} fontWeight="700">HIGH</SvgText>
         </Svg>
-
         <View style={styles.probabilityBlock}>
-          <Text style={[styles.probabilityValue, { color }]}>{displayProbability}%</Text>
+          <Text style={[styles.probabilityValue, { color }]}>{displayPct}%</Text>
           <Text style={styles.probabilityLabel}>PROBABILITY</Text>
         </View>
-
-        <Animated.View style={[styles.needle, { transform: [{ rotate: needleRotation }] }]}>
+        <Animated.View style={[styles.needle, { transform: [{ rotate: needleRot }] }]}>
           <View style={styles.needleTriangle} />
         </Animated.View>
         <View style={styles.needlePivot} />
@@ -234,6 +248,165 @@ function Gauge({ probability, risk }: { probability: number; risk: RiskLevel }) 
   );
 }
 
+// ─── Velocity card ────────────────────────────────────────────────────────────
+
+function VelocityCard({ data }: { data: PredictionResponse }) {
+  const { velocity, rolling_7d_avg, rolling_14d_avg, prev_day_spend, high_spend_threshold } = data;
+  const dir = velocity.direction as 'up' | 'down' | 'flat';
+
+  const arrowColor =
+    dir === 'up'   ? MonikeColors.signalRed
+    : dir === 'down' ? MonikeColors.accentPulse
+    : MonikeColors.signalAmber;
+
+  const ArrowIcon =
+    dir === 'up'   ? ArrowUp
+    : dir === 'down' ? ArrowDown
+    : ArrowRight;
+
+  const pctAbs = Math.abs(velocity.pct_change);
+
+  return (
+    <View style={styles.velocityCard}>
+      {/* Top row: 7d vs prev-7d */}
+      <View style={styles.velocityTopRow}>
+        <View style={styles.velocityStat}>
+          <Text style={styles.velocityStatLabel}>LAST 7 DAYS</Text>
+          <Text style={[styles.velocityStatValue, { color: arrowColor }]}>
+            ₦{formatNaira(velocity.last_7_total)}
+          </Text>
+        </View>
+        <View style={styles.velocityArrowWrap}>
+          <ArrowIcon size={18} color={arrowColor} strokeWidth={2.5} />
+          <Text style={[styles.velocityPct, { color: arrowColor }]}>
+            {pctAbs.toFixed(0)}%
+          </Text>
+        </View>
+        <View style={[styles.velocityStat, { alignItems: 'flex-end' }]}>
+          <Text style={styles.velocityStatLabel}>PREV 7 DAYS</Text>
+          <Text style={styles.velocityStatValue}>
+            ₦{formatNaira(velocity.prev_7_total)}
+          </Text>
+        </View>
+      </View>
+
+      {/* Divider */}
+      <View style={styles.velocityDivider} />
+
+      {/* Context row: yesterday · 7d avg · 14d avg */}
+      <View style={styles.contextRow}>
+        <View style={styles.contextStat}>
+          <Text style={styles.contextLabel}>YESTERDAY</Text>
+          <Text style={[
+            styles.contextValue,
+            { color: prev_day_spend > high_spend_threshold ? MonikeColors.signalRed : MonikeColors.inkPrimary },
+          ]}>
+            ₦{formatNaira(prev_day_spend)}
+          </Text>
+        </View>
+        <View style={styles.contextDividerV} />
+        <View style={styles.contextStat}>
+          <Text style={styles.contextLabel}>7D AVG</Text>
+          <Text style={styles.contextValue}>₦{formatNaira(rolling_7d_avg)}</Text>
+        </View>
+        <View style={styles.contextDividerV} />
+        <View style={styles.contextStat}>
+          <Text style={styles.contextLabel}>14D AVG</Text>
+          <Text style={styles.contextValue}>₦{formatNaira(rolling_14d_avg)}</Text>
+        </View>
+        <View style={styles.contextDividerV} />
+        <View style={styles.contextStat}>
+          <Text style={styles.contextLabel}>THRESHOLD</Text>
+          <Text style={[styles.contextValue, { color: MonikeColors.inkMuted }]}>
+            ₦{formatNaira(high_spend_threshold)}
+          </Text>
+        </View>
+      </View>
+
+      {/* Narrative */}
+      <Text style={styles.velocityNarrative}>{velocity.narrative}</Text>
+    </View>
+  );
+}
+
+// ─── Feature row ──────────────────────────────────────────────────────────────
+
+function FeatureRow({ feature }: { feature: FeatureImportance }) {
+  const pct   = Math.round(feature.importance * 100);
+  const color =
+    pct >= 70 ? MonikeColors.accentPulse
+    : pct >= 45 ? MonikeColors.signalAmber
+    : MonikeColors.inkSecondary;
+
+  return (
+    <View style={styles.featureRow}>
+      <View style={styles.featureCopy}>
+        <Text numberOfLines={1} style={styles.featureLabel}>{feature.label}</Text>
+        <Text style={styles.featureValue}>{feature.current_value}</Text>
+      </View>
+      <View style={styles.importanceWrap}>
+        <Text style={[styles.importanceText, { color }]}>{pct}%</Text>
+        <View style={styles.importanceTrack}>
+          <View style={[styles.importanceFill, { width: `${pct}%` as `${number}%`, backgroundColor: color }]} />
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// ─── Advisor tips (now server-driven, not hardcoded) ─────────────────────────
+
+function AdvisorTips({ tips, risk }: { tips: string[]; risk: RiskLevel }) {
+  const color = riskColor(risk);
+  const Icon =
+    risk === 'HIGH'   ? AlertTriangle
+    : risk === 'MEDIUM' ? Zap
+    : CheckCircle2;
+
+  return (
+    <View style={styles.tipsStack}>
+      {tips.map((tip, i) => (
+        <View key={i} style={[styles.tipCard, { borderLeftColor: color }]}>
+          <Icon size={16} color={MonikeColors.inkSecondary} strokeWidth={1.8} />
+          <Text style={styles.tipText}>{tip}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+// ─── Week outlook ─────────────────────────────────────────────────────────────
+// Now shows historical avg spend per day and a fill bar
+
+function OutlookCell({ day }: { day: WeekOutlookDay }) {
+  const risk  = normaliseRisk(day.risk);
+  const color = riskColor(risk);
+  // probability is 0-100 from backend
+  const fillPct = Math.min(100, day.probability ?? 0);
+
+  return (
+    <View style={styles.outlookCell}>
+      <Text style={styles.outlookDay}>{day.day_label}</Text>
+
+      {/* mini bar showing relative risk */}
+      <View style={styles.outlookBarTrack}>
+        <View style={[styles.outlookBarFill, { height: `${fillPct}%` as `${number}%`, backgroundColor: color }]} />
+      </View>
+
+      <Text style={styles.outlookEmoji}>{riskEmoji(risk)}</Text>
+
+      {/* avg spend for that dow */}
+      {day.avg_spend > 0 && (
+        <Text style={styles.outlookSpend} numberOfLines={1}>
+          ₦{formatNaira(day.avg_spend)}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+// ─── Section header ───────────────────────────────────────────────────────────
+
 function SectionHeader({ children, icon }: { children: ReactNode; icon?: ReactNode }) {
   return (
     <View style={styles.sectionHeaderRow}>
@@ -243,75 +416,82 @@ function SectionHeader({ children, icon }: { children: ReactNode; icon?: ReactNo
   );
 }
 
-function FeatureRow({ feature }: { feature: Feature }) {
-  const color = feature.importance >= 70 ? MonikeColors.accentPulse : feature.importance >= 45 ? MonikeColors.signalAmber : MonikeColors.inkSecondary;
+// ─── Error state ──────────────────────────────────────────────────────────────
+
+function ErrorState({ onRetry }: { onRetry: () => void }) {
   return (
-    <View style={styles.featureRow}>
-      <View style={styles.featureCopy}>
-        <Text numberOfLines={1} style={styles.featureLabel}>{featureLabels[feature.key]}</Text>
-        <Text style={styles.featureValue}>{feature.value}</Text>
-      </View>
-      <View style={styles.importanceWrap}>
-        <Text style={[styles.importanceText, { color }]}>{feature.importance}%</Text>
-        <View style={styles.importanceTrack}>
-          <View style={[styles.importanceFill, { width: `${feature.importance}%`, backgroundColor: color }]} />
-        </View>
-      </View>
+    <View style={styles.errorContainer}>
+      <AlertTriangle size={32} color={MonikeColors.signalRed} strokeWidth={1.5} />
+      <Text style={styles.errorTitle}>Couldn't load forecast</Text>
+      <Text style={styles.errorBody}>Check your connection and try again.</Text>
+      <Pressable style={styles.errorButton} onPress={onRetry}>
+        <RefreshCw size={14} color={MonikeColors.inkPrimary} strokeWidth={2} />
+        <Text style={styles.errorButtonText}>Retry</Text>
+      </Pressable>
     </View>
   );
 }
 
-function TipCard({ icon, text, color }: { icon: ReactNode; text: string; color: string }) {
-  return (
-    <View style={[styles.tipCard, { borderLeftColor: color }]}>
-      {icon}
-      <Text style={styles.tipText}>{text}</Text>
-    </View>
-  );
-}
-
-function OutlookCell({ day }: { day: OutlookDay }) {
-  const color = riskColor(day.risk);
-  const opacity = 0.18 + (day.probability / 100) * 0.22;
-  return (
-    <View style={styles.outlookCell}>
-      <Text style={styles.outlookDay}>{day.day}</Text>
-      <Svg width={28} height={18} viewBox="0 0 28 18">
-        <Path d="M 3 15 A 11 11 0 0 1 25 15" stroke={color} strokeWidth={5} strokeLinecap="round" fill="none" opacity={opacity} />
-      </Svg>
-      <Text style={styles.outlookEmoji}>{riskEmoji(day.risk)}</Text>
-    </View>
-  );
-}
+// ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function ForecastScreen() {
   const insets = useSafeAreaInsets();
-  const risk = prediction.risk;
-  const color = riskColor(risk);
-  const sortedFeatures = useMemo(() => [...features].sort((a, b) => b.importance - a.importance), []);
+  const { data, error, isLoading, mutate } = usePrediction();
+
+  const risk        = useMemo<RiskLevel>(() => normaliseRisk(data?.risk_level ?? 'LOW'), [data]);
+  const probability = useMemo(() => Math.round((data?.probability ?? 0) * 100), [data]);
 
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + BottomTabInset + 22 }]}
+          contentContainerStyle={[
+            styles.content,
+            { paddingBottom: insets.bottom + BottomTabInset + 22 },
+          ]}
         >
           <MonikeHeader title="Risk" />
 
-          <Gauge probability={prediction.probability} risk={risk} />
+          {isLoading && <ForecastSkeleton />}
+          {!isLoading && error && <ErrorState onRetry={mutate} />}
 
-          <SectionHeader>WHAT&apos;S DRIVING THIS</SectionHeader>
-          <View style={styles.sectionCard}>{sortedFeatures.map((feature) => <FeatureRow key={feature.key} feature={feature} />)}</View>
+          {!isLoading && !error && data && (
+            <>
+              {/* ── Gauge ── */}
+              <Gauge probability={probability} risk={risk} />
 
-          <SectionHeader icon={<MessageSquare size={15} color={MonikeColors.accentPulse} strokeWidth={1.9} />}>ADVISOR SAYS</SectionHeader>
-          <View style={styles.tipsStack}>
-            {advisorTips[risk].map((tip) => <TipCard key={tip.text} icon={tip.icon} text={tip.text} color={color} />)}
-          </View>
+              {/* ── Velocity + context numbers ── */}
+              <VelocityCard data={data} />
 
-          <SectionHeader>WEEK AHEAD OUTLOOK</SectionHeader>
-          <View style={styles.outlookRow}>{outlook.map((day) => <OutlookCell key={day.day} day={day} />)}</View>
-          <Text style={styles.outlookCaption}>Based on historical same-day patterns</Text>
+              {/* ── What's driving this ── */}
+              <SectionHeader>WHAT&apos;S DRIVING THIS</SectionHeader>
+              <View style={styles.sectionCard}>
+                {data.top_features.map((f) => (
+                  <FeatureRow key={f.feature_key} feature={f} />
+                ))}
+              </View>
+
+              {/* ── Advisor (server-generated, contextual) ── */}
+              <SectionHeader
+                icon={<MessageSquare size={15} color={MonikeColors.accentPulse} strokeWidth={1.9} />}
+              >
+                ADVISOR SAYS
+              </SectionHeader>
+              <AdvisorTips tips={data.advisor_tips} risk={risk} />
+
+              {/* ── Week outlook ── */}
+              <SectionHeader>WEEK AHEAD</SectionHeader>
+              <View style={styles.outlookRow}>
+                {data.week_outlook.map((day) => (
+                  <OutlookCell key={day.date} day={day} />
+                ))}
+              </View>
+              <Text style={styles.outlookCaption}>
+                Bars show relative overspend risk based on historical same-day patterns
+              </Text>
+            </>
+          )}
         </ScrollView>
       </SafeAreaView>
       <BottomNavigation activeRoute="forecast" />
@@ -319,269 +499,77 @@ export default function ForecastScreen() {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: MonikeColors.bgVoid,
-  },
-  safeArea: {
-    flex: 1,
-  },
-  content: {
-    paddingHorizontal: ScreenPadding,
-    paddingTop: 18,
-  },
-  header: {
-    marginBottom: 8,
-  },
-  title: {
-    color: MonikeColors.inkPrimary,
-    fontFamily: Fonts.heading,
-    fontSize: 22,
-    fontWeight: '700',
-    letterSpacing: 0.4,
-  },
-  tomorrow: {
-    marginTop: 8,
-    color: MonikeColors.inkSecondary,
-    fontFamily: Fonts.mono,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  gaugeStage: {
-    alignItems: 'center',
-    marginBottom: 26,
-    minHeight: 330,
-  },
-  radialGlow: {
-    position: 'absolute',
-    top: -28,
-    width: 390,
-    height: 300,
-  },
-  gaugeWrap: {
-    width: 340,
-    height: 228,
-    alignItems: 'center',
-    marginTop: 6,
-  },
-  lowLabel: {
-    color: MonikeColors.accentPulse,
-    fontFamily: Fonts.mono,
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  medLabel: {
-    color: MonikeColors.signalAmber,
-    fontFamily: Fonts.mono,
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  highLabel: {
-    color: MonikeColors.signalRed,
-    fontFamily: Fonts.mono,
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  probabilityBlock: {
-    position: 'absolute',
-    top: 82,
-    alignItems: 'center',
-  },
-  probabilityValue: {
-    fontFamily: Fonts.mono,
-    fontSize: 52,
-    fontWeight: '700',
-    letterSpacing: -2,
-  },
-  probabilityLabel: {
-    marginTop: -2,
-    color: MonikeColors.inkMuted,
-    fontFamily: Fonts.sans,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-  },
-  needle: {
-    position: 'absolute',
-    left: 166,
-    top: 50,
-    width: 8,
-    height: 120,
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    transformOrigin: '50% 100%',
-  },
-  needleTriangle: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 4,
-    borderRightWidth: 4,
-    borderBottomWidth: 120,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderBottomColor: MonikeColors.inkPrimary,
-  },
-  needlePivot: {
-    position: 'absolute',
-    left: 165,
-    top: 165,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: MonikeColors.inkPrimary,
-    shadowColor: MonikeColors.inkPrimary,
-    shadowOpacity: 0.55,
-    shadowRadius: 10,
-  },
-  riskBadge: {
-    width: 180,
-    minHeight: 42,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#FFFFFF14',
-    marginTop: -16,
-  },
-  riskBadgeText: {
-    fontFamily: Fonts.mono,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  riskSentence: {
-    marginTop: 12,
-    maxWidth: 270,
-    color: MonikeColors.inkSecondary,
-    fontFamily: Fonts.sans,
-    fontSize: 14,
-    fontWeight: '600',
-    lineHeight: 21,
-    textAlign: 'center',
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    marginTop: 8,
-    marginBottom: 10,
-  },
-  sectionHeader: {
-    color: MonikeColors.inkSecondary,
-    fontFamily: Fonts.heading,
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
-  sectionCard: {
-    borderRadius: CardRadius,
-    backgroundColor: MonikeColors.bgSurface,
-    borderWidth: 1,
-    borderColor: '#21282F',
-    overflow: 'hidden',
-    marginBottom: 18,
-  },
-  featureRow: {
-    minHeight: 52,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#20262C',
-  },
-  featureCopy: {
-    flex: 1,
-    paddingRight: 12,
-  },
-  featureLabel: {
-    color: MonikeColors.inkPrimary,
-    fontFamily: Fonts.sans,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  featureValue: {
-    marginTop: 4,
-    color: MonikeColors.inkSecondary,
-    fontFamily: Fonts.mono,
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  importanceWrap: {
-    width: 74,
-    alignItems: 'flex-end',
-    gap: 6,
-  },
-  importanceText: {
-    fontFamily: Fonts.mono,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  importanceTrack: {
-    width: 60,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: MonikeColors.bgElevated,
-    overflow: 'hidden',
-  },
-  importanceFill: {
-    height: 5,
-    borderRadius: 3,
-  },
-  tipsStack: {
-    gap: 8,
-    marginBottom: 18,
-  },
-  tipCard: {
-    minHeight: 54,
-    borderRadius: 14,
-    backgroundColor: MonikeColors.bgElevated,
-    borderLeftWidth: 3,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    paddingHorizontal: 13,
-    paddingVertical: 12,
-  },
-  tipText: {
-    flex: 1,
-    color: MonikeColors.inkSecondary,
-    fontFamily: Fonts.sans,
-    fontSize: 13,
-    fontWeight: '600',
-    lineHeight: 21,
-  },
-  outlookRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 6,
-  },
-  outlookCell: {
-    width: 44,
-    height: 60,
-    borderRadius: 8,
-    backgroundColor: MonikeColors.bgElevated,
-    borderWidth: 1,
-    borderColor: '#222A31',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
-  },
-  outlookDay: {
-    color: MonikeColors.inkMuted,
-    fontFamily: Fonts.mono,
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  outlookEmoji: {
-    fontSize: 13,
-    lineHeight: 15,
-  },
-  outlookCaption: {
-    marginTop: 10,
-    color: MonikeColors.inkMuted,
-    fontFamily: Fonts.sans,
-    fontSize: 10,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
+  root:    { flex: 1, backgroundColor: MonikeColors.bgVoid },
+  safeArea: { flex: 1 },
+  content: { paddingHorizontal: ScreenPadding, paddingTop: 18, gap: 18 },
+
+  // Gauge
+  gaugeStage:       { alignItems: 'center', marginBottom: 8, minHeight: 310 },
+  radialGlow:       { position: 'absolute', top: -28, width: 390, height: 300 },
+  gaugeWrap:        { width: 340, height: 228, alignItems: 'center', marginTop: 6 },
+  probabilityBlock: { position: 'absolute', top: 82, alignItems: 'center' },
+  probabilityValue: { fontFamily: Fonts.mono, fontSize: 52, fontWeight: '700', letterSpacing: -2 },
+  probabilityLabel: { marginTop: -2, color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 10, fontWeight: '800', letterSpacing: 1.2 },
+  needle:           { position: 'absolute', left: 166, top: 50, width: 8, height: 120, alignItems: 'center', justifyContent: 'flex-start', transformOrigin: '50% 100%' },
+  needleTriangle:   { width: 0, height: 0, borderLeftWidth: 4, borderRightWidth: 4, borderBottomWidth: 120, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: MonikeColors.inkPrimary },
+  needlePivot:      { position: 'absolute', left: 165, top: 165, width: 10, height: 10, borderRadius: 5, backgroundColor: MonikeColors.inkPrimary },
+  riskBadge:        { width: 180, minHeight: 42, borderRadius: 22, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#FFFFFF14', marginTop: -16 },
+  riskBadgeText:    { fontFamily: Fonts.mono, fontSize: 14, fontWeight: '700' },
+  riskSentence:     { marginTop: 12, maxWidth: 270, color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 14, fontWeight: '600', lineHeight: 21, textAlign: 'center' },
+
+  // Velocity card
+  velocityCard:      { borderRadius: CardRadius, backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: MonikeColors.inkGhost, padding: 14, gap: 12 },
+  velocityTopRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  velocityStat:      { flex: 1 },
+  velocityStatLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 9, fontWeight: '700', letterSpacing: 0.8, marginBottom: 4 },
+  velocityStatValue: { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 18, fontWeight: '700' },
+  velocityArrowWrap: { alignItems: 'center', paddingHorizontal: 10, gap: 2 },
+  velocityPct:       { fontFamily: Fonts.mono, fontSize: 11, fontWeight: '700' },
+  velocityDivider:   { height: 1, backgroundColor: MonikeColors.inkGhost },
+  velocityNarrative: { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 12, lineHeight: 18 },
+
+  // Context row (yesterday / 7d avg / 14d avg / threshold)
+  contextRow:      { flexDirection: 'row', alignItems: 'center' },
+  contextStat:     { flex: 1, alignItems: 'center', gap: 4 },
+  contextLabel:    { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 8, fontWeight: '700', letterSpacing: 0.6 },
+  contextValue:    { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 12, fontWeight: '700' },
+  contextDividerV: { width: 1, height: 28, backgroundColor: MonikeColors.inkGhost },
+
+  // Features
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  sectionHeader:    { color: MonikeColors.inkSecondary, fontFamily: Fonts.heading, fontSize: 12, fontWeight: '700', letterSpacing: 1 },
+  sectionCard:      { borderRadius: CardRadius, backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: '#21282F', overflow: 'hidden' },
+  featureRow:       { minHeight: 52, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: '#20262C' },
+  featureCopy:      { flex: 1, paddingRight: 12 },
+  featureLabel:     { color: MonikeColors.inkPrimary, fontFamily: Fonts.sans, fontSize: 13, fontWeight: '700' },
+  featureValue:     { marginTop: 4, color: MonikeColors.inkSecondary, fontFamily: Fonts.mono, fontSize: 11, fontWeight: '700' },
+  importanceWrap:   { width: 74, alignItems: 'flex-end', gap: 6 },
+  importanceText:   { fontFamily: Fonts.mono, fontSize: 13, fontWeight: '600' },
+  importanceTrack:  { width: 60, height: 5, borderRadius: 3, backgroundColor: MonikeColors.bgElevated, overflow: 'hidden' },
+  importanceFill:   { height: 5, borderRadius: 3 },
+
+  // Advisor tips
+  tipsStack: { gap: 8 },
+  tipCard:   { minHeight: 54, borderRadius: 14, backgroundColor: MonikeColors.bgElevated, borderLeftWidth: 3, flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingHorizontal: 13, paddingVertical: 12 },
+  tipText:   { flex: 1, color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 13, fontWeight: '600', lineHeight: 21 },
+
+  // Week outlook — taller cells now include a fill bar + spend amount
+  outlookRow:      { flexDirection: 'row', justifyContent: 'space-between', gap: 4 },
+  outlookCell:     { flex: 1, minHeight: 90, borderRadius: 8, backgroundColor: MonikeColors.bgElevated, borderWidth: 1, borderColor: '#222A31', alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 6, paddingTop: 6, gap: 2, overflow: 'hidden' },
+  outlookDay:      { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 9, fontWeight: '700' },
+  outlookBarTrack: { width: 6, flex: 1, borderRadius: 3, backgroundColor: MonikeColors.bgVoid, overflow: 'hidden', justifyContent: 'flex-end' },
+  outlookBarFill:  { width: 6, borderRadius: 3 },
+  outlookEmoji:    { fontSize: 12, lineHeight: 14 },
+  outlookSpend:    { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 8, fontWeight: '600' },
+  outlookCaption:  { marginTop: -8, color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 10, fontWeight: '600', textAlign: 'center' },
+
+  // Error
+  errorContainer:  { alignItems: 'center', paddingTop: 80, gap: 10 },
+  errorTitle:      { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 16, fontWeight: '700' },
+  errorBody:       { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 13, fontWeight: '500' },
+  errorButton:     { marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20, backgroundColor: MonikeColors.bgElevated, borderWidth: 1, borderColor: '#21282F' },
+  errorButtonText: { color: MonikeColors.inkPrimary, fontFamily: Fonts.sans, fontSize: 13, fontWeight: '700' },
 });

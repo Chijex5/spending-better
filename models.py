@@ -150,18 +150,36 @@ class FeatureImportance(BaseModel):
     importance: float
     current_value: str
 
+class SpendVelocity(BaseModel):
+    last_7_total: float
+    prev_7_total: float
+    pct_change: float
+    direction: str      # "up" | "down" | "flat"
+    narrative: str  
+
+class WeekOutlookDay(BaseModel):
+    date: str
+    day_label: str
+    risk: str
+    avg_spend: float    # NEW — historical average for that day-of-week
+    probability: int     
 
 class PredictionResponse(BaseModel):
     target_date: str
     day_name: str
-    probability: float
+    probability: float          # 0.0 – 1.0  (gauge uses * 100)
     risk_level: str
     rolling_7d_avg: float
     rolling_14d_avg: float
     top_features: list[FeatureImportance]
-    week_outlook: list[dict]
-
-
+    week_outlook: list[WeekOutlookDay]
+ 
+    # ── new fields ───────────────────────────────────────────────────────────
+    velocity: SpendVelocity                # 7d vs prev-7d comparison + narrative
+    advisor_tips: list[str]               # contextual, number-aware tips
+    prev_day_spend: float                 # yesterday's actual total
+    high_spend_threshold: float           # so frontend can show the threshold
+ 
 class LogEntry(BaseModel):
     date: str
     total_debit: float
@@ -246,3 +264,73 @@ class RetrainQueuedResponse(BaseModel):
 class RetrainStatusResponse(BaseModel):
     status: str
     trained_on_days: int
+
+# ── Add these to models.py ────────────────────────────────────────────────────
+
+
+class CategoryTransaction(BaseModel):
+    trans_date: str          # ISO date string  e.g. "2026-06-05"
+    description: str
+    debit: float
+    credit: float
+
+
+class CategoryTransactionsResponse(BaseModel):
+    category: str
+    period_label: str
+    total: float
+    transaction_count: int
+    items: list[CategoryTransaction]
+
+# ─── Explore / Monthly Summary ────────────────────────────────────────────────
+
+class ExploreMonth(BaseModel):
+    year: int
+    month: int
+    label: str          # "JUNE 2026"
+
+
+class ExploreMonthsResponse(BaseModel):
+    months: list[ExploreMonth]
+
+
+class WeekBreakdown(BaseModel):
+    week: int
+    range: str          # "Jun 1–7"
+    spend: float
+    txns: int
+
+
+class DailyCell(BaseModel):
+    day: int            # 1–31
+    date: str           # "5 Jun"
+    total: float
+    is_today: bool = False
+    risk: str           # "LOW" | "MEDIUM" | "HIGH"
+
+
+class DayTransaction(BaseModel):
+    id: str
+    description: str
+    category: str
+    date: str           # "5 Jun"
+    day: str            # "Fri"
+    time: str           # "" when unknown
+    amount: float       # negative = debit, positive = credit
+
+
+class ExploreSummaryResponse(BaseModel):
+    year: int
+    month: int
+    month_label: str
+    real_spend: float
+    previous_spend: float
+    credits: float
+    budget: float
+    spend_to_date: float
+    daily_pace_reference: float   # budget / days_in_month → DAILY_PACE_REFERENCE
+    weekly: list[WeekBreakdown]
+    daily: list[DailyCell]
+    day_transactions: list[DayTransaction]
+    previous7: float
+    last7: float

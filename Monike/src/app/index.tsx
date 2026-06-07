@@ -13,14 +13,12 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   BarChart2,
-  Bell,
   CreditCard,
   Globe,
   Phone,
   PieChart,
   PlusCircle,
   ShoppingBag,
-  TrendingDown,
   TrendingUp,
   Users,
   Utensils,
@@ -30,6 +28,8 @@ import {
 } from 'lucide-react-native';
 
 import { BottomNavigation } from '@/components/bottom-navigation';
+import { useSWR } from '@/hooks/use-swr';
+import { apiFetch, type DashboardResponse, type LogEntry, type SummaryResponse } from '@/services/api';
 import { MonikeHeader } from '@/components/monike-header';
 import { BottomTabInset, CardRadius, Fonts, MonikeColors, ScreenPadding } from '@/constants/theme';
 
@@ -60,9 +60,16 @@ type Transaction = {
 type DaySpend = {
   day: string;
   date: string;
+  isoDate: string;
   total: number;
   limit: number;
   risk: Risk;
+};
+
+type CategoryTotal = {
+  category: Category;
+  total: number;
+  color: string;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -84,36 +91,20 @@ const DAY_NAMES: Record<string, string> = {
   Su: 'Sunday',
 };
 
-const monthSpend = 342115.5;
-const monthlyBudget = 1850000;
-const daysElapsed = 5;
-const daysInMonth = 30;
-const highSpendDays = 8;
-const dailyLimit = 62000;
-
-const sevenDaySpend: DaySpend[] = [
-  { day: 'Mo', date: '1 Jun', total: 38400,   limit: dailyLimit, risk: 'LOW' },
-  { day: 'Tu', date: '2 Jun', total: 51600,   limit: dailyLimit, risk: 'LOW' },
-  { day: 'We', date: '3 Jun', total: 74300,   limit: dailyLimit, risk: 'HIGH' },
-  { day: 'Th', date: '4 Jun', total: 40900,   limit: dailyLimit, risk: 'LOW' },
-  { day: 'Fr', date: '5 Jun', total: 88115.5, limit: dailyLimit, risk: 'HIGH' },
-  { day: 'Sa', date: '6 Jun', total: 27900,   limit: dailyLimit, risk: 'LOW' },
-  { day: 'Su', date: '7 Jun', total: 20800,   limit: dailyLimit, risk: 'LOW' },
-];
-
-const recentTransactions: Transaction[] = [
-  { id: 't-01', description: 'Paystack merchant payout',  category: 'Online Payment',    date: '5 Jun', day: 'Fr', time: '14:32', amount:  185000 },
-  { id: 't-02', description: 'Chicken Republic Lekki',    category: 'Food & Dining',     date: '5 Jun', day: 'Fr', time: '13:06', amount:  -7800 },
-  { id: 't-03', description: 'Uber Trip to Yaba',         category: 'POS Purchase',      date: '5 Jun', day: 'Fr', time: '08:42', amount:  -4200 },
-  { id: 't-04', description: 'MTN Data 20GB Bundle',      category: 'Data',              date: '4 Jun', day: 'Th', time: '21:14', amount:  -6500 },
-  { id: 't-05', description: 'Cowrywise automated save',  category: 'Person-to-Person',  date: '4 Jun', day: 'Th', time: '09:10', amount: -50000 },
-];
-
-const dayDetailTransactions: Transaction[] = [
-  ...recentTransactions.filter((t) => t.date === '5 Jun'),
-  { id: 't-06', description: 'EKEDC electricity token', category: 'Electricity',  date: '5 Jun', day: 'Fr', time: '19:48', amount: -25000 },
-  { id: 't-07', description: 'Airtime recharge',        category: 'Airtime',      date: '5 Jun', day: 'Fr', time: '16:02', amount:  -3000 },
-];
+const CATEGORY_ALIASES: Record<string, Category> = {
+  P2P: 'Person-to-Person',
+  'Person-to-Person': 'Person-to-Person',
+  Transfer: 'Person-to-Person',
+  POS: 'POS Purchase',
+  'POS Purchase': 'POS Purchase',
+  Data: 'Data',
+  Airtime: 'Airtime',
+  Food: 'Food & Dining',
+  'Food & Dining': 'Food & Dining',
+  Online: 'Online Payment',
+  'Online Payment': 'Online Payment',
+  Electricity: 'Electricity',
+};
 
 const categoryPalette = ['#00E676', '#FFB300', '#FF3D3D', '#4FC3F7', '#69FF9C', '#A07000', '#8B0000', '#8B939E'];
 
@@ -144,13 +135,88 @@ function getGreetingEmoji(): string {
   return '🌙';
 }
 
-function computePaceStatus(): PaceStatus {
-  const currentDailyPace = monthSpend / daysElapsed;
-  const budgetDailyPace  = monthlyBudget / daysInMonth;
-  const ratio = currentDailyPace / budgetDailyPace;
-  if (ratio > 1.15) return 'Ahead';
-  if (ratio > 1.0)  return 'Over';
+function normalizeRisk(risk: string | undefined, fallbackHigh = false): Risk {
+  if (risk === 'HIGH' || risk === 'MEDIUM' || risk === 'LOW') return risk;
+  return fallbackHigh ? 'HIGH' : 'LOW';
+}
+
+function normalizePace(pace: string | undefined): PaceStatus {
+  if (pace === 'Ahead' || pace === 'Over' || pace === 'On Track') return pace;
   return 'On Track';
+}
+
+function normalizeCategory(category: string | undefined): Category {
+  if (!category) return 'Other';
+  return CATEGORY_ALIASES[category] ?? 'Other';
+}
+
+function formatDayDate(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString('en-NG', { day: 'numeric', month: 'short' });
+}
+
+function formatTime(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' });
+}
+
+function currentSummaryPath() {
+  const today = new Date();
+  return `/summary/${today.getFullYear()}/${today.getMonth() + 1}`;
+}
+
+function dashboardBarsToDays(dashboard: DashboardResponse): DaySpend[] {
+  const limit = Math.max(dashboard.avg_daily, 1);
+  return dashboard.seven_day_bars.map((bar) => ({
+    day: bar.day_label,
+    date: formatDayDate(bar.date),
+    isoDate: bar.date,
+    total: bar.total_debit,
+    limit,
+    risk: normalizeRisk(undefined, bar.is_high_spend),
+  }));
+}
+
+function dashboardTransactionsToRows(dashboard: DashboardResponse): Transaction[] {
+  return dashboard.recent_transactions.map((transaction, index) => {
+    const amount = transaction.credit > 0 ? transaction.credit : -transaction.debit;
+    return {
+      id: `${transaction.trans_date}-${index}`,
+      description: transaction.description,
+      category: normalizeCategory(transaction.category),
+      date: formatDayDate(transaction.trans_date),
+      day: '',
+      time: formatTime(transaction.trans_date),
+      amount,
+    };
+  });
+}
+
+function logEntryToCategoryTotals(entry?: LogEntry): CategoryTotal[] {
+  if (!entry) return [];
+
+  const rawTotals: [Category, number][] = [
+    ['Person-to-Person', entry.p2p_spend],
+    ['POS Purchase', entry.pos_spend],
+    ['Data', entry.data_spend],
+    ['Airtime', entry.airtime_spend],
+    ['Online Payment', entry.online_spend],
+    ['Person-to-Person', entry.family_spend],
+    ['Person-to-Person', entry.savings_out],
+  ];
+
+  const totals = new Map<Category, number>();
+  rawTotals.forEach(([category, total]) => {
+    if (total > 0) totals.set(category, (totals.get(category) ?? 0) + total);
+  });
+
+  return Array.from(totals.entries()).map(([category, total], index) => ({
+    category,
+    total,
+    color: categoryPalette[index % categoryPalette.length],
+  }));
 }
 
 function categoryIcon(category: Category) {
@@ -215,36 +281,79 @@ function PressScale({
 }
 
 // ─── Splash Screen ────────────────────────────────────────────────────────────
-
-function SplashScreen({ onComplete }: { onComplete: () => void }) {
-  const logoOpacity   = useRef(new Animated.Value(0)).current;
-  const logoScale     = useRef(new Animated.Value(0.95)).current;
-  const taglineOpacity= useRef(new Animated.Value(0)).current;
-  const taglineY      = useRef(new Animated.Value(4)).current;
-  const progress      = useRef(new Animated.Value(0)).current;
-  const shimmer       = useRef(new Animated.Value(0)).current;
-  const statusOpacity = useRef(new Animated.Value(1)).current;
-  const exitOpacity   = useRef(new Animated.Value(1)).current;
-  const exitScale     = useRef(new Animated.Value(1)).current;
-  const halo          = useRef(new Animated.Value(0)).current;
+let splashAlreadyShown = false;
+function SplashScreen({ onComplete, dataReady }: { onComplete: () => void; dataReady: boolean }) {
+  const logoOpacity    = useRef(new Animated.Value(0)).current;
+  const logoScale      = useRef(new Animated.Value(0.95)).current;
+  const taglineOpacity = useRef(new Animated.Value(0)).current;
+  const taglineY       = useRef(new Animated.Value(4)).current;
+  const progress       = useRef(new Animated.Value(0)).current;
+  const shimmer        = useRef(new Animated.Value(0)).current;
+  const statusOpacity  = useRef(new Animated.Value(1)).current;
+  const exitOpacity    = useRef(new Animated.Value(1)).current;
+  const exitScale      = useRef(new Animated.Value(1)).current;
+  const halo           = useRef(new Animated.Value(0)).current;
   const [statusIndex, setStatusIndex] = useState(0);
+
+  // Track whether the minimum animation time has elapsed
+  const minTimeElapsed = useRef(false);
+  // Track whether we've already triggered exit (avoid double-firing)
+  const exitTriggered = useRef(false);
+
+  const triggerExit = useCallback(() => {
+    if (exitTriggered.current) return;
+    exitTriggered.current = true;
+    // Snap progress to 100% then exit
+    Animated.timing(progress, {
+      toValue: 1,
+      duration: 200,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: false,
+    }).start(() => {
+      Animated.parallel([
+        Animated.timing(exitOpacity, { toValue: 0, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(exitScale,   { toValue: 1.04, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      ]).start(onComplete);
+    });
+  }, [exitOpacity, exitScale, onComplete, progress]);
+
+  // When dataReady flips true, check if min time has passed
+  useEffect(() => {
+    if (dataReady && minTimeElapsed.current) {
+      triggerExit();
+    }
+  }, [dataReady, triggerExit]);
 
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
+
     const haloLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(halo, { toValue: 1, duration: 1500, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
         Animated.timing(halo, { toValue: 0, duration: 1500, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
       ]),
     );
-    const progressAnimation = Animated.timing(progress, { toValue: 1, duration: 1500, easing: Easing.linear, useNativeDriver: false });
-    const shimmerAnimation  = Animated.timing(shimmer, { toValue: 1, duration: 1500, easing: Easing.linear, useNativeDriver: true });
+
+    // Progress bar animates to 0.88 (88%) over 1400ms — holds there waiting for data
+    const progressAnimation = Animated.timing(progress, {
+      toValue: 0.88,
+      duration: 1400,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    });
+    const shimmerAnimation = Animated.timing(shimmer, {
+      toValue: 1,
+      duration: 1500,
+      easing: Easing.linear,
+      useNativeDriver: true,
+    });
 
     haloLoop.start();
     Animated.parallel([
       Animated.timing(logoOpacity, { toValue: 1, duration: 400, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
       Animated.timing(logoScale,   { toValue: 1, duration: 400, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
     ]).start();
+
     timers.push(
       setTimeout(() => {
         Animated.parallel([
@@ -253,8 +362,11 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
         ]).start();
       }, 200),
     );
+
     progressAnimation.start();
     shimmerAnimation.start();
+
+    // Cycle status text
     [1, 2, 3].forEach((nextIndex) => {
       timers.push(
         setTimeout(() => {
@@ -265,13 +377,17 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
         }, ([500, 1000, 1400] as const)[nextIndex - 1]),
       );
     });
+
+    // Minimum display time: 1500ms
     timers.push(
       setTimeout(() => {
-        Animated.parallel([
-          Animated.timing(exitOpacity, { toValue: 0, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-          Animated.timing(exitScale,   { toValue: 1.04, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-        ]).start(onComplete);
-      }, 1800),
+        minTimeElapsed.current = true;
+        // If data already arrived while we were animating, exit now
+        if (dataReady) {
+          triggerExit();
+        }
+        // Otherwise we hold at 88% until dataReady flips true (handled in the useEffect above)
+      }, 1500),
     );
 
     return () => {
@@ -280,7 +396,8 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
       progressAnimation.stop();
       shimmerAnimation.stop();
     };
-  }, [exitOpacity, exitScale, halo, logoOpacity, logoScale, onComplete, progress, shimmer, statusOpacity, taglineOpacity, taglineY]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally empty — runs once on mount
 
   return (
     <View style={styles.splashRoot}>
@@ -352,21 +469,26 @@ function TopBar({ onSettings: _onSettings }: { onSettings: () => void }) {
 
 // ─── Hero Card ────────────────────────────────────────────────────────────────
 
-function HeroCard() {
+function HeroCard({ dashboard, summary }: { dashboard: DashboardResponse; summary?: SummaryResponse }) {
   const animatedAmount = useRef(new Animated.Value(0)).current;
   const [displayValue, setDisplayValue] = useState(0);
-  const budgetProgress = monthSpend / monthlyBudget; // 0–1
+  const monthlyBudget = summary?.budget_limit ?? 0;
+  const budgetProgress = monthlyBudget > 0 ? dashboard.total_spent_this_month / monthlyBudget : 0;
+  const pctChange = dashboard.pct_change_vs_last_month;
+  const comparisonSymbol = pctChange >= 0 ? '▲' : '▼';
+  const comparisonColor = pctChange >= 0 ? MonikeColors.signalRed : MonikeColors.accentPulse;
 
   useEffect(() => {
     const listener = animatedAmount.addListener(({ value }) => setDisplayValue(value));
+    animatedAmount.setValue(0);
     Animated.timing(animatedAmount, {
-      toValue: monthSpend,
+      toValue: dashboard.total_spent_this_month,
       duration: 600,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: false,
     }).start();
     return () => animatedAmount.removeListener(listener);
-  }, [animatedAmount]);
+  }, [animatedAmount, dashboard.total_spent_this_month]);
 
   const greeting = getGreeting();
   const emoji    = getGreetingEmoji();
@@ -383,7 +505,7 @@ function HeroCard() {
       {/* Top row */}
       <View style={styles.heroTopRow}>
         <Text style={styles.heroGreeting}>{greeting}, Chijioke {emoji}</Text>
-        <Text style={styles.heroMonth}>JUNE 2026</Text>
+        <Text style={styles.heroMonth}>{dashboard.month_label}</Text>
       </View>
 
       {/* Label */}
@@ -396,45 +518,52 @@ function HeroCard() {
       </View>
 
       {/* Comparison */}
-      <Text style={styles.comparisonText}>▲ 12.4% vs May</Text>
-
-      {/* Budget progress bar */}
-      <View style={styles.budgetBarTrack}>
-        <Animated.View
-          style={[
-            styles.budgetBarFill,
-            {
-              width: `${Math.min(budgetProgress * 100, 100)}%` as any,
-              backgroundColor: budgetProgress > 0.85
-                ? MonikeColors.signalRed
-                : budgetProgress > 0.65
-                ? MonikeColors.signalAmber
-                : MonikeColors.accentPulse,
-            },
-          ]}
-        />
-      </View>
-      <Text style={styles.budgetLabel}>
-        ₦{formatNaira(monthSpend)} of ₦{formatNaira(monthlyBudget)} budget • {Math.round(budgetProgress * 100)}% used
+      <Text style={[styles.comparisonText, { color: comparisonColor }]}>
+        {comparisonSymbol} {Math.abs(pctChange).toFixed(1)}% vs last month
       </Text>
+
+      {monthlyBudget > 0 ? (
+        <>
+          <View style={styles.budgetBarTrack}>
+            <Animated.View
+              style={[
+                styles.budgetBarFill,
+                {
+                  width: `${Math.min(budgetProgress * 100, 100)}%` as any,
+                  backgroundColor: budgetProgress > 0.85
+                    ? MonikeColors.signalRed
+                    : budgetProgress > 0.65
+                    ? MonikeColors.signalAmber
+                    : MonikeColors.accentPulse,
+                },
+              ]}
+            />
+          </View>
+          <Text style={styles.budgetLabel}>
+            ₦{formatNaira(dashboard.total_spent_this_month)} of ₦{formatNaira(monthlyBudget)} budget • {Math.round(budgetProgress * 100)}% used
+          </Text>
+        </>
+      ) : (
+        <Text style={styles.budgetLabel}>No monthly budget configured in backend settings</Text>
+      )}
 
       <View style={styles.heroSeparator} />
 
       {/* Mini stats */}
       <View style={styles.heroStatsRow}>
         <View style={styles.heroStatColumn}>
-          <Text style={styles.heroStatValue}>₦11,483</Text>
+          <Text style={styles.heroStatValue}>₦{formatNaira(dashboard.avg_daily)}</Text>
           <Text style={styles.heroStatLabel}>daily avg</Text>
         </View>
         <View style={styles.verticalSeparator} />
         <View style={styles.heroStatColumn}>
-          <Text style={styles.heroStatValue}>{highSpendDays}</Text>
+          <Text style={styles.heroStatValue}>{dashboard.high_spend_days}</Text>
           <Text style={styles.heroStatLabel}>high-spend days</Text>
         </View>
         <View style={styles.verticalSeparator} />
         <View style={styles.heroStatColumn}>
-          <RiskBadge risk="HIGH" />
-          <Text style={styles.heroStatLabel}>tomorrow</Text>
+          <RiskBadge risk={normalizeRisk(dashboard.prediction_risk)} />
+          <Text style={styles.heroStatLabel}>tomorrow · {Math.round(dashboard.prediction_prob * 100)}%</Text>
         </View>
       </View>
     </View>
@@ -477,17 +606,22 @@ function QuickActions() {
 
 // ─── 7-Day Chart ──────────────────────────────────────────────────────────────
 
-function SevenDayChart({ onSelectDay }: { onSelectDay: (day: DaySpend) => void }) {
+function SevenDayChart({ days, averageDailySpend, onSelectDay }: { days: DaySpend[]; averageDailySpend: number; onSelectDay: (day: DaySpend) => void }) {
   // useNativeDriver: false — height is a layout property, must run on JS thread
-  const animations = useRef(sevenDaySpend.map(() => new Animated.Value(0))).current;
+  const animations = useRef<Animated.Value[]>([]).current;
+  while (animations.length < days.length) animations.push(new Animated.Value(0));
+  if (animations.length > days.length) animations.splice(days.length);
   // Separate value for the opacity pulse — runs on native thread, no layout props
   const todayPulse = useRef(new Animated.Value(1)).current;
 
-  const maxSpend  = Math.max(...sevenDaySpend.map((d) => d.total), dailyLimit);
-  const weekTotal = sevenDaySpend.reduce((sum, d) => sum + d.total, 0);
-  const limitTop  = 100 - (dailyLimit / maxSpend) * 100;
+  const chartLimit = Math.max(averageDailySpend, ...days.map((d) => d.limit), 1);
+  const maxSpend  = Math.max(...days.map((d) => d.total), chartLimit);
+  const weekTotal = days.reduce((sum, d) => sum + d.total, 0);
+  const limitTop  = 100 - (chartLimit / maxSpend) * 100;
+  const todayIso = new Date().toISOString().slice(0, 10);
 
   useEffect(() => {
+    animations.forEach((animation) => animation.setValue(0));
     // JS-driver stagger for bar heights
     Animated.stagger(
       50,
@@ -510,7 +644,7 @@ function SevenDayChart({ onSelectDay }: { onSelectDay: (day: DaySpend) => void }
     );
     loop.start();
     return () => loop.stop();
-  }, [animations, todayPulse]);
+  }, [animations, days, todayPulse]);
 
   return (
     <View style={styles.chartSection}>
@@ -521,13 +655,11 @@ function SevenDayChart({ onSelectDay }: { onSelectDay: (day: DaySpend) => void }
       <View style={styles.chartCard}>
         {/* Threshold line */}
         <View style={[styles.thresholdLine, { top: `${limitTop}%` as any }]} />
-        <Text style={[styles.thresholdLabel, { top: `${Math.max(limitTop - 6, 0)}%` as any }]}>
-          daily limit
-        </Text>
+        <Text style={[styles.thresholdLabel, { top: `${Math.max(limitTop - 6, 0)}%` as any }]}>avg daily</Text>
 
-        {sevenDaySpend.map((day, index) => {
-          const isHigh  = day.total > day.limit;
-          const isToday = day.date === '5 Jun';
+        {days.map((day, index) => {
+          const isHigh  = day.risk === 'HIGH';
+          const isToday = day.isoDate === todayIso;
 
           // JS-driver: animates height (layout property — cannot use native driver)
           const animatedHeight = animations[index].interpolate({
@@ -535,10 +667,6 @@ function SevenDayChart({ onSelectDay }: { onSelectDay: (day: DaySpend) => void }
             outputRange: [0, 86 * (day.total / maxSpend)],
           });
 
-          // The bar: one Animated.View per driver concern.
-          // Outer handles opacity (native driver) — only for today's bar.
-          // Inner handles height (JS driver) — always.
-          // They are separate nodes so RN never sees mixed drivers on one value.
           const bar = isToday ? (
             <Animated.View style={{ opacity: todayPulse }}>
               <Animated.View
@@ -560,7 +688,7 @@ function SevenDayChart({ onSelectDay }: { onSelectDay: (day: DaySpend) => void }
           );
 
           return (
-            <PressScale key={day.day} style={styles.chartColumn} onPress={() => onSelectDay(day)}>
+            <PressScale key={day.isoDate} style={styles.chartColumn} onPress={() => onSelectDay(day)}>
               <View style={styles.barSlot}>{bar}</View>
               <Text style={[styles.chartDayLabel, isToday && styles.chartDayLabelToday]}>
                 {day.day}
@@ -575,9 +703,12 @@ function SevenDayChart({ onSelectDay }: { onSelectDay: (day: DaySpend) => void }
 
 // ─── Spend Health Strip ───────────────────────────────────────────────────────
 
-function SpendHealthStrip() {
-  const paceStatus    = computePaceStatus();
-  const lowSpendStreak = 4;
+function SpendHealthStrip({ dashboard, summary }: { dashboard: DashboardResponse; summary?: SummaryResponse }) {
+  const paceStatus = normalizePace(dashboard.spend_health.pace);
+  const today = new Date();
+  const daysElapsed = today.getDate();
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const budgetText = summary?.budget_limit ? `₦${formatNaira(summary.budget_limit)} budget` : 'budget not set';
 
   const paceColor = {
     Ahead:      MonikeColors.signalRed,
@@ -601,7 +732,7 @@ function SpendHealthStrip() {
           <Text style={[styles.healthValue, { color: paceColor }]}>{paceStatus}</Text>
         </View>
         <Text style={styles.healthMonoSubtext}>
-          Day {daysElapsed} of {daysInMonth}, ₦{formatNaira(monthlyBudget)} budget
+          Day {daysElapsed} of {daysInMonth}, {budgetText}
         </Text>
       </View>
 
@@ -610,11 +741,11 @@ function SpendHealthStrip() {
       {/* STREAK */}
       <View style={styles.healthBlock}>
         <Text style={styles.healthLabel}>STREAK</Text>
-        <Text style={styles.streakValue}>{lowSpendStreak} days</Text>
+        <Text style={styles.streakValue}>{dashboard.spend_health.streak_days} days</Text>
         <Text style={styles.healthSubtext}>under threshold</Text>
         <View style={styles.dotRow}>
           {Array.from({ length: 5 }).map((_, i) => (
-            <View key={i} style={[styles.streakDot, i < lowSpendStreak && styles.streakDotFilled]} />
+            <View key={i} style={[styles.streakDot, i < Math.min(dashboard.spend_health.streak_days, 5) && styles.streakDotFilled]} />
           ))}
         </View>
       </View>
@@ -624,7 +755,7 @@ function SpendHealthStrip() {
       {/* SAVED */}
       <View style={styles.healthBlock}>
         <Text style={styles.healthLabel}>SAVED</Text>
-        <Text style={styles.savedValue}>₦23,500</Text>
+        <Text style={styles.savedValue}>₦{formatNaira(dashboard.spend_health.saved_this_month)}</Text>
         <Text style={styles.healthSubtext}>moved to savings</Text>
       </View>
     </View>
@@ -671,7 +802,7 @@ function TransactionRow({ transaction, showSeparator = true }: { transaction: Tr
 
 // ─── Recent Transactions ──────────────────────────────────────────────────────
 
-function RecentTransactions() {
+function RecentTransactions({ transactions }: { transactions: Transaction[] }) {
   return (
     <View style={styles.recentSection}>
       <View style={styles.sectionHeader}>
@@ -681,13 +812,15 @@ function RecentTransactions() {
         </Pressable>
       </View>
       <View style={styles.transactionsCard}>
-        {recentTransactions.map((t, i) => (
+        {transactions.length > 0 ? transactions.map((t, i) => (
           <TransactionRow
             key={t.id}
             transaction={t}
-            showSeparator={i < recentTransactions.length - 1}
+            showSeparator={i < transactions.length - 1}
           />
-        ))}
+        )) : (
+          <Text style={styles.emptyStateText}>No recent transactions returned by the backend.</Text>
+        )}
       </View>
     </View>
   );
@@ -706,25 +839,13 @@ function DayDetailSheet({
 }) {
   const sheetY  = useRef(new Animated.Value(420)).current;
   const opacity = useRef(new Animated.Value(0)).current;
-
-  const detailTransactions = dayDetailTransactions.filter(
-    (t) => !day || t.date === day.date,
+  const { data: logEntry, error: logError, isLoading: logLoading } = useSWR<LogEntry>(
+    day ? `/log/${day.isoDate}` : null,
+    apiFetch,
   );
 
-  const categoryTotals = useMemo(() => {
-    const totals = new Map<Category, number>();
-    detailTransactions.forEach((t) => {
-      if (t.amount < 0)
-        totals.set(t.category, (totals.get(t.category) ?? 0) + Math.abs(t.amount));
-    });
-    return Array.from(totals.entries()).map(([category, total], index) => ({
-      category,
-      total,
-      color: categoryPalette[index % categoryPalette.length],
-    }));
-  }, [detailTransactions]);
-
-  const totalDebit = categoryTotals.reduce((sum, item) => sum + item.total, 0);
+  const categoryTotals = useMemo(() => logEntryToCategoryTotals(logEntry), [logEntry]);
+  const totalDebit = logEntry?.total_debit ?? day?.total ?? 0;
 
   useEffect(() => {
     if (visible) {
@@ -759,34 +880,51 @@ function DayDetailSheet({
 
         <Text style={styles.sheetDebit}>₦{formatNaira(totalDebit)}</Text>
 
+        {logLoading ? <Text style={styles.sheetStatusText}>Loading daily breakdown…</Text> : null}
+        {logError ? <Text style={styles.sheetStatusText}>No daily log breakdown returned for this date.</Text> : null}
+
         {/* Category breakdown bar */}
-        <View style={styles.breakdownTrack}>
-          {categoryTotals.map((item) => (
-            <View
-              key={item.category}
-              style={[
-                styles.breakdownSegment,
-                { backgroundColor: item.color, flex: item.total, minWidth: 4 },
-              ]}
-            />
-          ))}
-        </View>
-        <View style={styles.breakdownLabels}>
-          {categoryTotals.map((item) => (
-            <Text key={item.category} style={styles.breakdownLabel}>
-              {item.category.split(' ')[0]}
-            </Text>
-          ))}
-        </View>
+        {categoryTotals.length > 0 ? (
+          <>
+            <View style={styles.breakdownTrack}>
+              {categoryTotals.map((item) => (
+                <View
+                  key={item.category}
+                  style={[
+                    styles.breakdownSegment,
+                    { backgroundColor: item.color, flex: item.total, minWidth: 4 },
+                  ]}
+                />
+              ))}
+            </View>
+            <View style={styles.breakdownLabels}>
+              {categoryTotals.map((item) => (
+                <Text key={item.category} style={styles.breakdownLabel}>
+                  {item.category.split(' ')[0]} · ₦{formatNaira(item.total)}
+                </Text>
+              ))}
+            </View>
+          </>
+        ) : null}
 
         <ScrollView style={styles.sheetTransactionList}>
-          {detailTransactions.map((t, i) => (
+          {categoryTotals.length > 0 ? categoryTotals.map((item, index) => (
             <TransactionRow
-              key={t.id}
-              transaction={t}
-              showSeparator={i < detailTransactions.length - 1}
+              key={item.category}
+              transaction={{
+                id: `${day.isoDate}-${item.category}`,
+                description: `${item.category} spend`,
+                category: item.category,
+                date: day.date,
+                day: day.day,
+                time: logEntry?.source ?? 'backend',
+                amount: -item.total,
+              }}
+              showSeparator={index < categoryTotals.length - 1}
             />
-          ))}
+          )) : (
+            <Text style={styles.emptyStateText}>No category-level detail available for this day.</Text>
+          )}
         </ScrollView>
       </Animated.View>
     </Modal>
@@ -795,15 +933,38 @@ function DayDetailSheet({
 
 // ─── Dashboard Screen ─────────────────────────────────────────────────────────
 
-function DashboardScreen() {
+function DashboardScreen({
+  prefetchedDashboard,
+  prefetchedSummary,
+}: {
+  prefetchedDashboard?: DashboardResponse;
+  prefetchedSummary?: SummaryResponse;
+}) {
   const [selectedDay,  setSelectedDay]  = useState<DaySpend | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
   const insets = useSafeAreaInsets();
+
+  // useSWR will return prefetched data immediately if you pass initialData,
+  // or just use the props directly since MonikeHome already fetched them
+  const { data: dashboard, error: dashboardError, isLoading: dashboardLoading } =
+    useSWR<DashboardResponse>('/dashboard', apiFetch);
+  const { data: summary } = useSWR<SummaryResponse>(currentSummaryPath(), apiFetch);
+
+
+  const sevenDaySpend = useMemo(() => dashboard ? dashboardBarsToDays(dashboard) : [], [dashboard]);
+  const recentTransactions = useMemo(() => dashboard ? dashboardTransactionsToRows(dashboard) : [], [dashboard]);
 
   const openDay = useCallback((day: DaySpend) => {
     setSelectedDay(day);
     setSheetVisible(true);
   }, []);
+
+  const resolvedDashboard = dashboard ?? prefetchedDashboard;
+  const resolvedSummary   = summary   ?? prefetchedSummary;
+
+  if (!resolvedDashboard) {
+    return
+  }
 
   return (
     <View style={styles.root}>
@@ -816,11 +977,17 @@ function DashboardScreen() {
           ]}
         >
           <TopBar onSettings={() => {}} />
-          <HeroCard />
-          <QuickActions />
-          <SevenDayChart onSelectDay={openDay} />
-          <SpendHealthStrip />
-          <RecentTransactions />
+          {dashboardLoading ? <Text style={styles.screenStatusText}>Loading dashboard from backend…</Text> : null}
+          {dashboardError ? <Text style={styles.screenStatusText}>Unable to load backend dashboard: {dashboardError.message}</Text> : null}
+          {dashboard ? (
+            <>
+              <HeroCard dashboard={resolvedDashboard} summary={resolvedSummary} />
+              <QuickActions />
+              <SevenDayChart days={sevenDaySpend} averageDailySpend={resolvedDashboard.avg_daily} onSelectDay={openDay} />
+              <SpendHealthStrip dashboard={resolvedDashboard} summary={resolvedSummary} />
+              <RecentTransactions transactions={recentTransactions} />
+            </>
+          ) : null}
         </ScrollView>
       </SafeAreaView>
 
@@ -833,11 +1000,26 @@ function DashboardScreen() {
 // ─── Root Export ──────────────────────────────────────────────────────────────
 
 export default function MonikeHome() {
-  const [loaded, setLoaded] = useState(false);
+  const { data: dashboard, isLoading: dashboardLoading } = useSWR<DashboardResponse>('/dashboard', apiFetch);
+  const { data: summary } = useSWR<SummaryResponse>(currentSummaryPath(), apiFetch);
 
-  if (!loaded) return <SplashScreen onComplete={() => setLoaded(true)} />;
-  return <DashboardScreen />;
+  const dataReady = !dashboardLoading && !!dashboard;
+
+  // Module-level guard — once true, never show splash again this app session
+  const [showSplash, setShowSplash] = useState(!splashAlreadyShown);
+
+  const handleSplashComplete = useCallback(() => {
+    splashAlreadyShown = true;
+    setShowSplash(false);
+  }, []);
+
+  if (showSplash) {
+    return <SplashScreen onComplete={handleSplashComplete} dataReady={dataReady} />;
+  }
+
+  return <DashboardScreen prefetchedDashboard={dashboard} prefetchedSummary={summary} />;
 }
+
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
@@ -926,6 +1108,17 @@ const styles = StyleSheet.create({
   root:    { flex: 1, backgroundColor: MonikeColors.bgVoid },
   safeArea:{ flex: 1 },
   content: { paddingHorizontal: ScreenPadding, paddingTop: 4, gap: 16 },
+  screenStatusText: {
+    color: MonikeColors.inkSecondary,
+    fontFamily: Fonts.sans,
+    fontSize: 12,
+    lineHeight: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: MonikeColors.inkGhost,
+    borderRadius: CardRadius,
+    backgroundColor: MonikeColors.bgSurface,
+  },
 
   // ── Top Bar ──────────────────────────────────────────────────────────────────
   topBar: {
@@ -1159,6 +1352,13 @@ const styles = StyleSheet.create({
     borderRadius: CardRadius,
     overflow: 'hidden',
   },
+  emptyStateText: {
+    color: MonikeColors.inkMuted,
+    fontFamily: Fonts.sans,
+    fontSize: 12,
+    lineHeight: 18,
+    padding: 14,
+  },
   transactionRow: {
     minHeight: 60,
     flexDirection: 'row',
@@ -1223,6 +1423,7 @@ const styles = StyleSheet.create({
   sheetTitle:     { color: MonikeColors.inkPrimary,   fontFamily: Fonts.heading, fontSize: 18, fontWeight: '700' },
   sheetSubtitle:  { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans,    fontSize: 12, marginTop: 2 },
   sheetDebit:     { color: MonikeColors.signalRed,    fontFamily: Fonts.mono,    fontSize: 32, fontWeight: '700', marginTop: 10 },
+  sheetStatusText:{ color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 12, marginTop: 8 },
   breakdownTrack: {
     height: 10, borderRadius: 5,
     overflow: 'hidden',
