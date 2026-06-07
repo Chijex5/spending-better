@@ -83,15 +83,6 @@ export type CategoriesResponse = {
   items: CategoryItem[];
 };
 
-export type UploadResult = {
-  total_rows_in_file: number;
-  new_days_inserted: number;
-  days_updated: number;
-  duplicate_transactions_skipped: number;
-  date_range_start: string;   // "2026-01-01"
-  date_range_end: string;     // "2026-06-05"
-  high_spend_days_detected: number;
-};
  
 // ─── API function ─────────────────────────────────────────────────────────────
  
@@ -109,29 +100,6 @@ export type UploadResult = {
  * @param mimeType — e.g. "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
  */
 
-export async function uploadStatement(
-  uri: string,
-  filename: string,
-  mimeType: string,
-): Promise<UploadResult> {
-  const file = new File(uri);   // wrap the DocumentPicker URI directly
-
-  const result = await file.upload(`${API_BASE_URL}/log/upload`, {
-    uploadType: UploadType.MULTIPART,
-    fieldName: 'file',
-    mimeType,
-    httpMethod: 'POST',
-  });
-
-  console.log('UPLOAD STATUS:', result.status);
-
-  if (result.status !== 200) {
-    throw new Error(result.body || `Upload failed with status ${result.status}`);
-  }
-
-  return JSON.parse(result.body) as UploadResult;
-}
-
 // ─── Period param helper ─────────────────────────────────────────────────────
 // Maps the UI Period string → the backend query param value
 export type ApiPeriod = 'month' | '3months' | 'all';
@@ -141,6 +109,115 @@ export const periodToApiParam: Record<string, ApiPeriod> = {
   '3 Months': '3months',
   'All Time': 'all',
 };
+
+// ─── Prediction types ─────────────────────────────────────────────────────────
+
+export type FeatureImportance = {
+  feature_key: string;
+  label: string;
+  importance: number;       // 0.0 – 1.0
+  current_value: string;
+};
+
+export type SpendVelocity = {
+  last_7_total: number;
+  prev_7_total: number;
+  pct_change: number;
+  direction: 'up' | 'down' | 'flat';
+  narrative: string;
+};
+
+export type WeekOutlookDay = {
+  date: string;
+  day_label: string;
+  risk: string;
+  avg_spend: number;    // NEW — historical avg for that day-of-week
+  probability: number;  // NEW — 0-100, drives the bar height in OutlookCell
+};
+ 
+export type PredictionResponse = {
+  target_date: string;
+  day_name: string;
+  probability: number;          // 0.0 – 1.0
+  risk_level: string;
+  rolling_7d_avg: number;
+  rolling_14d_avg: number;
+  top_features: FeatureImportance[];
+  week_outlook: WeekOutlookDay[];
+ 
+  // ── new ──
+  velocity: SpendVelocity;
+  advisor_tips: string[];       // server-generated, number-aware
+  prev_day_spend: number;
+  high_spend_threshold: number;
+};
+
+export async function predictionFetcher(_key: string): Promise<PredictionResponse> {
+  return apiFetch<PredictionResponse>('/prediction');
+}
+
+// ─── Explore / Monthly Summary types ─────────────────────────────────────────
+
+export type ExploreMonth = {
+  year: number;
+  month: number;
+  label: string;        // "JUNE 2026"
+};
+
+export type ExploreMonthsResponse = {
+  months: ExploreMonth[];
+};
+
+export type WeekBreakdown = {
+  week: number;
+  range: string;
+  spend: number;
+  txns: number;
+};
+
+export type DailyCell = {
+  day: number;
+  date: string;         // "5 Jun"
+  total: number;
+  is_today: boolean;
+  risk: string;         // "LOW" | "MEDIUM" | "HIGH"
+};
+
+export type DayTransaction = {
+  id: string;
+  description: string;
+  category: string;
+  date: string;         // "5 Jun"
+  day: string;          // "Fri"
+  time: string;
+  amount: number;       // negative = debit, positive = credit
+};
+
+export type ExploreSummaryResponse = {
+  year: number;
+  month: number;
+  month_label: string;
+  real_spend: number;
+  previous_spend: number;
+  credits: number;
+  budget: number;
+  spend_to_date: number;
+  daily_pace_reference: number;
+  weekly: WeekBreakdown[];
+  daily: DailyCell[];
+  day_transactions: DayTransaction[];
+  previous7: number;
+  last7: number;
+};
+
+export async function exploreMonthsFetcher(_key: string): Promise<ExploreMonthsResponse> {
+  return apiFetch<ExploreMonthsResponse>('/explore/months');
+}
+
+export function exploreSummaryFetcher(year: number, month: number) {
+  return (_key: string): Promise<ExploreSummaryResponse> =>
+    apiFetch<ExploreSummaryResponse>(`/explore/summary?year=${year}&month=${month}`);
+}
 
 export type CategoryTransaction = {
   trans_date: string;       // "2026-06-05"
@@ -167,4 +244,66 @@ export async function apiFetch<T>(path: string): Promise<T> {
   }
 
   return response.json() as Promise<T>;
+}
+
+export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`POST ${path} failed with ${response.status}${detail ? `: ${detail}` : ''}`);
+  }
+
+  return response.json() as Promise<T>;
+}
+
+// ─── Replace the uploadStatement function in src/services/api.ts ─────────────
+//
+// The POST now returns { job_id } — the full result arrives over WebSocket.
+// Also add the UploadJobStarted type.
+
+export type UploadJobStarted = {
+  job_id: string;
+};
+
+// UploadResult stays the same — it's what the WS 'complete' event carries.
+export type UploadResult = {
+  total_rows_in_file: number;
+  new_days_inserted: number;
+  days_updated: number;
+  duplicate_transactions_skipped: number;
+  date_range_start: string;
+  date_range_end: string;
+  high_spend_days_detected: number;
+};
+
+/**
+ * POST /log/upload
+ *
+ * Sends the file and gets back a job_id immediately.
+ * Connect to ws(s)://…/ws/upload/{job_id} for live progress.
+ */
+export async function uploadStatement(
+  uri: string,
+  filename: string,
+  mimeType: string,
+): Promise<UploadJobStarted> {
+  const file = new File(uri);
+
+  const result = await file.upload(`${API_BASE_URL}/log/upload`, {
+    uploadType: UploadType.MULTIPART,
+    fieldName: 'file',
+    mimeType,
+    httpMethod: 'POST',
+  });
+
+  if (result.status !== 200) {
+    throw new Error(result.body || `Upload failed with status ${result.status}`);
+  }
+
+  return JSON.parse(result.body) as UploadJobStarted;
 }

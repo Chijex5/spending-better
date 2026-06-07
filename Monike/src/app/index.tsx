@@ -281,36 +281,79 @@ function PressScale({
 }
 
 // ─── Splash Screen ────────────────────────────────────────────────────────────
-
-function SplashScreen({ onComplete }: { onComplete: () => void }) {
-  const logoOpacity   = useRef(new Animated.Value(0)).current;
-  const logoScale     = useRef(new Animated.Value(0.95)).current;
-  const taglineOpacity= useRef(new Animated.Value(0)).current;
-  const taglineY      = useRef(new Animated.Value(4)).current;
-  const progress      = useRef(new Animated.Value(0)).current;
-  const shimmer       = useRef(new Animated.Value(0)).current;
-  const statusOpacity = useRef(new Animated.Value(1)).current;
-  const exitOpacity   = useRef(new Animated.Value(1)).current;
-  const exitScale     = useRef(new Animated.Value(1)).current;
-  const halo          = useRef(new Animated.Value(0)).current;
+let splashAlreadyShown = false;
+function SplashScreen({ onComplete, dataReady }: { onComplete: () => void; dataReady: boolean }) {
+  const logoOpacity    = useRef(new Animated.Value(0)).current;
+  const logoScale      = useRef(new Animated.Value(0.95)).current;
+  const taglineOpacity = useRef(new Animated.Value(0)).current;
+  const taglineY       = useRef(new Animated.Value(4)).current;
+  const progress       = useRef(new Animated.Value(0)).current;
+  const shimmer        = useRef(new Animated.Value(0)).current;
+  const statusOpacity  = useRef(new Animated.Value(1)).current;
+  const exitOpacity    = useRef(new Animated.Value(1)).current;
+  const exitScale      = useRef(new Animated.Value(1)).current;
+  const halo           = useRef(new Animated.Value(0)).current;
   const [statusIndex, setStatusIndex] = useState(0);
+
+  // Track whether the minimum animation time has elapsed
+  const minTimeElapsed = useRef(false);
+  // Track whether we've already triggered exit (avoid double-firing)
+  const exitTriggered = useRef(false);
+
+  const triggerExit = useCallback(() => {
+    if (exitTriggered.current) return;
+    exitTriggered.current = true;
+    // Snap progress to 100% then exit
+    Animated.timing(progress, {
+      toValue: 1,
+      duration: 200,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: false,
+    }).start(() => {
+      Animated.parallel([
+        Animated.timing(exitOpacity, { toValue: 0, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(exitScale,   { toValue: 1.04, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      ]).start(onComplete);
+    });
+  }, [exitOpacity, exitScale, onComplete, progress]);
+
+  // When dataReady flips true, check if min time has passed
+  useEffect(() => {
+    if (dataReady && minTimeElapsed.current) {
+      triggerExit();
+    }
+  }, [dataReady, triggerExit]);
 
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
+
     const haloLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(halo, { toValue: 1, duration: 1500, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
         Animated.timing(halo, { toValue: 0, duration: 1500, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
       ]),
     );
-    const progressAnimation = Animated.timing(progress, { toValue: 1, duration: 1500, easing: Easing.linear, useNativeDriver: false });
-    const shimmerAnimation  = Animated.timing(shimmer, { toValue: 1, duration: 1500, easing: Easing.linear, useNativeDriver: true });
+
+    // Progress bar animates to 0.88 (88%) over 1400ms — holds there waiting for data
+    const progressAnimation = Animated.timing(progress, {
+      toValue: 0.88,
+      duration: 1400,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    });
+    const shimmerAnimation = Animated.timing(shimmer, {
+      toValue: 1,
+      duration: 1500,
+      easing: Easing.linear,
+      useNativeDriver: true,
+    });
 
     haloLoop.start();
     Animated.parallel([
       Animated.timing(logoOpacity, { toValue: 1, duration: 400, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
       Animated.timing(logoScale,   { toValue: 1, duration: 400, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
     ]).start();
+
     timers.push(
       setTimeout(() => {
         Animated.parallel([
@@ -319,8 +362,11 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
         ]).start();
       }, 200),
     );
+
     progressAnimation.start();
     shimmerAnimation.start();
+
+    // Cycle status text
     [1, 2, 3].forEach((nextIndex) => {
       timers.push(
         setTimeout(() => {
@@ -331,13 +377,17 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
         }, ([500, 1000, 1400] as const)[nextIndex - 1]),
       );
     });
+
+    // Minimum display time: 1500ms
     timers.push(
       setTimeout(() => {
-        Animated.parallel([
-          Animated.timing(exitOpacity, { toValue: 0, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-          Animated.timing(exitScale,   { toValue: 1.04, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-        ]).start(onComplete);
-      }, 1800),
+        minTimeElapsed.current = true;
+        // If data already arrived while we were animating, exit now
+        if (dataReady) {
+          triggerExit();
+        }
+        // Otherwise we hold at 88% until dataReady flips true (handled in the useEffect above)
+      }, 1500),
     );
 
     return () => {
@@ -346,7 +396,8 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
       progressAnimation.stop();
       shimmerAnimation.stop();
     };
-  }, [exitOpacity, exitScale, halo, logoOpacity, logoScale, onComplete, progress, shimmer, statusOpacity, taglineOpacity, taglineY]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally empty — runs once on mount
 
   return (
     <View style={styles.splashRoot}>
@@ -882,12 +933,23 @@ function DayDetailSheet({
 
 // ─── Dashboard Screen ─────────────────────────────────────────────────────────
 
-function DashboardScreen() {
+function DashboardScreen({
+  prefetchedDashboard,
+  prefetchedSummary,
+}: {
+  prefetchedDashboard?: DashboardResponse;
+  prefetchedSummary?: SummaryResponse;
+}) {
   const [selectedDay,  setSelectedDay]  = useState<DaySpend | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
   const insets = useSafeAreaInsets();
-  const { data: dashboard, error: dashboardError, isLoading: dashboardLoading } = useSWR<DashboardResponse>('/dashboard', apiFetch);
+
+  // useSWR will return prefetched data immediately if you pass initialData,
+  // or just use the props directly since MonikeHome already fetched them
+  const { data: dashboard, error: dashboardError, isLoading: dashboardLoading } =
+    useSWR<DashboardResponse>('/dashboard', apiFetch);
   const { data: summary } = useSWR<SummaryResponse>(currentSummaryPath(), apiFetch);
+
 
   const sevenDaySpend = useMemo(() => dashboard ? dashboardBarsToDays(dashboard) : [], [dashboard]);
   const recentTransactions = useMemo(() => dashboard ? dashboardTransactionsToRows(dashboard) : [], [dashboard]);
@@ -896,6 +958,13 @@ function DashboardScreen() {
     setSelectedDay(day);
     setSheetVisible(true);
   }, []);
+
+  const resolvedDashboard = dashboard ?? prefetchedDashboard;
+  const resolvedSummary   = summary   ?? prefetchedSummary;
+
+  if (!resolvedDashboard) {
+    return
+  }
 
   return (
     <View style={styles.root}>
@@ -912,10 +981,10 @@ function DashboardScreen() {
           {dashboardError ? <Text style={styles.screenStatusText}>Unable to load backend dashboard: {dashboardError.message}</Text> : null}
           {dashboard ? (
             <>
-              <HeroCard dashboard={dashboard} summary={summary} />
+              <HeroCard dashboard={resolvedDashboard} summary={resolvedSummary} />
               <QuickActions />
-              <SevenDayChart days={sevenDaySpend} averageDailySpend={dashboard.avg_daily} onSelectDay={openDay} />
-              <SpendHealthStrip dashboard={dashboard} summary={summary} />
+              <SevenDayChart days={sevenDaySpend} averageDailySpend={resolvedDashboard.avg_daily} onSelectDay={openDay} />
+              <SpendHealthStrip dashboard={resolvedDashboard} summary={resolvedSummary} />
               <RecentTransactions transactions={recentTransactions} />
             </>
           ) : null}
@@ -931,11 +1000,26 @@ function DashboardScreen() {
 // ─── Root Export ──────────────────────────────────────────────────────────────
 
 export default function MonikeHome() {
-  const [loaded, setLoaded] = useState(false);
+  const { data: dashboard, isLoading: dashboardLoading } = useSWR<DashboardResponse>('/dashboard', apiFetch);
+  const { data: summary } = useSWR<SummaryResponse>(currentSummaryPath(), apiFetch);
 
-  if (!loaded) return <SplashScreen onComplete={() => setLoaded(true)} />;
-  return <DashboardScreen />;
+  const dataReady = !dashboardLoading && !!dashboard;
+
+  // Module-level guard — once true, never show splash again this app session
+  const [showSplash, setShowSplash] = useState(!splashAlreadyShown);
+
+  const handleSplashComplete = useCallback(() => {
+    splashAlreadyShown = true;
+    setShowSplash(false);
+  }, []);
+
+  if (showSplash) {
+    return <SplashScreen onComplete={handleSplashComplete} dataReady={dataReady} />;
+  }
+
+  return <DashboardScreen prefetchedDashboard={dashboard} prefetchedSummary={summary} />;
 }
+
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 

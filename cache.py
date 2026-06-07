@@ -35,3 +35,7 @@ def invalidate(*keys: str) -> None:
     """Remove given keys from _cache. Silently skip missing."""
     for key in keys:
         _cache.pop(key, None)
+
+def invalidate_all() -> None:
+    """Clear entire cache."""
+    _cache.clear()

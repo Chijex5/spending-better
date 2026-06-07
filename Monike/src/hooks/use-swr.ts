@@ -18,12 +18,23 @@ type UseSWRResult<T> = {
 
 const cache = new Map<string, CacheEntry<unknown>>();
 
+// Global revalidation listeners — each mounted useSWR instance registers here
+const revalidateListeners = new Map<string, Set<() => void>>();
+
 function readCache<T>(key: string): CacheEntry<T> {
   const entry = cache.get(key) as CacheEntry<T> | undefined;
   if (entry) return entry;
   const fresh: CacheEntry<T> = {};
   cache.set(key, fresh as CacheEntry<unknown>);
   return fresh;
+}
+
+/** Call after /cache/clear — wipes in-memory cache and refetches every active key */
+export function mutateAll(): void {
+  cache.clear();
+  revalidateListeners.forEach((listeners) => {
+    listeners.forEach((fn) => fn());
+  });
 }
 
 export function useSWR<T>(key: string | null, fetcher: (key: string) => Promise<T>): UseSWRResult<T> {
@@ -68,6 +79,22 @@ export function useSWR<T>(key: string | null, fetcher: (key: string) => Promise<
       setIsValidating(false);
     }
   }, [fetcher, key]);
+
+  // Register/unregister this instance in the global listener map
+  useEffect(() => {
+    if (!key) return;
+
+    if (!revalidateListeners.has(key)) {
+      revalidateListeners.set(key, new Set());
+    }
+    const listeners = revalidateListeners.get(key)!;
+    listeners.add(revalidate);
+
+    return () => {
+      listeners.delete(revalidate);
+      if (listeners.size === 0) revalidateListeners.delete(key);
+    };
+  }, [key, revalidate]);
 
   useEffect(() => {
     if (!key) {

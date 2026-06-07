@@ -157,7 +157,7 @@ def _add_categories(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  SECTION 3 — RECIPIENT EXTRACTION
+#  SECTION 3 — .RECIPIENT EXTRACTION
 #  For P2P transfers, pull the recipient name from the description.
 #  OPay format: "Transfer to DAVID CHIMEZIE OGBONNA | OPay | 8023456789"
 # ─────────────────────────────────────────────────────────────────────────────
