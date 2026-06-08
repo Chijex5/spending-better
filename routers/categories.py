@@ -19,6 +19,17 @@ router = APIRouter()
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
+COMBINED_TRANSACTIONS = """
+    (
+        SELECT id, trans_date, description, category, debit, credit
+        FROM transactions
+        UNION ALL
+        SELECT id, trans_date, description, category, debit, credit
+        FROM statement_transactions
+    ) AS txns
+"""
+
+
 def _period_label(period: str) -> str:
     today = date.today()
     if period == "month":
@@ -51,7 +62,7 @@ async def _fetch_categories(period: str) -> CategoriesResponse:
                COALESCE(SUM(debit), 0)  AS total,
                COUNT(*)                  AS transaction_count,
                COALESCE(AVG(debit), 0)  AS avg_per_transaction
-        FROM transactions
+        FROM {COMBINED_TRANSACTIONS}
         WHERE debit > 0
           AND category NOT IN ('Savings', 'Bank Charges')
           {clause}
@@ -98,11 +109,10 @@ async def _fetch_category_transactions(
 ) -> CategoryTransactionsResponse:
     clause = _period_clause(period)
 
-    # Validate the category exists for this period first (cheap COUNT query)
     check = await fetch_rows(
         f"""
         SELECT COUNT(*) AS cnt
-        FROM transactions
+        FROM {COMBINED_TRANSACTIONS}
         WHERE debit > 0
           AND LOWER(category) = LOWER($1)
           {clause}
@@ -121,7 +131,7 @@ async def _fetch_category_transactions(
                description,
                COALESCE(debit,   0)        AS debit,
                COALESCE(credit,  0)        AS credit
-        FROM transactions
+        FROM {COMBINED_TRANSACTIONS}
         WHERE debit > 0
           AND LOWER(category) = LOWER($1)
           {clause}
@@ -159,14 +169,11 @@ async def get_category_transactions(
     name: str,
     period: str = Query("month", pattern="^(month|3months|all)$"),
 ) -> CategoryTransactionsResponse:
-    # URL-decode in case category name has spaces/special chars
-    # e.g. "Food%20%26%20Dining" → "Food & Dining"
     decoded_name = unquote(name)
 
     if period not in {"month", "3months", "all"}:
         raise HTTPException(status_code=400, detail="Invalid period")
 
-    # Shorter TTL than summary data — transactions feel "live"
     cache_key = f"category_txns_{decoded_name}_{period}"
     return await get_cached(
         cache_key,

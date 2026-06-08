@@ -16,14 +16,19 @@ router = APIRouter()
 
 async def _fetch_month_totals() -> tuple[float, float, str]:
     row = await fetch_row(
-        """
+        f"""
+        WITH all_txns AS (
+            SELECT trans_date, debit, category FROM transactions
+            UNION ALL
+            SELECT trans_date, debit, category FROM statement_transactions
+        )
         SELECT
           COALESCE(SUM(debit) FILTER (WHERE DATE_TRUNC('month', trans_date) = DATE_TRUNC('month', NOW())), 0) AS current_total,
           COALESCE(SUM(debit) FILTER (
             WHERE DATE_TRUNC('month', trans_date) = DATE_TRUNC('month', NOW() - INTERVAL '1 month')
           ), 0) AS previous_total,
           TO_CHAR(NOW(), 'FMMonth YYYY') AS month_label
-        FROM transactions
+        FROM all_txns
         WHERE category NOT IN ('Savings', 'Bank Charges')
         """
     )
@@ -31,6 +36,30 @@ async def _fetch_month_totals() -> tuple[float, float, str]:
         return 0.0, 0.0, date.today().strftime("%B %Y").upper()
     return as_float(row["current_total"]), as_float(row["previous_total"]), str(row["month_label"]).upper()
 
+
+async def _fetch_recent_transactions() -> list[RecentTransaction]:
+    rows = await fetch_rows(
+        """
+        SELECT trans_date, description, category, debit, credit
+        FROM (
+            SELECT trans_date, description, category, debit, credit FROM transactions
+            UNION ALL
+            SELECT trans_date, description, category, debit, credit FROM statement_transactions
+        ) AS txns
+        ORDER BY trans_date DESC
+        LIMIT 5
+        """
+    )
+    return [
+        RecentTransaction(
+            trans_date=row["trans_date"].isoformat(timespec="seconds") if hasattr(row["trans_date"], "isoformat") else str(row["trans_date"]),
+            description=truncate_description(str(row["description"] or "")),
+            category=str(row["category"] or ""),
+            debit=as_float(row["debit"]),
+            credit=as_float(row["credit"]),
+        )
+        for row in rows
+    ]
 
 async def _fetch_daily_stats() -> tuple[float, int]:
     row = await fetch_row(
@@ -68,27 +97,6 @@ async def _fetch_seven_day_bars() -> list[DailyBar]:
         for row in rows
     ]
     return sorted(bars, key=lambda bar: bar.date)
-
-
-async def _fetch_recent_transactions() -> list[RecentTransaction]:
-    rows = await fetch_rows(
-        """
-        SELECT trans_date, description, category, debit, credit
-        FROM transactions
-        ORDER BY trans_date DESC
-        LIMIT 5
-        """
-    )
-    return [
-        RecentTransaction(
-            trans_date=row["trans_date"].isoformat(timespec="seconds") if hasattr(row["trans_date"], "isoformat") else str(row["trans_date"]),
-            description=truncate_description(str(row["description"] or "")),
-            category=str(row["category"] or ""),
-            debit=as_float(row["debit"]),
-            credit=as_float(row["credit"]),
-        )
-        for row in rows
-    ]
 
 
 async def _fetch_streak_and_saved() -> dict:

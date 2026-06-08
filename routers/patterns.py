@@ -69,11 +69,19 @@ async def _fetch_monthly_points() -> list[MonthlyPoint]:
 async def _fetch_heatmap() -> list[HeatmapCell]:
     rows = await fetch_rows(
         """
+        -- Heatmap requires hour-level granularity.
+        -- statement_transactions stores trans_date as DATE (no time component),
+        -- so only transactions (which has TIMESTAMP) contributes here.
         SELECT EXTRACT(hour FROM trans_date)::int AS hour,
-               EXTRACT(dow FROM trans_date)::int AS dow_pg,
+               EXTRACT(dow  FROM trans_date)::int AS dow_pg,
                COUNT(*) AS transaction_count
-        FROM transactions
-        WHERE debit > 0
+        FROM (
+            SELECT trans_date FROM transactions WHERE debit > 0
+            UNION ALL
+            SELECT trans_date FROM statement_transactions
+            WHERE debit > 0
+              AND trans_date::text ~ '\\d{2}:\\d{2}:\\d{2}'
+        ) AS txns
         GROUP BY hour, dow_pg
         ORDER BY dow_pg ASC, hour ASC
         """
