@@ -10,6 +10,7 @@ export const MonikeColors = {
   bgStripe: '#0D1013',
   inkPrimary: '#E8EBF0',
   inkSecondary: '#8B939E',
+  grey:'#242424',
   inkMuted: '#4A5260',
   inkGhost: '#2A3040',
   accentPulse: '#00E676',

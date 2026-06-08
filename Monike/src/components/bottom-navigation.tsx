@@ -2,37 +2,37 @@ import { useRouter } from 'expo-router';
 import { useEffect, useRef, type ReactNode } from 'react';
 import {
   Animated, Easing, Pressable, StyleSheet,
-  Text, View, useWindowDimensions,
+  View,
   type StyleProp, type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Activity, Telescope, House, PieChart, Plus, ShieldCheck } from 'lucide-react-native';
-import { Fonts, MonikeColors } from '@/constants/theme';
+import { House, ArrowLeftRight, TelescopeIcon } from 'lucide-react-native';
+import { MonikeColors } from '@/constants/theme';
 
 type RouteName = 'home' | 'explore' | 'categories' | 'patterns' | 'forecast' | 'log';
 type Route = '/' | '/explore' | '/categories' | '/patterns' | '/forecast' | '/log';
+
 type NavigationTab = {
   key: RouteName;
-  label: string;
   route: Route;
   Icon: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
   special?: boolean;
 };
 
+// 3 tabs matching the reference image
 const tabs: NavigationTab[] = [
-  { key: 'home',       label: 'Home',       route: '/',           Icon: House },
-  { key: 'explore',    label: 'Explore',    route: '/explore',    Icon: Telescope },
-
-  { key: 'log',        label: 'Log',        route: '/log',        Icon: Plus, special: true },
-  { key: 'categories', label: 'Categories', route: '/categories', Icon: PieChart },
-
-  { key: 'forecast',   label: 'Risk',       route: '/forecast',   Icon: ShieldCheck },
-
+  { key: 'home',    route: '/',        Icon: House },
+  { key: 'log',     route: '/log',     Icon: ArrowLeftRight, special: true },
+  { key: 'explore', route: '/explore', Icon: TelescopeIcon },
 ];
 
-// ─── PressScale ──────────────────────────────────────────────────
+// ─── PressScale ───────────────────────────────────────────────────────────────
 function PressScale({
-  children, disabled, pressableStyle, innerStyle, onPress,
+  children,
+  disabled,
+  pressableStyle,
+  innerStyle,
+  onPress,
 }: {
   children: ReactNode;
   disabled?: boolean;
@@ -45,15 +45,20 @@ function PressScale({
   const pressIn = () => {
     if (disabled) return;
     Animated.timing(scale, {
-      toValue: 0.88, duration: 70,
-      easing: Easing.out(Easing.quad), useNativeDriver: true,
+      toValue: 0.84,
+      duration: 70,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
     }).start();
   };
 
   const pressOut = () => {
     if (disabled) return;
     Animated.spring(scale, {
-      toValue: 1, speed: 24, bounciness: 8, useNativeDriver: true,
+      toValue: 1,
+      speed: 26,
+      bounciness: 10,
+      useNativeDriver: true,
     }).start();
   };
 
@@ -63,7 +68,7 @@ function PressScale({
       onPress={onPress}
       onPressIn={pressIn}
       onPressOut={pressOut}
-      style={pressableStyle}          // ← flex: 1 lives HERE on the Pressable
+      style={pressableStyle}
     >
       <Animated.View style={[innerStyle, { transform: [{ scale }] }]}>
         {children}
@@ -72,142 +77,143 @@ function PressScale({
   );
 }
 
-// ─── BottomNavigation ─────────────────────────────────────────────
+// ─── BottomNavigation ─────────────────────────────────────────────────────────
 export function BottomNavigation({ activeRoute }: { activeRoute: RouteName }) {
   const insets = useSafeAreaInsets();
-  const router  = useRouter();
-  const { width } = useWindowDimensions();
+  const router = useRouter();
 
-  const tabWidth    = width / tabs.length;
-  const activeIndex = Math.max(0, tabs.findIndex(t => t.key === activeRoute));
-  const PILL_W      = 24;
-
-  const indicatorX  = useRef(
-    new Animated.Value(activeIndex * tabWidth + (tabWidth - PILL_W) / 2)
-  ).current;
+  // Animated opacity for active indicator glow
+  const glowAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.timing(indicatorX, {
-      toValue: activeIndex * tabWidth + (tabWidth - PILL_W) / 2,
-      duration: 320,
-      easing: Easing.bezier(0.34, 1.56, 0.64, 1),
-      useNativeDriver: true,
-    }).start();
-  }, [activeIndex, tabWidth]);
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowAnim, { toValue: 1, duration: 1800, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(glowAnim, { toValue: 0, duration: 1800, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      ])
+    ).start();
+  }, [glowAnim]);
+
+  const glowOpacity = glowAnim.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] });
 
   return (
-    <View style={[styles.navbar, { height: 68 + insets.bottom, paddingBottom: insets.bottom }]}>
+    <View style={[styles.wrapper, { paddingBottom: insets.bottom + 12 }]}>
+      <View style={styles.pill}>
+        {tabs.map(({ key, route, Icon, special }) => {
+          const active = key === activeRoute;
+          const isSpecialActive = special && active;
 
-      {/* Sliding pill */}
-      <Animated.View style={[styles.pill, { transform: [{ translateX: indicatorX }] }]} />
+          // Icon color
+          const iconColor = active
+            ? special
+              ? '#FFFFFF'
+              : MonikeColors.inkPrimary
+            : MonikeColors.inkMuted;
 
-      {tabs.map(({ key, label, route, Icon, special }) => {
-        const active = key === activeRoute;
-        const iconColor = active || special ? MonikeColors.accentPulse : MonikeColors.inkMuted;
-
-        return (
-          <PressScale
-            key={key}
-            disabled={active}
-            pressableStyle={styles.tabPressable}
-            innerStyle={styles.tabInner}
-            onPress={() => router.navigate(route)}
-          >
-            {/* Icon container */}
-            <View style={[styles.iconWrap, active && styles.iconWrapActive, special && styles.iconWrapSpecial]}>
-              {special && <View style={styles.logRing} />}
-              <Icon
-                size={special ? 18 : 17}
-                color={iconColor}
-                strokeWidth={active ? 2.3 : 1.7}
-              />
-            </View>
-
-            {/* Label */}
-            <Text
-              style={[styles.label, { color: iconColor }, active && styles.labelActive]}
-              numberOfLines={1}
+          return (
+            <PressScale
+              key={key}
+              disabled={active}
+              pressableStyle={styles.tabPressable}
+              innerStyle={styles.tabInner}
+              onPress={() => router.navigate(route)}
             >
-              {label}
-            </Text>
-          </PressScale>
-        );
-      })}
+              {/* Special tab: filled purple circle */}
+              {special ? (
+                <View style={[styles.specialCircle, active && styles.specialCircleActive]}>
+                  <Icon size={17} color={iconColor} strokeWidth={2} />
+                </View>
+              ) : (
+                /* Regular tab: plain icon, subtle bg when active */
+                <View style={[styles.iconWrap, active && styles.iconWrapActive]}>
+                  <Icon
+                    size={17}
+                    color={iconColor}
+                    strokeWidth={active ? 2.2 : 1.7}
+                  />
+                </View>
+              )}
+            </PressScale>
+          );
+        })}
+      </View>
     </View>
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  navbar: {
+  wrapper: {
     position: 'absolute',
-    left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(10,12,14,0.96)',
-    borderTopWidth: 0.5,
-    borderTopColor: 'rgba(255,255,255,0.06)',
-    flexDirection: 'row',
-    alignItems: 'stretch',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    // No background — floating
+    pointerEvents: 'box-none',
   },
 
+  // The floating dark rounded pill
   pill: {
-    position: 'absolute',
-    top: 0, left: 0,
-    width: 24,
-    height: 1.5,
-    borderRadius: 999,
-    backgroundColor: MonikeColors.accentPulse,
-    // shadowColor: MonikeColors.accentPulse,
-    // shadowOpacity: 0.5,
-    // shadowRadius: 6,
-    // elevation: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(22,24,28,0.96)',
+    borderRadius: 40,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 8,
+    // Shadow for float effect
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.45,
+    shadowRadius: 20,
+    elevation: 16,
   },
 
-  // THE FIX: flex:1 on the Pressable wrapper
   tabPressable: {
-    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    height: '100%',
-    paddingTop: 6,
   },
 
-  // Inner Animated.View — content layout only
   tabInner: {
     alignItems: 'center',
-    gap: 3,
+    justifyContent: 'center',
   },
 
+  // Regular tab icon container
   iconWrap: {
-    width: 36,
-    height: 24,
+    width: 52,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 8,
-    position: 'relative',
+    borderRadius: 22,
   },
   iconWrapActive: {
-    backgroundColor: 'rgba(0,230,118,0.10)',
-  },
-  iconWrapSpecial: {
-    backgroundColor: 'rgba(0,230,118,0.10)',
-    borderRadius: 10,
+    // Subtle tint when active (non-special)
+    backgroundColor: 'rgba(255,255,255,0.05)',
   },
 
-  logRing: {
-    position: 'absolute',
-    inset: -4,
-    borderRadius: 14,
+  // Middle special tab — the purple filled circle from the reference
+  specialCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(123,97,255,0.15)',
     borderWidth: 1,
-    borderColor: 'rgba(0,230,118,0.18)',
+    borderColor: 'rgba(123,97,255,0.25)',
   },
-
-  label: {
-    fontFamily: Fonts.sans,
-    fontSize: 9.5,
-    fontWeight: '400',
-    letterSpacing: 0.3,
-  },
-  labelActive: {
-    fontWeight: '600',
+  specialCircleActive: {
+    backgroundColor: '#7B61FF',
+    borderColor: '#7B61FF',
+    // Subtle glow
+    shadowColor: '#7B61FF',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.55,
+    shadowRadius: 12,
+    elevation: 8,
   },
 });

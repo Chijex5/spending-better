@@ -46,8 +46,8 @@ async def _fetch_recent_transactions() -> list[RecentTransaction]:
             UNION ALL
             SELECT trans_date, description, category, debit, credit FROM statement_transactions
         ) AS txns
+        WHERE DATE_TRUNC('month', trans_date) = DATE_TRUNC('month', CURRENT_DATE)
         ORDER BY trans_date DESC
-        LIMIT 20
         """
     )
     return [

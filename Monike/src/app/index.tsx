@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
+  TouchableOpacity,
   Easing,
   Modal,
   Pressable,
@@ -36,6 +37,11 @@ import {
   Tag,
   Clock,
   Calendar,
+  ArrowDownLeft,
+  Repeat2,
+  Landmark,
+  Banknote,
+  MoreHorizontal,
 } from 'lucide-react-native';
 
 import { BottomNavigation } from '@/components/bottom-navigation';
@@ -56,6 +62,9 @@ type Category =
   | 'Food & Dining'
   | 'Online Payment'
   | 'Electricity'
+  | 'Family Transfer'
+  | 'Savings'
+  | 'Loan Repayment'
   | 'Other';
 
 type Transaction = {
@@ -81,6 +90,20 @@ type CategoryTotal = {
   category: Category;
   total: number;
   color: string;
+};
+
+type CategoryItem = {
+  category: string;
+  total: number;
+  share_pct: number;
+  transaction_count: number;
+  avg_per_transaction: number;
+};
+
+type CategoryResponse = {
+  period_label: string;
+  total_real_spend: number;
+  items: CategoryItem[];
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -115,6 +138,22 @@ const CATEGORY_ALIASES: Record<string, Category> = {
   Online: 'Online Payment',
   'Online Payment': 'Online Payment',
   Electricity: 'Electricity',
+  'Family Transfer': 'Family Transfer',
+  Savings: 'Savings',
+  'Loan Repayment': 'Loan Repayment',
+};
+
+// Category card colors — each gets a distinct bg/text pairing like the reference image
+const CATEGORY_CARD_STYLES: Record<string, { bg: string; text: string; sub: string }> = {
+  'Person-to-Person': { bg: '#7B61FF',   text: '#FFFFFF',   sub: '#FFFFFFB0' },
+  'POS Purchase':     { bg: '#4FC3F7',   text: '#0A1628',   sub: '#0A162890' },
+  'Data':             { bg: '#00E676',   text: '#0A1628',   sub: '#0A162890' },
+  'Airtime':          { bg: '#FFB300',   text: '#0A1628',   sub: '#0A162890' },
+  'Family Transfer':  { bg: '#FF7043',   text: '#FFFFFF',   sub: '#FFFFFFB0' },
+  'Savings':          { bg: '#26C6DA',   text: '#0A1628',   sub: '#0A162890' },
+  'Food & Dining':    { bg: '#EF5350',   text: '#FFFFFF',   sub: '#FFFFFFB0' },
+  'Loan Repayment':   { bg: '#AB47BC',   text: '#FFFFFF',   sub: '#FFFFFFB0' },
+  'Other':            { bg: '#37474F',   text: '#ECEFF1',   sub: '#B0BEC5' },
 };
 
 const categoryPalette = ['#00E676', '#FFB300', '#FF3D3D', '#4FC3F7', '#69FF9C', '#A07000', '#8B0000', '#8B939E'];
@@ -183,6 +222,11 @@ function currentSummaryPath() {
   return `/summary/${today.getFullYear()}/${today.getMonth() + 1}`;
 }
 
+function currentCategoryPath() {
+  const today = new Date();
+  return `/categories?period=month`;
+}
+
 function dashboardBarsToDays(dashboard: DashboardResponse): DaySpend[] {
   const limit = Math.max(dashboard.avg_daily, 1);
   return dashboard.seven_day_bars.map((bar) => ({
@@ -244,6 +288,9 @@ function categoryIcon(category: Category) {
     'Food & Dining':    Utensils,
     'Online Payment':   Globe,
     'Electricity':      Zap,
+    'Family Transfer':  Landmark,
+    'Savings':          Banknote,
+    'Loan Repayment':   Repeat2,
     'Other':            CreditCard,
   };
   return map[category] ?? CreditCard;
@@ -419,378 +466,247 @@ function SplashScreen({ onComplete, dataReady }: { onComplete: () => void; dataR
   );
 }
 
-// ─── Top Bar ──────────────────────────────────────────────────────────────────
+// ─── Donut Gauge ──────────────────────────────────────────────────────────────
+// Draws a semicircular gauge like the 47% arc in the reference image
+function DonutGauge({ pct, risk }: { pct: number; risk: Risk }) {
+  const animPct = useRef(new Animated.Value(0)).current;
+  const [displayPct, setDisplayPct] = useState(0);
 
-function TopBar({ onSettings: _onSettings }: { onSettings: () => void }) {
-  return <MonikeHeader title="Home" home />;
+  useEffect(() => {
+    const listener = animPct.addListener(({ value }) => setDisplayPct(value));
+    animPct.setValue(0);
+    Animated.timing(animPct, {
+      toValue: pct,
+      duration: 900,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+    return () => animPct.removeListener(listener);
+  }, [animPct, pct]);
+
+  // Semicircle: we approximate with a View-based approach
+  // Using border-radius trick for a half-circle arc
+  const clampedPct = Math.max(0, Math.min(100, displayPct));
+  const fillColor = risk === 'HIGH'
+    ? MonikeColors.signalRed
+    : risk === 'MEDIUM'
+    ? MonikeColors.signalAmber
+    : '#7B61FF';
+
+  // Rotation: 0% = -180deg (left), 100% = 0deg (right)
+  // The "fill" rotates a half-circle mask
+  const rotation = -180 + (clampedPct / 100) * 180;
+
+  return (
+    <View style={styles.gaugeContainer}>
+      {/* Track arc (gray) */}
+      <View style={styles.gaugeTrack} />
+      {/* Fill arc (colored) — clip mask trick */}
+      <View style={styles.gaugeClip} pointerEvents="none">
+        <Animated.View
+          style={[
+            styles.gaugeFill,
+            {
+              backgroundColor: fillColor,
+              transform: [{ rotate: `${rotation}deg` }],
+            },
+          ]}
+        />
+      </View>
+      {/* Center label */}
+      <View style={styles.gaugeCenter}>
+        <Text style={[styles.gaugePct, { color: fillColor }]}>{Math.round(clampedPct)}%</Text>
+      </View>
+    </View>
+  );
 }
 
-// ─── Hero Card ────────────────────────────────────────────────────────────────
+// ─── Expenses Section ─────────────────────────────────────────────────────────
+// Mirrors "My Expenses" block: big amount + donut + category pill scroll
 
-function HeroCard({ dashboard, summary }: { dashboard: DashboardResponse; summary?: SummaryResponse }) {
+function ExpensesSection({
+  dashboard,
+  categoryData,
+}: {
+  dashboard: DashboardResponse;
+  categoryData?: CategoryResponse;
+}) {
+  const risk = normalizeRisk(dashboard.prediction_risk);
+  const totalSpend = dashboard.total_spent_this_month;
+
+  // Build category items from /category endpoint or fall back to empty
+  const items = categoryData?.items ?? [];
+  const totalForPct = categoryData?.total_real_spend ?? totalSpend;
+
+  // Animated amount counter
   const animatedAmount = useRef(new Animated.Value(0)).current;
   const [displayValue, setDisplayValue] = useState(0);
-  const monthlyBudget = summary?.budget_limit ?? 0;
-  const budgetProgress = monthlyBudget > 0 ? dashboard.total_spent_this_month / monthlyBudget : 0;
-  const pctChange = dashboard.pct_change_vs_last_month;
-  const isUp = pctChange >= 0;
-  const comparisonColor = isUp ? MonikeColors.signalRed : MonikeColors.accentPulse;
-  const risk = normalizeRisk(dashboard.prediction_risk);
 
   useEffect(() => {
     const listener = animatedAmount.addListener(({ value }) => setDisplayValue(value));
     animatedAmount.setValue(0);
     Animated.timing(animatedAmount, {
-      toValue: dashboard.total_spent_this_month,
+      toValue: totalSpend,
       duration: 800,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: false,
     }).start();
     return () => animatedAmount.removeListener(listener);
-  }, [animatedAmount, dashboard.total_spent_this_month]);
-
-  const greeting = getGreeting();
+  }, [animatedAmount, totalSpend]);
 
   const formatted = formatNaira(displayValue, 2);
-  const parts = formatted.split('.');
-  const intPart = parts[0];
-  const decPart = parts[1] ?? '00';
+  const [intPart, decPart = '00'] = formatted.split('.');
+
+  // Top category % for the gauge
+  const topPct = items.length > 0 ? items[0].share_pct : 0;
 
   return (
-    <View style={styles.heroCard}>
-      {/* Greeting row */}
-      <View style={styles.heroGreetingRow}>
-        <View>
-          <Text style={styles.heroGreetingLabel}>{greeting}, Chijioke</Text>
-          <Text style={styles.heroMonthBadge}>{dashboard.month_label}</Text>
+    <View style={styles.expensesSection}>
+      {/* Header row */}
+      <View style={styles.expensesHeaderRow}>
+        <View style={styles.expensesLeft}>
+          <Text style={styles.expensesSectionLabel}>My Expenses</Text>
+          <View style={styles.expensesAmountRow}>
+            <Text style={styles.expensesCurrencySymbol}>₦</Text>
+            <Text style={styles.expensesAmount}>{intPart}</Text>
+            <Text style={styles.expensesAmountDec}>.{decPart}</Text>
+          </View>
         </View>
-        <RiskBadge risk={risk} />
+        {/* Donut gauge */}
+        <DonutGauge pct={topPct > 0 ? topPct : Math.min((totalSpend / 100000) * 100, 99)} risk={risk} />
       </View>
 
-      {/* Amount block */}
-      <View style={styles.heroAmountBlock}>
-        <Text style={styles.heroSpentLabel}>TOTAL SPENT</Text>
-        <View style={styles.heroAmountRow}>
-          <Text style={styles.heroNairaPrefix}>₦</Text>
-          <Text style={styles.heroAmount}>{intPart}</Text>
-          <Text style={styles.heroAmountDec}>.{decPart}</Text>
-        </View>
-        <View style={[styles.comparisonChip, { borderColor: `${comparisonColor}35`, backgroundColor: `${comparisonColor}10` }]}>
-          <ArrowUpRight
-            size={10}
-            color={comparisonColor}
-            strokeWidth={2.5}
-            style={{ transform: [{ rotate: isUp ? '0deg' : '90deg' }] }}
-          />
-          <Text style={[styles.comparisonChipText, { color: comparisonColor }]}>
-            {Math.abs(pctChange).toFixed(1)}% vs last month
-          </Text>
-        </View>
-      </View>
-
-      {/* Budget bar */}
-      {monthlyBudget > 0 ? (
-        <View style={styles.budgetSection}>
-          <View style={styles.budgetLabelRow}>
-            <Text style={styles.budgetLabelLeft}>₦{formatNaira(dashboard.total_spent_this_month)} spent</Text>
-            <Text style={styles.budgetLabelRight}>of ₦{formatNaira(monthlyBudget)} · {Math.round(budgetProgress * 100)}%</Text>
+      {/* Category pill cards — horizontal scroll */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.categoryCardScroll}
+      >
+        {/* Add card */}
+        <PressScale>
+          <View style={styles.categoryAddCard}>
+            <Text style={styles.categoryAddPlus}>+</Text>
           </View>
-          <View style={styles.budgetBarTrack}>
-            <View
-              style={[
-                styles.budgetBarFill,
-                {
-                  width: `${Math.min(budgetProgress * 100, 100)}%` as any,
-                  backgroundColor: budgetProgress > 0.85
-                    ? MonikeColors.signalRed
-                    : budgetProgress > 0.65
-                    ? MonikeColors.signalAmber
-                    : MonikeColors.accentPulse,
-                },
-              ]}
-            />
-          </View>
-        </View>
-      ) : (
-        <Text style={styles.budgetNoneText}>No monthly budget configured</Text>
-      )}
+        </PressScale>
 
-      {/* Stat pills row */}
-      <View style={styles.heroStatPills}>
-        <View style={styles.heroStatPill}>
-          <Text style={styles.heroStatPillValue}>₦{formatNaira(dashboard.avg_daily)}</Text>
-          <Text style={styles.heroStatPillLabel}>daily avg</Text>
-        </View>
-        <View style={styles.heroStatPillDivider} />
-        <View style={styles.heroStatPill}>
-          <Text style={styles.heroStatPillValue}>{dashboard.high_spend_days}</Text>
-          <Text style={styles.heroStatPillLabel}>high-spend days</Text>
-        </View>
-        <View style={styles.heroStatPillDivider} />
-        <View style={styles.heroStatPill}>
-          <Text style={styles.heroStatPillValue}>{Math.round(dashboard.prediction_prob * 100)}%</Text>
-          <Text style={styles.heroStatPillLabel}>tomorrow risk</Text>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-// ─── Financial Coach ──────────────────────────────────────────────────────────
-
-function FinancialCoachCard({
-  dashboard,
-  prediction,
-  summary,
-}: {
-  dashboard: DashboardResponse;
-  prediction?: PredictionResponse;
-  summary?: SummaryResponse;
-}) {
-  const risk = normalizeRisk(prediction?.risk_level ?? dashboard.prediction_risk);
-  const accent = riskAccentColor(risk);
-  const probability = Math.round(((prediction?.probability ?? dashboard.prediction_prob) || 0) * 100);
-  const daysLeft = daysLeftInCurrentMonth();
-  const budget = summary?.budget_limit ?? 0;
-  const remainingBudget = budget > 0 ? Math.max(0, budget - dashboard.total_spent_this_month) : 0;
-  const safeDailyLimit = budget > 0 ? Math.floor(remainingBudget / daysLeft) : Math.max(0, Math.floor(dashboard.avg_daily * 0.85));
-  const velocityDirection = prediction?.velocity.direction;
-  const isAccelerating = velocityDirection === 'up';
-  const Icon = risk === 'HIGH' ? Flame : risk === 'MEDIUM' || isAccelerating ? Activity : Sparkles;
-
-  const headline = risk === 'HIGH'
-    ? 'High-spend pattern detected today.'
-    : risk === 'MEDIUM'
-    ? 'Spend intentionally — momentum is building.'
-    : "You're in control. Stay the course.";
-
-  const advisorTips = prediction?.advisor_tips?.filter(Boolean).slice(0, 2) ?? [];
-  const fallbackTips = [
-    risk === 'HIGH'
-      ? `Cap today at ₦${formatNaira(safeDailyLimit)}. Delay non-urgent transfers.`
-      : risk === 'MEDIUM'
-      ? `Soft-cap at ₦${formatNaira(safeDailyLimit)}, then pause when you hit it.`
-      : `Move a win to savings first, then stay below ₦${formatNaira(safeDailyLimit)}.`,
-    'Pause one avoidable spend category until tomorrow.',
-  ];
-  const tips = advisorTips.length > 0 ? advisorTips : fallbackTips;
-
-  return (
-    <View style={[styles.coachCard, { borderColor: `${accent}25` }]}>
-      <View style={[styles.coachAccentBar, { backgroundColor: accent }]} />
-
-      <View style={styles.coachBody}>
-        {/* Header: icon + headline + risk % */}
-        <View style={styles.coachHeaderRow}>
-          <View style={[styles.coachIconCircle, { backgroundColor: `${accent}14` }]}>
-            <Icon size={16} color={accent} strokeWidth={1.8} />
-          </View>
-          <View style={styles.coachHeaderCopy}>
-            <Text style={[styles.coachEyebrow, { color: accent }]}>ML MONEY MOVE</Text>
-            <Text style={styles.coachTitle}>{headline}</Text>
-          </View>
-          <View style={[styles.coachRiskPill, { borderColor: `${accent}40`, backgroundColor: `${accent}12` }]}>
-            <Text style={[styles.coachRiskPct, { color: accent }]}>{probability}%</Text>
-            <Text style={styles.coachRiskLabel}>risk</Text>
-          </View>
-        </View>
-
-        {/* Metrics row */}
-        <View style={styles.coachMetricRow}>
-          <View style={styles.coachMetricBlock}>
-            <Text style={styles.coachMetricLabel}>Safe today</Text>
-            <Text style={[styles.coachMetricValue, { color: accent }]}>₦{formatNaira(safeDailyLimit)}</Text>
-          </View>
-          <View style={styles.coachMetricDivider} />
-          <View style={styles.coachMetricBlock}>
-            <Text style={styles.coachMetricLabel}>Budget left</Text>
-            <Text style={styles.coachMetricValue}>₦{formatNaira(remainingBudget)}</Text>
-          </View>
-          <View style={styles.coachMetricDivider} />
-          <View style={styles.coachMetricBlock}>
-            <Text style={styles.coachMetricLabel}>Days left</Text>
-            <Text style={styles.coachMetricValue}>{daysLeft}</Text>
-          </View>
-        </View>
-
-        {/* Tips */}
-        <View style={styles.coachTipsStack}>
-          {tips.map((tip, index) => (
-            <View key={`${tip}-${index}`} style={styles.coachTipRow}>
-              <View style={[styles.coachTipBullet, { backgroundColor: accent }]} />
-              <Text style={styles.coachTipText}>{tip}</Text>
-            </View>
-          ))}
-        </View>
-      </View>
-    </View>
-  );
-}
-
-// ─── Quick Actions ────────────────────────────────────────────────────────────
-
-function QuickActions() {
-  const actions: {
-    Icon: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
-    label: string;
-    active?: boolean;
-    accent?: string;
-  }[] = [
-    { Icon: BarChart2,  label: 'Summary',    accent: '#4FC3F7' },
-    { Icon: PieChart,   label: 'Categories', accent: '#FFB300' },
-    { Icon: Zap,        label: 'Predict',    active: true },
-    { Icon: PlusCircle, label: 'Log Spend',  accent: '#00E676' },
-  ];
-
-  return (
-    <View style={styles.quickActionsRow}>
-      {actions.map(({ Icon, label, active, accent }) => {
-        const color = active ? MonikeColors.accentPulse : (accent ?? MonikeColors.inkSecondary);
-        return (
-          <PressScale key={label} style={styles.quickActionItem}>
-            <View style={[
-              styles.quickActionCircle,
-              active && styles.quickActionCircleActive,
-              { borderColor: active ? `${MonikeColors.accentPulse}40` : MonikeColors.inkGhost },
-            ]}>
-              <Icon size={18} color={color} strokeWidth={1.7} />
-            </View>
-            <Text style={[styles.quickActionLabel, { color: active ? MonikeColors.accentPulse : MonikeColors.inkSecondary }]}>
-              {label}
-            </Text>
-          </PressScale>
-        );
-      })}
-    </View>
-  );
-}
-
-// ─── 7-Day Chart ──────────────────────────────────────────────────────────────
-
-function SevenDayChart({ days, averageDailySpend, onSelectDay }: { days: DaySpend[]; averageDailySpend: number; onSelectDay: (day: DaySpend) => void }) {
-  const animations = useRef<Animated.Value[]>([]).current;
-  while (animations.length < days.length) animations.push(new Animated.Value(0));
-  if (animations.length > days.length) animations.splice(days.length);
-
-  const chartLimit = Math.max(averageDailySpend, ...days.map((d) => d.limit), 1);
-  const maxSpend  = Math.max(...days.map((d) => d.total), chartLimit);
-  const weekTotal = days.reduce((sum, d) => sum + d.total, 0);
-  const limitTop  = 100 - (chartLimit / maxSpend) * 100;
-  const todayIso = new Date().toISOString().slice(0, 10);
-
-  useEffect(() => {
-    animations.forEach((animation) => animation.setValue(0));
-    Animated.stagger(
-      55,
-      animations.map((anim) =>
-        Animated.timing(anim, {
-          toValue: 1,
-          duration: 380,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: false,
-        }),
-      ),
-    ).start();
-  }, [animations, days]);
-
-  return (
-    <View style={styles.chartSection}>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>7-DAY SPEND</Text>
-        <Text style={styles.sectionValue}>₦{formatNaira(weekTotal)} this week</Text>
-      </View>
-      <View style={styles.chartCard}>
-        {/* Threshold line */}
-        <View style={[styles.thresholdLine, { top: `${limitTop}%` as any }]} />
-        <Text style={[styles.thresholdLabel, { top: `${Math.max(limitTop - 7, 0)}%` as any }]}>avg</Text>
-
-        {days.map((day, index) => {
-          const isHigh  = day.risk === 'HIGH';
-          const isToday = day.isoDate === todayIso;
-          const barColor = isToday
-            ? MonikeColors.accentNeon
-            : isHigh
-            ? MonikeColors.signalRed
-            : MonikeColors.accentPulse;
-
-          const animatedHeight = animations[index].interpolate({
-            inputRange: [0, 1],
-            outputRange: [0, 88 * (day.total / maxSpend)],
-          });
-
+        {items.length > 0 ? items.map((item) => {
+          const cardStyle = CATEGORY_CARD_STYLES[item.category] ?? CATEGORY_CARD_STYLES['Other'];
           return (
-            <PressScale key={day.isoDate} style={styles.chartColumn} onPress={() => onSelectDay(day)}>
-              <View style={styles.barSlot}>
-                <Animated.View
-                  style={[
-                    styles.dashboardBar,
-                    isHigh && !isToday && styles.dashboardBarHigh,
-                    isToday && styles.dashboardBarToday,
-                    { height: animatedHeight },
-                  ]}
-                />
+            <PressScale key={item.category}>
+              <View style={[styles.categoryCard, { backgroundColor: cardStyle.bg }]}>
+                <Text style={[styles.categoryCardName, { color: cardStyle.text }]} numberOfLines={1}>
+                  {item.category}
+                </Text>
+                <Text style={[styles.categoryCardAmount, { color: cardStyle.text }]}>
+                  ₦{formatNaira(item.total)}
+                </Text>
+                <Text style={[styles.categoryCardPct, { color: cardStyle.sub }]}>
+                  {item.share_pct.toFixed(0)}%
+                </Text>
               </View>
-              <Text style={[styles.chartDayLabel, isToday && styles.chartDayLabelToday]}>
-                {day.day}
-              </Text>
-              {isToday && <View style={styles.todayDot} />}
             </PressScale>
           );
-        })}
-      </View>
+        }) : (
+          // Fallback skeleton cards when no category data
+          ['Transfers', 'POS', 'Data'].map((name, i) => (
+            <View key={name} style={[styles.categoryCard, { backgroundColor: categoryPalette[i] + '22', borderWidth: 1, borderColor: categoryPalette[i] + '40' }]}>
+              <Text style={[styles.categoryCardName, { color: MonikeColors.inkSecondary }]}>{name}</Text>
+              <Text style={[styles.categoryCardAmount, { color: MonikeColors.inkMuted }]}>—</Text>
+            </View>
+          ))
+        )}
+      </ScrollView>
     </View>
   );
 }
 
-// ─── Spend Health Strip ───────────────────────────────────────────────────────
+// ─── Income / Credit Section ──────────────────────────────────────────────────
+// Shows credit transactions as "income" in a horizontal scroll of cards
 
-function SpendHealthStrip({ dashboard, summary }: { dashboard: DashboardResponse; summary?: SummaryResponse }) {
-  const paceStatus = normalizePace(dashboard.spend_health.pace);
-  const today = new Date();
-  const daysElapsed = today.getDate();
-  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-  const budgetText = summary?.budget_limit ? `₦${formatNaira(summary.budget_limit)}` : '—';
+function IncomeSection({ transactions }: { transactions: Transaction[] }) {
+  const credits = transactions.filter((t) => t.amount > 0);
+  const totalCredit = credits.reduce((s, t) => s + t.amount, 0);
 
-  const paceColor = {
-    Ahead:      MonikeColors.signalRed,
-    Over:       MonikeColors.signalAmber,
-    'On Track': MonikeColors.accentPulse,
-  }[paceStatus];
+  const Icon = (category: Category) => {
+    const map: Record<Category, React.ComponentType<any>> = {
+      'Person-to-Person': Users,
+      'POS Purchase':     ShoppingBag,
+      'Data':             Wifi,
+      'Airtime':          Phone,
+      'Food & Dining':    Utensils,
+      'Online Payment':   Globe,
+      'Electricity':      Zap,
+      'Family Transfer':  Landmark,
+      'Savings':          Banknote,
+      'Loan Repayment':   Repeat2,
+      'Other':            CreditCard,
+    };
+    return map[category] ?? CreditCard;
+  };
 
   return (
-    <View style={styles.healthStrip}>
-      {/* PACE block */}
-      <View style={styles.healthBlock}>
-        <Text style={styles.healthLabel}>PACE</Text>
-        <View style={[styles.healthPacePill, { borderColor: `${paceColor}35`, backgroundColor: `${paceColor}10` }]}>
-          <TrendingUp size={10} color={paceColor} strokeWidth={2} />
-          <Text style={[styles.healthPaceText, { color: paceColor }]}>{paceStatus}</Text>
+    <View style={styles.incomeSection}>
+      <View style={styles.incomeSectionHeader}>
+        <Text style={styles.incomeSectionLabel}>My Income</Text>
+        {totalCredit > 0 && (
+          <Text style={styles.incomeTotalText}>₦{formatNaira(totalCredit)}</Text>
+        )}
+      </View>
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.incomeCardScroll}
+      >
+        {credits.length > 0 ? credits.map((t) => {
+          const CardIcon = Icon(t.category);
+          return (
+            <View
+        style={{
+          backgroundColor: MonikeColors.grey,
+          padding: 20,
+          borderRadius: 20,
+          marginRight: 15,
+          width: 150,
+          gap: 10,
+        }}
+      >
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <View
+            style={{
+              borderColor: "#666",
+              borderWidth: 1,
+              borderRadius: 50,
+              padding: 5,
+              alignSelf: "flex-start",
+            }}
+          >
+            <CardIcon style={{size: 16, color: "#fff" }} />
+
+          </View>
+          <TouchableOpacity onPress={() => {}}>
+            <MoreHorizontal size={20} color="#fff" />
+          </TouchableOpacity>
         </View>
-        <Text style={styles.healthSubtext}>Day {daysElapsed}/{daysInMonth} · {budgetText}</Text>
+        <Text style={{ color: "#fff" }}>{t.category}</Text>
+        <Text style={{ color: "#fff", fontSize: 18, fontWeight: "600" }}>
+          ${t.amount}.
+          <Text style={{ fontSize: 12, fontWeight: "400" }}>00</Text>
+        </Text>
       </View>
-
-      <View style={styles.healthDivider} />
-
-      {/* STREAK */}
-      <View style={styles.healthBlock}>
-        <Text style={styles.healthLabel}>STREAK</Text>
-        <Text style={styles.streakValue}>{dashboard.spend_health.streak_days}d</Text>
-        <View style={styles.dotRow}>
-          {Array.from({ length: 5 }).map((_, i) => (
-            <View key={i} style={[styles.streakDot, i < Math.min(dashboard.spend_health.streak_days, 5) && styles.streakDotFilled]} />
-          ))}
-        </View>
-        <Text style={styles.healthSubtext}>under threshold</Text>
-      </View>
-
-      <View style={styles.healthDivider} />
-
-      {/* SAVED */}
-      <View style={styles.healthBlock}>
-        <Text style={styles.healthLabel}>SAVED</Text>
-        <Text style={styles.savedValue}>₦{formatNaira(dashboard.spend_health.saved_this_month)}</Text>
-        <Text style={styles.healthSubtext}>this month</Text>
-      </View>
+          );
+        }) : (
+          <View style={styles.incomeEmptyState}>
+            <Text style={styles.incomeEmptyText}>No credits this period</Text>
+          </View>
+        )}
+      </ScrollView>
     </View>
   );
 }
@@ -843,7 +759,6 @@ function TransactionDetailModal({
       <Animated.View style={[styles.txDetailSheet, { transform: [{ translateY: sheetY }] }]}>
         <View style={styles.sheetHandle} />
 
-        {/* Header */}
         <View style={styles.txDetailHeader}>
           <View style={[styles.txDetailIconWrap, { backgroundColor: credit ? '#4FC3F714' : MonikeColors.bgElevated }]}>
             <Icon size={22} color={credit ? MonikeColors.signalBlue : MonikeColors.inkSecondary} strokeWidth={1.6} />
@@ -853,18 +768,14 @@ function TransactionDetailModal({
           </Pressable>
         </View>
 
-        {/* Amount */}
         <Text style={[styles.txDetailAmount, { color: amountColor }]}>
           {moneySign(transaction.amount)}₦{formatNaira(transaction.amount)}
         </Text>
 
-        {/* Description */}
         <Text style={styles.txDetailDescription}>{transaction.description}</Text>
 
-        {/* Divider */}
         <View style={styles.txDetailDivider} />
 
-        {/* Detail rows */}
         <View style={styles.txDetailRows}>
           {detailRows.map(({ icon: RowIcon, label, value }) => (
             <View key={label} style={styles.txDetailRow}>
@@ -901,84 +812,75 @@ function TransactionRow({
   showSeparator?: boolean;
   onPress?: () => void;
 }) {
-  const credit  = transaction.amount > 0;
-  const Icon    = categoryIcon(transaction.category);
+  const Icon = categoryIcon(transaction.category);
 
   return (
     <PressScale onPress={onPress}>
-      <View style={[styles.transactionRow, !showSeparator && styles.transactionRowLast]}>
-        <View style={[styles.transactionIconCircle, { backgroundColor: credit ? '#4FC3F714' : MonikeColors.bgElevated }]}>
-          <Icon
-            size={14}
-            color={credit ? MonikeColors.signalBlue : MonikeColors.inkSecondary}
-            strokeWidth={1.8}
-          />
+      <View style={[
+        styles.transactionRow,
+        showSeparator && styles.transactionRowSeparator,
+      ]}>
+        {/* Icon circle — flat dark, no tinting */}
+        <View style={styles.transactionIconCircle}>
+          <Icon size={24} color="#ffffff" strokeWidth={1.8} />
         </View>
+
+        {/* Center: description + date */}
         <View style={styles.transactionCenter}>
           <Text numberOfLines={1} style={styles.transactionDescription}>
-            {transaction.description}
+            {transaction.category}
           </Text>
-          <View style={styles.transactionMetaRow}>
-            <Text style={styles.transactionDate}>{transaction.date}</Text>
-            {transaction.time ? <Text style={styles.transactionTimeMeta}>{transaction.time}</Text> : null}
-          </View>
+          <Text style={styles.transactionDate}>{transaction.date}</Text>
         </View>
-        <View style={styles.transactionRight}>
-          <Text style={[styles.transactionAmount, { color: credit ? MonikeColors.signalBlue : MonikeColors.inkPrimary }]}>
-            {moneySign(transaction.amount)}₦{formatNaira(transaction.amount)}
-          </Text>
-          <Text style={styles.transactionCategory}>{transaction.category}</Text>
-        </View>
+
+        {/* Amount — always white */}
+        <Text style={styles.transactionAmount}>
+          {transaction.amount > 0 ? '+' : ''}₦{formatNaira(Math.abs(transaction.amount))}
+        </Text>
       </View>
     </PressScale>
   );
 }
 
-// ─── Recent Transactions ──────────────────────────────────────────────────────
+// ─── Spending List ────────────────────────────────────────────────────────────
+// "July Spending" section — all transactions listed
 
-function RecentTransactions({ transactions, onSeeAll }: { transactions: Transaction[]; onSeeAll?: () => void }) {
-  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
-  const [detailVisible, setDetailVisible] = useState(false);
-
-  const openDetail = useCallback((t: Transaction) => {
-    setSelectedTransaction(t);
-    setDetailVisible(true);
-  }, []);
-
-  const closeDetail = useCallback(() => {
-    setDetailVisible(false);
-  }, []);
+function SpendingList({
+  transactions,
+  monthLabel,
+  onSeeAll,
+  onSelectTransaction,
+}: {
+  transactions: Transaction[];
+  monthLabel: string;
+  onSeeAll?: () => void;
+  onSelectTransaction: (t: Transaction) => void;
+}) {
+  // Show month label (e.g. "June Spending")
+  const monthName = monthLabel.split(' ')[0] ?? 'Recent';
 
   return (
-    <>
-      <View style={styles.recentSection}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>RECENT</Text>
-          <Pressable onPress={onSeeAll} style={styles.seeAllButton}>
-            <Text style={styles.seeAllText}>See all</Text>
-            <ChevronRight size={11} color={MonikeColors.accentPulse} strokeWidth={2.5} />
-          </Pressable>
-        </View>
-        <View style={styles.transactionsCard}>
-          {transactions.length > 0 ? transactions.map((t, i) => (
-            <TransactionRow
-              key={t.id}
-              transaction={t}
-              showSeparator={i < Math.min(transactions.length, 5) - 1}
-              onPress={() => openDetail(t)}
-            />
-          )) : (
-            <Text style={styles.emptyStateText}>No recent transactions returned by the backend.</Text>
-          )}
-        </View>
+    <View style={styles.spendingSection}>
+      <View style={styles.spendingSectionHeader}>
+        <Text style={styles.spendingMonthLabel}>
+          {monthName} <Text style={styles.spendingMonthBold}>Spending</Text>
+        </Text>
+        
       </View>
 
-      <TransactionDetailModal
-        transaction={selectedTransaction}
-        visible={detailVisible}
-        onClose={closeDetail}
-      />
-    </>
+      <View style={styles.spendingList}>
+        {transactions.length > 0 ? transactions.slice(0, 5).map((t, i) => (
+          <TransactionRow
+            key={t.id}
+            transaction={t}
+            showSeparator={i < transactions.length - 1}
+            onPress={() => onSelectTransaction(t)}
+          />
+        )) : (
+          <Text style={styles.emptyStateText}>No transactions this period.</Text>
+        )}
+      </View>
+    </View>
   );
 }
 
@@ -1099,27 +1001,45 @@ function DashboardScreen({
 }) {
   const [selectedDay,  setSelectedDay]  = useState<DaySpend | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const [txDetailVisible, setTxDetailVisible] = useState(false);
   const insets = useSafeAreaInsets();
 
   const { data: dashboard, error: dashboardError, isLoading: dashboardLoading } =
     useSWR<DashboardResponse>('/dashboard', apiFetch);
   const { data: summary } = useSWR<SummaryResponse>(currentSummaryPath(), apiFetch);
   const { data: prediction } = useSWR<PredictionResponse>('/prediction', apiFetch);
+  const { data: categoryData } = useSWR<CategoryResponse>(currentCategoryPath(), apiFetch);
 
-  const sevenDaySpend = useMemo(() => dashboard ? dashboardBarsToDays(dashboard) : [], [dashboard]);
-  const recentTransactions = useMemo(() => dashboard ? dashboardTransactionsToRows(dashboard) : [], [dashboard]);
+  const recentTransactions = useMemo(
+    () => (dashboard ? dashboardTransactionsToRows(dashboard) : []),
+    [dashboard],
+  );
+
+  const sevenDaySpend = useMemo(
+    () => (dashboard ? dashboardBarsToDays(dashboard) : []),
+    [dashboard],
+  );
 
   const openDay = useCallback((day: DaySpend) => {
     setSelectedDay(day);
     setSheetVisible(true);
   }, []);
 
+  const openTxDetail = useCallback((t: Transaction) => {
+    setSelectedTransaction(t);
+    setTxDetailVisible(true);
+  }, []);
+
   const resolvedDashboard = dashboard ?? prefetchedDashboard;
   const resolvedSummary   = summary   ?? prefetchedSummary;
 
-  if (!resolvedDashboard) {
-    return null;
-  }
+  if (!resolvedDashboard) return null;
+
+  const risk = normalizeRisk(resolvedDashboard.prediction_risk);
+  const pctChange = resolvedDashboard.pct_change_vs_last_month;
+  const isUp = pctChange >= 0;
+  const comparisonColor = isUp ? MonikeColors.signalRed : MonikeColors.accentPulse;
 
   return (
     <View style={styles.root}>
@@ -1131,25 +1051,53 @@ function DashboardScreen({
             { paddingBottom: insets.bottom + BottomTabInset + 28 },
           ]}
         >
-          <TopBar onSettings={() => {}} />
-          {dashboardLoading ? <Text style={styles.screenStatusText}>Loading dashboard…</Text> : null}
-          {dashboardError ? <Text style={styles.screenStatusText}>Unable to load dashboard: {dashboardError.message}</Text> : null}
-          {dashboard ? (
-            <>
-              <HeroCard dashboard={resolvedDashboard} summary={resolvedSummary} />
-              {/* Coach placed immediately after hero — most actionable context */}
-              <FinancialCoachCard dashboard={resolvedDashboard} prediction={prediction} summary={resolvedSummary} />
-              <QuickActions />
-              <SevenDayChart days={sevenDaySpend} averageDailySpend={resolvedDashboard.avg_daily} onSelectDay={openDay} />
-              <SpendHealthStrip dashboard={resolvedDashboard} summary={resolvedSummary} />
-              <RecentTransactions transactions={recentTransactions} onSeeAll={onNavigateToTransactions} />
-            </>
-          ) : null}
+          {/* ── Top bar ───────────────────────────────────────────────── */}
+          <View style={styles.topBar}>
+            {/* Left: avatar + greeting */}
+            <View style={styles.topBarLeft}>
+              <View style={styles.avatarCircle}>
+                <Text style={styles.avatarInitials}>CU</Text>
+              </View>
+              <View>
+                <Text style={styles.topBarGreeting}>{getGreeting()}, Chijioke</Text>
+                <Text style={styles.topBarSubtitle}>Your Budget</Text>
+              </View>
+            </View>
+            {/* Right: transactions button */}
+            <Pressable style={styles.transactionsButton} onPress={onNavigateToTransactions}>
+              <Text style={styles.transactionsButtonText}>My Transactions</Text>
+            </Pressable>
+          </View>
+
+          {/* ── Expenses + Category ─────────────────────────────────────── */}
+          <ExpensesSection dashboard={resolvedDashboard} categoryData={categoryData} />
+
+          {/* ── Income / Credits ─────────────────────────────────────────── */}
+          <IncomeSection transactions={recentTransactions} />
+
+          {/* ── Spending list ─────────────────────────────────────────────── */}
+          <SpendingList
+            transactions={recentTransactions}
+            monthLabel={resolvedDashboard.month_label}
+            onSeeAll={onNavigateToTransactions}
+            onSelectTransaction={openTxDetail}
+          />
         </ScrollView>
       </SafeAreaView>
 
       <BottomNavigation activeRoute="home" />
-      <DayDetailSheet day={selectedDay} visible={sheetVisible} onClose={() => setSheetVisible(false)} />
+
+      <DayDetailSheet
+        day={selectedDay}
+        visible={sheetVisible}
+        onClose={() => setSheetVisible(false)}
+      />
+
+      <TransactionDetailModal
+        transaction={selectedTransaction}
+        visible={txDetailVisible}
+        onClose={() => setTxDetailVisible(false)}
+      />
     </View>
   );
 }
@@ -1181,12 +1129,9 @@ export default function MonikeHome() {
 const styles = StyleSheet.create({
   // ── Splash ──────────────────────────────────────────────────────────────────
   splashRoot: {
-    flex: 1,
-    width: '100%',
-    minHeight: 844,
+    flex: 1, width: '100%', minHeight: 844,
     backgroundColor: MonikeColors.bgVoid,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
   },
   splashCenter: { alignItems: 'center', justifyContent: 'center' },
   logoUnit: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', gap: 14 },
@@ -1228,6 +1173,47 @@ const styles = StyleSheet.create({
     backgroundColor: MonikeColors.bgElevated,
     overflow: 'hidden',
   },
+  transactionRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 13,
+  paddingVertical: 12,
+},
+transactionRowSeparator: {
+  borderBottomWidth: 0.5,
+  borderBottomColor: MonikeColors.bgVoid,   // or MonikeColors.bgElevated if it matches this
+},
+transactionIconCircle: {
+  width: 50,
+  height: 50,
+  borderRadius: 25,
+  backgroundColor: '#1C1C1E',    // flat dark, no conditional tinting
+  alignItems: 'center',
+  justifyContent: 'center',
+  flexShrink: 0,
+},
+transactionCenter: {
+  flex: 1,
+  minWidth: 0,
+},
+transactionDescription: {
+  fontSize: 18,
+  fontWeight: '800',
+  color: '#FFFFFF',              // was MonikeColors.inkPrimary — check it's true white
+  letterSpacing: -0.2,
+},
+transactionDate: {
+  fontSize: 12,
+  color: '#636366',              // darker muted, not inkMuted if that's too light
+  marginTop: 2,
+},
+transactionAmount: {
+  fontSize: 15,
+  fontWeight: '500',
+  color: '#FFFFFF',              // always white — no credit/debit color split
+  letterSpacing: -0.3,
+  flexShrink: 0,
+},
   splashProgressFill: { height: 1.5, backgroundColor: MonikeColors.accentPulse },
   loadingStatus: {
     marginTop: 18,
@@ -1238,140 +1224,340 @@ const styles = StyleSheet.create({
   },
 
   // ── Layout ───────────────────────────────────────────────────────────────────
-  root:    { flex: 1, backgroundColor: MonikeColors.bgVoid },
-  safeArea:{ flex: 1 },
-  content: { paddingHorizontal: ScreenPadding, paddingTop: 4, gap: 16 },
-  screenStatusText: {
-    color: MonikeColors.inkSecondary,
-    fontFamily: Fonts.sans,
-    fontSize: 12,
-    lineHeight: 18,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: MonikeColors.inkGhost,
-    borderRadius: CardRadius,
-    backgroundColor: MonikeColors.bgSurface,
-  },
+  root:     { flex: 1, backgroundColor: MonikeColors.bgVoid },
+  safeArea: { flex: 1 },
+  content:  { paddingHorizontal: ScreenPadding, paddingTop: 8, gap: 24 },
 
-  // ── Hero Card ────────────────────────────────────────────────────────────────
-  heroCard: {
+  // ── Top Bar ───────────────────────────────────────────────────────────────────
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  topBarLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  avatarCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#7B61FF30',
+    borderWidth: 1.5,
+    borderColor: '#7B61FF60',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitials: {
+    color: '#7B61FF',
+    fontFamily: Fonts.heading,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  topBarGreeting: {
+    color: MonikeColors.inkMuted,
+    fontFamily: Fonts.sans,
+    fontSize: 11,
+    lineHeight: 14,
+  },
+  topBarSubtitle: {
+    color: MonikeColors.inkPrimary,
+    fontFamily: Fonts.heading,
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  transactionsButton: {
     backgroundColor: MonikeColors.bgSurface,
     borderWidth: 1,
     borderColor: MonikeColors.inkGhost,
     borderRadius: 20,
-    paddingHorizontal: 18,
-    paddingTop: 16,
-    paddingBottom: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
-  heroGreetingRow: {
+  transactionsButtonText: {
+    color: MonikeColors.inkPrimary,
+    fontFamily: Fonts.sans,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+
+  // ── Donut Gauge ───────────────────────────────────────────────────────────────
+  gaugeContainer: {
+    width: 90,
+    height: 56,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    position: 'relative',
+  },
+  gaugeTrack: {
+    position: 'absolute',
+    top: 0,
+    width: 80,
+    height: 40,
+    borderTopLeftRadius: 40,
+    borderTopRightRadius: 40,
+    borderWidth: 7,
+    borderBottomWidth: 0,
+    borderColor: MonikeColors.bgElevated,
+  },
+  gaugeClip: {
+    position: 'absolute',
+    top: 0,
+    width: 80,
+    height: 40,
+    borderTopLeftRadius: 40,
+    borderTopRightRadius: 40,
+    overflow: 'hidden',
+  },
+  gaugeFill: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    transformOrigin: 'center bottom',
+  },
+  gaugeCenter: {
+    position: 'absolute',
+    bottom: 2,
+    alignItems: 'center',
+  },
+  gaugePct: {
+    fontFamily: Fonts.mono,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+
+  // ── Expenses Section ──────────────────────────────────────────────────────────
+  expensesSection: { gap: 16 },
+  expensesHeaderRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    marginBottom: 20,
   },
-  heroGreetingLabel: {
+  expensesLeft: { flex: 1 },
+  expensesSectionLabel: {
+    color: MonikeColors.inkSecondary,
+    fontFamily: Fonts.sans,
+    fontSize: 14,
+    fontWeight: '500',
+    marginBottom: 6,
+  },
+  expensesAmountRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+  expensesCurrencySymbol: {
+    color: MonikeColors.inkSecondary,
+    fontFamily: Fonts.mono,
+    fontSize: 22,
+    fontWeight: '700',
+    marginBottom: 6,
+    marginRight: 2,
+  },
+  expensesAmount: {
     color: MonikeColors.inkPrimary,
+    fontFamily: Fonts.mono,
+    fontSize: 42,
+    fontWeight: '700',
+    lineHeight: 50,
+    letterSpacing: -1.5,
+  },
+  expensesAmountDec: {
+    color: MonikeColors.inkSecondary,
+    fontFamily: Fonts.mono,
+    fontSize: 20,
+    fontWeight: '600',
+    marginBottom: 7,
+    letterSpacing: -0.3,
+  },
+
+  // Category pill scroll
+  categoryCardScroll: {
+    paddingLeft: 2,
+    paddingRight: ScreenPadding,
+    gap: 10,
+    alignItems: 'flex-start',
+  },
+  categoryAddCard: {
+    width: 68,
+    height: 92,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: MonikeColors.inkGhost,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoryAddPlus: {
+    color: MonikeColors.inkMuted,
+    fontSize: 24,
     fontFamily: Fonts.heading,
+    fontWeight: '300',
+  },
+  categoryCard: {
+    width: 100,
+    height: 92,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    justifyContent: 'space-between',
+  },
+  categoryCardName: {
+    fontFamily: Fonts.sans,
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 16,
+  },
+  categoryCardAmount: {
+    fontFamily: Fonts.mono,
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+  },
+  categoryCardPct: {
+    fontFamily: Fonts.mono,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+
+  // ── Income Section ────────────────────────────────────────────────────────────
+  incomeSection: { gap: 12 },
+  incomeSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  incomeSectionLabel: {
+    color: MonikeColors.inkPrimary,
+    fontFamily: Fonts.sans,
     fontSize: 15,
     fontWeight: '600',
   },
-  heroMonthBadge: {
-    marginTop: 3,
-    color: MonikeColors.inkMuted,
+  incomeTotalText: {
+    color: MonikeColors.signalBlue ?? '#4FC3F7',
     fontFamily: Fonts.mono,
-    fontSize: 11,
-  },
-  heroAmountBlock: {
-    marginBottom: 20,
-  },
-  heroSpentLabel: {
-    color: MonikeColors.inkMuted,
-    fontFamily: Fonts.sans,
-    fontSize: 10,
-    letterSpacing: 1.4,
-    textTransform: 'uppercase',
-    marginBottom: 6,
-  },
-  heroAmountRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    marginBottom: 12,
-  },
-  heroNairaPrefix: {
-    color: MonikeColors.inkSecondary,
-    fontFamily: Fonts.mono,
-    fontSize: 20,
-    fontWeight: '700',
-    marginRight: 3,
-    marginBottom: 6,
-  },
-  heroAmount: {
-    color: MonikeColors.inkPrimary,
-    fontFamily: Fonts.mono,
-    fontSize: 40,
-    lineHeight: 48,
-    fontWeight: '700',
-    letterSpacing: -1,
-  },
-  heroAmountDec: {
-    color: MonikeColors.inkSecondary,
-    fontFamily: Fonts.mono,
-    fontSize: 20,
+    fontSize: 13,
     fontWeight: '600',
-    marginBottom: 6,
-    letterSpacing: -0.3,
   },
-  comparisonChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
+  incomeCardScroll: {
+    gap: 10,
+    paddingRight: ScreenPadding,
   },
-  comparisonChipText: {
-    fontFamily: Fonts.mono,
-    fontSize: 11,
-    fontWeight: '500',
-  },
-  budgetSection: { marginBottom: 18 },
-  budgetLabelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  budgetLabelLeft:  { color: MonikeColors.inkSecondary, fontFamily: Fonts.mono, fontSize: 11 },
-  budgetLabelRight: { color: MonikeColors.inkMuted,     fontFamily: Fonts.mono, fontSize: 11 },
-  budgetBarTrack: {
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: MonikeColors.bgElevated,
-    overflow: 'hidden',
-  },
-  budgetBarFill: { height: 3, borderRadius: 2 },
-  budgetNoneText: {
-    color: MonikeColors.inkGhost,
-    fontFamily: Fonts.mono,
-    fontSize: 10,
-    marginBottom: 18,
-  },
-  heroStatPills: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: MonikeColors.bgElevated,
-    borderRadius: 12,
+  incomeCard: {
+    width: 130,
+    height: 100,
+    backgroundColor: MonikeColors.bgSurface,
     borderWidth: 1,
     borderColor: MonikeColors.inkGhost,
+    borderRadius: 16,
+    paddingHorizontal: 12,
     paddingVertical: 12,
+    justifyContent: 'space-between',
   },
-  heroStatPill: { flex: 1, alignItems: 'center', gap: 4 },
-  heroStatPillDivider: { width: 1, height: 26, backgroundColor: MonikeColors.inkGhost },
-  heroStatPillValue: { color: MonikeColors.inkPrimary,   fontFamily: Fonts.mono, fontSize: 13, fontWeight: '700' },
-  heroStatPillLabel: { color: MonikeColors.inkMuted,     fontFamily: Fonts.sans, fontSize: 9,  textTransform: 'uppercase', letterSpacing: 0.4 },
+  incomeCardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  incomeCardIconCircle: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    backgroundColor: '#4FC3F714',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  incomeCardLabel: {
+    color: MonikeColors.inkSecondary,
+    fontFamily: Fonts.sans,
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  incomeCardAmount: {
+    color: MonikeColors.inkPrimary,
+    fontFamily: Fonts.mono,
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+  },
+  incomeCardAmountDec: {
+    color: MonikeColors.inkSecondary,
+    fontFamily: Fonts.mono,
+    fontSize: 11,
+  },
+  incomeEmptyState: {
+    paddingVertical: 14,
+    paddingHorizontal: 2,
+  },
+  incomeEmptyText: {
+    color: MonikeColors.inkGhost,
+    fontFamily: Fonts.sans,
+    fontSize: 13,
+  },
 
-  // ── Risk Badge ───────────────────────────────────────────────────────────────
+  // ── Spending List ─────────────────────────────────────────────────────────────
+  spendingSection: { gap: 14, paddingBottom: 8 },
+  spendingSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  spendingMonthLabel: {
+    color: MonikeColors.inkSecondary,
+    fontFamily: Fonts.sans,
+    fontSize: 15,
+    fontWeight: '400',
+  },
+  spendingMonthBold: {
+    color: MonikeColors.inkPrimary,
+    fontFamily: Fonts.heading,
+    fontWeight: '700',
+  },
+  seeAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  seeAllText: {
+    color: MonikeColors.inkMuted,
+    fontFamily: Fonts.sans,
+    fontSize: 12,
+  },
+  spendingList: {
+    borderRadius: CardRadius,
+    color: MonikeColors.inkPrimary,
+    borderWidth: 1,
+    borderColor: MonikeColors.bgVoid,
+  },
+
+  // ── Transaction Row ───────────────────────────────────────────────────────────
+ 
+  transactionMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 3,
+  },
+  transactionTimeMeta: {
+    color: MonikeColors.inkGhost,
+    fontFamily: Fonts.sans,
+    fontSize: 11,
+  },
+  
+  emptyStateText: {
+    color: MonikeColors.inkMuted,
+    fontFamily: Fonts.sans,
+    fontSize: 12,
+    lineHeight: 18,
+    padding: 16,
+  },
+
+  // ── Risk Badge ────────────────────────────────────────────────────────────────
   riskBadge: {
     borderRadius: 999,
     paddingHorizontal: 9,
@@ -1385,197 +1571,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
 
-  // ── Quick Actions ─────────────────────────────────────────────────────────────
-  quickActionsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  quickActionItem: { alignItems: 'center', width: 76, gap: 7 },
-  quickActionCircle: {
-    width: 52, height: 52, borderRadius: 26,
-    backgroundColor: MonikeColors.bgSurface,
-    borderWidth: 1,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  quickActionCircleActive: {
-    backgroundColor: '#00E67610',
-  },
-  quickActionLabel: { fontFamily: Fonts.sans, fontSize: 10, letterSpacing: 0.2 },
+  // ── Sheets & Modals ───────────────────────────────────────────────────────────
+  sheetBackdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
+  backdropTint:  { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: '#000000A0' },
 
-  // ── Financial Coach ──────────────────────────────────────────────────────────
-  coachCard: {
-    backgroundColor: MonikeColors.bgSurface,
-    borderWidth: 1,
-    borderRadius: CardRadius,
-    overflow: 'hidden',
-  },
-  coachAccentBar: {
-    height: 2,
-    width: '100%',
-  },
-  coachBody: {
-    paddingTop: 14,
-    paddingBottom: 14,
-  },
-  coachHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 16,
-    marginBottom: 12,
-  },
-  coachIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  coachHeaderCopy: { flex: 1, minWidth: 0 },
-  coachEyebrow: {
-    fontFamily: Fonts.mono,
-    fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    marginBottom: 2,
-  },
-  coachTitle: {
-    color: MonikeColors.inkPrimary,
-    fontFamily: Fonts.heading,
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 18,
-  },
-  coachRiskPill: {
-    minWidth: 48,
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    alignItems: 'center',
-    flexShrink: 0,
-  },
-  coachRiskPct:  { fontFamily: Fonts.mono, fontSize: 13, fontWeight: '800' },
-  coachRiskLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 8, textTransform: 'uppercase', marginTop: 1 },
-  coachMetricRow: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    backgroundColor: MonikeColors.bgElevated,
-    marginHorizontal: 16,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: MonikeColors.inkGhost,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    marginBottom: 12,
-  },
-  coachMetricBlock: { flex: 1, gap: 3 },
-  coachMetricLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.4 },
-  coachMetricValue: { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 13, fontWeight: '700' },
-  coachMetricDivider: { width: 1, backgroundColor: MonikeColors.inkGhost, marginHorizontal: 8 },
-  coachTipsStack: { gap: 6, paddingHorizontal: 16 },
-  coachTipRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
-  coachTipBullet: { width: 4, height: 4, borderRadius: 2, marginTop: 7, flexShrink: 0 },
-  coachTipText: { flex: 1, color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 12, lineHeight: 18 },
-
-  // ── Chart ─────────────────────────────────────────────────────────────────────
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  sectionTitle: {
-    color: MonikeColors.inkMuted,
-    fontFamily: Fonts.mono,
-    fontSize: 10,
-    fontWeight: '600',
-    letterSpacing: 1.4,
-    textTransform: 'uppercase',
-  },
-  sectionValue:  { color: MonikeColors.inkSecondary, fontFamily: Fonts.mono, fontSize: 12 },
-  chartSection:  { gap: 12 },
-  chartCard: {
-    height: 128,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    paddingTop: 10,
-    paddingRight: 40,
-    position: 'relative',
-  },
-  chartColumn: { width: 32, alignItems: 'center', gap: 6 },
-  barSlot: {
-    height: 100, width: 28,
-    justifyContent: 'flex-end', alignItems: 'center',
-  },
-  dashboardBar: {
-    width: 20,
-    borderTopLeftRadius: 4,
-    borderTopRightRadius: 4,
-    backgroundColor: '#00E67650',
-  },
-  dashboardBarHigh:  { backgroundColor: '#FF3D3D70' },
-  dashboardBarToday: {
-    backgroundColor: MonikeColors.accentNeon,
-    width: 20,
-  },
-  chartDayLabel:      { color: MonikeColors.inkGhost,    fontFamily: Fonts.mono, fontSize: 10 },
-  chartDayLabelToday: { color: MonikeColors.accentPulse, fontFamily: Fonts.mono, fontSize: 10, fontWeight: '700' },
-  todayDot: {
-    width: 4, height: 4, borderRadius: 2,
-    backgroundColor: MonikeColors.accentPulse,
-    marginTop: -2,
-  },
-  thresholdLine: {
-    position: 'absolute',
-    left: 0, right: 40,
-    borderTopWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: '#FFB30050',
-  },
-  thresholdLabel: {
-    position: 'absolute',
-    right: 0,
-    color: '#FFB300',
-    fontFamily: Fonts.mono,
-    fontSize: 9,
-    opacity: 0.75,
-  },
-
-  // ── Health Strip ─────────────────────────────────────────────────────────────
-  healthStrip: {
-    backgroundColor: MonikeColors.bgSurface,
-    borderWidth: 1,
-    borderColor: MonikeColors.inkGhost,
-    borderRadius: CardRadius,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  healthBlock: { flex: 1, gap: 5 },
-  healthDivider: { width: 1, backgroundColor: MonikeColors.inkGhost, marginHorizontal: 10, marginTop: 2 },
-  healthLabel: {
-    color: MonikeColors.inkMuted,
-    fontFamily: Fonts.mono,
-    fontSize: 9,
-    textTransform: 'uppercase',
-    letterSpacing: 1.1,
-  },
-  healthPacePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-  },
-  healthPaceText: { fontFamily: Fonts.mono, fontSize: 11, fontWeight: '700' },
-  healthSubtext: { color: MonikeColors.inkGhost, fontFamily: Fonts.sans, fontSize: 9, lineHeight: 12 },
-  streakValue: { color: MonikeColors.accentPulse, fontFamily: Fonts.mono, fontSize: 16, fontWeight: '700' },
-  savedValue:  { color: MonikeColors.signalBlue,  fontFamily: Fonts.mono, fontSize: 14, fontWeight: '700' },
-  dotRow:      { flexDirection: 'row', gap: 4 },
-  streakDot:   { width: 5, height: 5, borderRadius: 3, backgroundColor: MonikeColors.inkGhost },
-  streakDotFilled: { backgroundColor: MonikeColors.accentPulse },
-
-  // ── Transaction Detail Modal ──────────────────────────────────────────────────
   txDetailSheet: {
     position: 'absolute',
     left: 0, right: 0, bottom: 0,
@@ -1649,58 +1648,7 @@ const styles = StyleSheet.create({
     width: 8, height: 8, borderRadius: 4,
   },
 
-  // ── Transactions ─────────────────────────────────────────────────────────────
-  recentSection: { gap: 12 },
-  seeAllButton: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  seeAllText:   { color: MonikeColors.accentPulse, fontFamily: Fonts.sans, fontSize: 11 },
-  transactionsCard: {
-    backgroundColor: MonikeColors.bgSurface,
-    borderWidth: 1,
-    borderColor: MonikeColors.inkGhost,
-    borderRadius: CardRadius,
-    overflow: 'hidden',
-  },
-  emptyStateText: {
-    color: MonikeColors.inkMuted,
-    fontFamily: Fonts.sans,
-    fontSize: 12,
-    lineHeight: 18,
-    padding: 16,
-  },
-  transactionRow: {
-    minHeight: 60,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingLeft: 14,
-    paddingRight: 14,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: `${MonikeColors.inkGhost}50`,
-  },
-  transactionRowLast: { borderBottomWidth: 0 },
-  transactionIconCircle: {
-    width: 36, height: 36, borderRadius: 10,
-    alignItems: 'center', justifyContent: 'center',
-    marginRight: 12,
-    flexShrink: 0,
-  },
-  transactionCenter:    { flex: 1, minWidth: 0 },
-  transactionDescription: {
-    color: MonikeColors.inkPrimary,
-    fontFamily: Fonts.sans,
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  transactionMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 },
-  transactionDate:    { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11 },
-  transactionTimeMeta: { color: MonikeColors.inkGhost, fontFamily: Fonts.sans, fontSize: 11 },
-  transactionRight:  { alignItems: 'flex-end', marginLeft: 8, flexShrink: 0 },
-  transactionAmount: { fontFamily: Fonts.mono, fontSize: 13, fontWeight: '600' },
-  transactionCategory: { marginTop: 3, color: MonikeColors.inkGhost, fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 0.2 },
-
-  // ── Day Sheet ────────────────────────────────────────────────────────────────
-  sheetBackdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
-  backdropTint:  { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: '#000000A0' },
+  // ── Day Sheet ──────────────────────────────────────────────────────────────────
   daySheet: {
     position: 'absolute',
     left: 0, right: 0, bottom: 0,
@@ -1720,7 +1668,11 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: 16,
   },
-  sheetHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  sheetHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
   sheetTitle:     { color: MonikeColors.inkPrimary,   fontFamily: Fonts.heading, fontSize: 18, fontWeight: '700' },
   sheetSubtitle:  { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans,    fontSize: 12, marginTop: 2 },
   sheetDebit:     { color: MonikeColors.signalRed,    fontFamily: Fonts.mono,    fontSize: 30, fontWeight: '700', marginTop: 12, marginBottom: 2 },
