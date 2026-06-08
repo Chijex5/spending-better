@@ -27,6 +27,15 @@ import {
   Wifi,
   Zap,
   Minus,
+  ArrowUpRight,
+  Flame,
+  Sparkles,
+  ChevronRight,
+  Activity,
+  X,
+  Tag,
+  Clock,
+  Calendar,
 } from 'lucide-react-native';
 
 import { BottomNavigation } from '@/components/bottom-navigation';
@@ -128,13 +137,6 @@ function getGreeting(): string {
   if (hour < 12) return 'Good morning';
   if (hour < 17) return 'Good afternoon';
   return 'Good evening';
-}
-
-function getGreetingEmoji(): string {
-  const hour = new Date().getHours();
-  if (hour < 12) return '☀️';
-  if (hour < 17) return '👋';
-  return '🌙';
 }
 
 function normalizeRisk(risk: string | undefined, fallbackHigh = false): Risk {
@@ -251,9 +253,9 @@ function categoryIcon(category: Category) {
 
 function RiskBadge({ risk }: { risk: Risk }) {
   const palette = {
-    HIGH:   { color: MonikeColors.signalRed,   backgroundColor: '#FF3D3D22', borderColor: '#FF3D3D44' },
-    MEDIUM: { color: MonikeColors.signalAmber, backgroundColor: '#FFB30022', borderColor: '#FFB30044' },
-    LOW:    { color: MonikeColors.accentPulse, backgroundColor: '#00E67622', borderColor: '#00E67644' },
+    HIGH:   { color: MonikeColors.signalRed,   backgroundColor: '#FF3D3D14', borderColor: '#FF3D3D35' },
+    MEDIUM: { color: MonikeColors.signalAmber, backgroundColor: '#FFB30014', borderColor: '#FFB30035' },
+    LOW:    { color: MonikeColors.accentPulse, backgroundColor: '#00E67614', borderColor: '#00E67635' },
   }[risk];
 
   return <Text style={[styles.riskBadge, palette]}>{risk}</Text>;
@@ -272,8 +274,8 @@ function PressScale({
 
   const pressIn = () => {
     Animated.timing(scale, {
-      toValue: 0.94,
-      duration: 60,
+      toValue: 0.97,
+      duration: 80,
       easing: Easing.out(Easing.quad),
       useNativeDriver: true,
     }).start();
@@ -282,7 +284,7 @@ function PressScale({
     Animated.spring(scale, {
       toValue: 1,
       speed: 22,
-      bounciness: 7,
+      bounciness: 4,
       useNativeDriver: true,
     }).start();
   };
@@ -298,26 +300,21 @@ function PressScale({
 let splashAlreadyShown = false;
 function SplashScreen({ onComplete, dataReady }: { onComplete: () => void; dataReady: boolean }) {
   const logoOpacity    = useRef(new Animated.Value(0)).current;
-  const logoScale      = useRef(new Animated.Value(0.95)).current;
+  const logoScale      = useRef(new Animated.Value(0.97)).current;
   const taglineOpacity = useRef(new Animated.Value(0)).current;
   const taglineY       = useRef(new Animated.Value(4)).current;
   const progress       = useRef(new Animated.Value(0)).current;
-  const shimmer        = useRef(new Animated.Value(0)).current;
   const statusOpacity  = useRef(new Animated.Value(1)).current;
   const exitOpacity    = useRef(new Animated.Value(1)).current;
   const exitScale      = useRef(new Animated.Value(1)).current;
-  const halo           = useRef(new Animated.Value(0)).current;
   const [statusIndex, setStatusIndex] = useState(0);
 
-  // Track whether the minimum animation time has elapsed
   const minTimeElapsed = useRef(false);
-  // Track whether we've already triggered exit (avoid double-firing)
   const exitTriggered = useRef(false);
 
   const triggerExit = useCallback(() => {
     if (exitTriggered.current) return;
     exitTriggered.current = true;
-    // Snap progress to 100% then exit
     Animated.timing(progress, {
       toValue: 1,
       duration: 200,
@@ -325,13 +322,12 @@ function SplashScreen({ onComplete, dataReady }: { onComplete: () => void; dataR
       useNativeDriver: false,
     }).start(() => {
       Animated.parallel([
-        Animated.timing(exitOpacity, { toValue: 0, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-        Animated.timing(exitScale,   { toValue: 1.04, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(exitOpacity, { toValue: 0, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(exitScale,   { toValue: 1.02, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
       ]).start(onComplete);
     });
   }, [exitOpacity, exitScale, onComplete, progress]);
 
-  // When dataReady flips true, check if min time has passed
   useEffect(() => {
     if (dataReady && minTimeElapsed.current) {
       triggerExit();
@@ -341,31 +337,16 @@ function SplashScreen({ onComplete, dataReady }: { onComplete: () => void; dataR
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
 
-    const haloLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(halo, { toValue: 1, duration: 1500, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(halo, { toValue: 0, duration: 1500, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      ]),
-    );
-
-    // Progress bar animates to 0.88 (88%) over 1400ms — holds there waiting for data
     const progressAnimation = Animated.timing(progress, {
       toValue: 0.88,
       duration: 1400,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: false,
     });
-    const shimmerAnimation = Animated.timing(shimmer, {
-      toValue: 1,
-      duration: 1500,
-      easing: Easing.linear,
-      useNativeDriver: true,
-    });
 
-    haloLoop.start();
     Animated.parallel([
-      Animated.timing(logoOpacity, { toValue: 1, duration: 400, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(logoScale,   { toValue: 1, duration: 400, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(logoOpacity, { toValue: 1, duration: 380, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(logoScale,   { toValue: 1, duration: 380, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
     ]).start();
 
     timers.push(
@@ -378,9 +359,7 @@ function SplashScreen({ onComplete, dataReady }: { onComplete: () => void; dataR
     );
 
     progressAnimation.start();
-    shimmerAnimation.start();
 
-    // Cycle status text
     [1, 2, 3].forEach((nextIndex) => {
       timers.push(
         setTimeout(() => {
@@ -392,48 +371,24 @@ function SplashScreen({ onComplete, dataReady }: { onComplete: () => void; dataR
       );
     });
 
-    // Minimum display time: 1500ms
     timers.push(
       setTimeout(() => {
         minTimeElapsed.current = true;
-        // If data already arrived while we were animating, exit now
-        if (dataReady) {
-          triggerExit();
-        }
-        // Otherwise we hold at 88% until dataReady flips true (handled in the useEffect above)
+        if (dataReady) triggerExit();
       }, 1500),
     );
 
+    timers.push(setTimeout(() => { triggerExit(); }, 10000));
+
     return () => {
       timers.forEach(clearTimeout);
-      haloLoop.stop();
       progressAnimation.stop();
-      shimmerAnimation.stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // intentionally empty — runs once on mount
+  }, []);
 
   return (
     <View style={styles.splashRoot}>
-      <Animated.View
-        style={[
-          styles.splashHalo,
-          {
-            opacity:   halo.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] }),
-            transform: [{ scale: halo.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1.04] }) }],
-          },
-        ]}
-      />
-      {/* Scan lines */}
-      <View style={[styles.scanLine, styles.scanLineOne]} />
-      <View style={[styles.scanLine, styles.scanLineTwo]} />
-      <View style={[styles.scanLine, styles.scanLineThree]} />
-      {/* Corner brackets */}
-      <View style={[styles.cornerBracket, styles.cornerTopLeft]} />
-      <View style={[styles.cornerBracket, styles.cornerTopRight]} />
-      <View style={[styles.cornerBracket, styles.cornerBottomLeft]} />
-      <View style={[styles.cornerBracket, styles.cornerBottomRight]} />
-
       <Animated.View style={[styles.splashCenter, { opacity: exitOpacity, transform: [{ scale: exitScale }] }]}>
         <Animated.View style={[styles.logoUnit, { opacity: logoOpacity, transform: [{ scale: logoScale }] }]}>
           <View style={styles.monikeGlyph}>
@@ -454,18 +409,7 @@ function SplashScreen({ onComplete, dataReady }: { onComplete: () => void; dataR
               styles.splashProgressFill,
               { width: progress.interpolate({ inputRange: [0, 1], outputRange: [0, 200] }) },
             ]}
-          >
-            <Animated.View
-              style={[
-                styles.progressShimmer,
-                { transform: [{ translateX: shimmer.interpolate({ inputRange: [0, 1], outputRange: [-120, 200] }) }] },
-              ]}
-            >
-              <View style={[styles.shimmerStop, { backgroundColor: MonikeColors.accentPulse }]} />
-              <View style={[styles.shimmerStop, { backgroundColor: MonikeColors.accentNeon }]} />
-              <View style={[styles.shimmerStop, { backgroundColor: MonikeColors.accentPulse }]} />
-            </Animated.View>
-          </Animated.View>
+          />
         </View>
         <Animated.Text style={[styles.loadingStatus, { opacity: statusOpacity }]}>
           {loadingSteps[statusIndex]}
@@ -489,15 +433,16 @@ function HeroCard({ dashboard, summary }: { dashboard: DashboardResponse; summar
   const monthlyBudget = summary?.budget_limit ?? 0;
   const budgetProgress = monthlyBudget > 0 ? dashboard.total_spent_this_month / monthlyBudget : 0;
   const pctChange = dashboard.pct_change_vs_last_month;
-  const comparisonSymbol = pctChange >= 0 ? '▲' : '▼';
-  const comparisonColor = pctChange >= 0 ? MonikeColors.signalRed : MonikeColors.accentPulse;
+  const isUp = pctChange >= 0;
+  const comparisonColor = isUp ? MonikeColors.signalRed : MonikeColors.accentPulse;
+  const risk = normalizeRisk(dashboard.prediction_risk);
 
   useEffect(() => {
     const listener = animatedAmount.addListener(({ value }) => setDisplayValue(value));
     animatedAmount.setValue(0);
     Animated.timing(animatedAmount, {
       toValue: dashboard.total_spent_this_month,
-      duration: 600,
+      duration: 800,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: false,
     }).start();
@@ -505,41 +450,53 @@ function HeroCard({ dashboard, summary }: { dashboard: DashboardResponse; summar
   }, [animatedAmount, dashboard.total_spent_this_month]);
 
   const greeting = getGreeting();
-  const emoji    = getGreetingEmoji();
+
+  const formatted = formatNaira(displayValue, 2);
+  const parts = formatted.split('.');
+  const intPart = parts[0];
+  const decPart = parts[1] ?? '00';
 
   return (
     <View style={styles.heroCard}>
-      {/* Diagonal texture */}
-      <View pointerEvents="none" style={styles.diagonalTexture}>
-        {Array.from({ length: 28 }).map((_, i) => (
-          <View key={i} style={[styles.textureLine, { left: i * 14 - 120 }]} />
-        ))}
+      {/* Greeting row */}
+      <View style={styles.heroGreetingRow}>
+        <View>
+          <Text style={styles.heroGreetingLabel}>{greeting}, Chijioke</Text>
+          <Text style={styles.heroMonthBadge}>{dashboard.month_label}</Text>
+        </View>
+        <RiskBadge risk={risk} />
       </View>
 
-      {/* Top row */}
-      <View style={styles.heroTopRow}>
-        <Text style={styles.heroGreeting}>{greeting}, Chijioke {emoji}</Text>
-        <Text style={styles.heroMonth}>{dashboard.month_label}</Text>
+      {/* Amount block */}
+      <View style={styles.heroAmountBlock}>
+        <Text style={styles.heroSpentLabel}>TOTAL SPENT</Text>
+        <View style={styles.heroAmountRow}>
+          <Text style={styles.heroNairaPrefix}>₦</Text>
+          <Text style={styles.heroAmount}>{intPart}</Text>
+          <Text style={styles.heroAmountDec}>.{decPart}</Text>
+        </View>
+        <View style={[styles.comparisonChip, { borderColor: `${comparisonColor}35`, backgroundColor: `${comparisonColor}10` }]}>
+          <ArrowUpRight
+            size={10}
+            color={comparisonColor}
+            strokeWidth={2.5}
+            style={{ transform: [{ rotate: isUp ? '0deg' : '90deg' }] }}
+          />
+          <Text style={[styles.comparisonChipText, { color: comparisonColor }]}>
+            {Math.abs(pctChange).toFixed(1)}% vs last month
+          </Text>
+        </View>
       </View>
 
-      {/* Label */}
-      <Text style={styles.heroLabel}>TOTAL SPENT THIS MONTH</Text>
-
-      {/* Animated amount */}
-      <View style={styles.heroAmountRow}>
-        <Text style={styles.heroNairaPrefix}>₦</Text>
-        <Text style={styles.heroAmount}>{formatNaira(displayValue, 2)}</Text>
-      </View>
-
-      {/* Comparison */}
-      <Text style={[styles.comparisonText, { color: comparisonColor }]}>
-        {comparisonSymbol} {Math.abs(pctChange).toFixed(1)}% vs last month
-      </Text>
-
+      {/* Budget bar */}
       {monthlyBudget > 0 ? (
-        <>
+        <View style={styles.budgetSection}>
+          <View style={styles.budgetLabelRow}>
+            <Text style={styles.budgetLabelLeft}>₦{formatNaira(dashboard.total_spent_this_month)} spent</Text>
+            <Text style={styles.budgetLabelRight}>of ₦{formatNaira(monthlyBudget)} · {Math.round(budgetProgress * 100)}%</Text>
+          </View>
           <View style={styles.budgetBarTrack}>
-            <Animated.View
+            <View
               style={[
                 styles.budgetBarFill,
                 {
@@ -553,31 +510,26 @@ function HeroCard({ dashboard, summary }: { dashboard: DashboardResponse; summar
               ]}
             />
           </View>
-          <Text style={styles.budgetLabel}>
-            ₦{formatNaira(dashboard.total_spent_this_month)} of ₦{formatNaira(monthlyBudget)} budget • {Math.round(budgetProgress * 100)}% used
-          </Text>
-        </>
+        </View>
       ) : (
-        <Text style={styles.budgetLabel}>No monthly budget configured in backend settings</Text>
+        <Text style={styles.budgetNoneText}>No monthly budget configured</Text>
       )}
 
-      <View style={styles.heroSeparator} />
-
-      {/* Mini stats */}
-      <View style={styles.heroStatsRow}>
-        <View style={styles.heroStatColumn}>
-          <Text style={styles.heroStatValue}>₦{formatNaira(dashboard.avg_daily)}</Text>
-          <Text style={styles.heroStatLabel}>daily avg</Text>
+      {/* Stat pills row */}
+      <View style={styles.heroStatPills}>
+        <View style={styles.heroStatPill}>
+          <Text style={styles.heroStatPillValue}>₦{formatNaira(dashboard.avg_daily)}</Text>
+          <Text style={styles.heroStatPillLabel}>daily avg</Text>
         </View>
-        <View style={styles.verticalSeparator} />
-        <View style={styles.heroStatColumn}>
-          <Text style={styles.heroStatValue}>{dashboard.high_spend_days}</Text>
-          <Text style={styles.heroStatLabel}>high-spend days</Text>
+        <View style={styles.heroStatPillDivider} />
+        <View style={styles.heroStatPill}>
+          <Text style={styles.heroStatPillValue}>{dashboard.high_spend_days}</Text>
+          <Text style={styles.heroStatPillLabel}>high-spend days</Text>
         </View>
-        <View style={styles.verticalSeparator} />
-        <View style={styles.heroStatColumn}>
-          <RiskBadge risk={normalizeRisk(dashboard.prediction_risk)} />
-          <Text style={styles.heroStatLabel}>tomorrow · {Math.round(dashboard.prediction_prob * 100)}%</Text>
+        <View style={styles.heroStatPillDivider} />
+        <View style={styles.heroStatPill}>
+          <Text style={styles.heroStatPillValue}>{Math.round(dashboard.prediction_prob * 100)}%</Text>
+          <Text style={styles.heroStatPillLabel}>tomorrow risk</Text>
         </View>
       </View>
     </View>
@@ -604,69 +556,72 @@ function FinancialCoachCard({
   const safeDailyLimit = budget > 0 ? Math.floor(remainingBudget / daysLeft) : Math.max(0, Math.floor(dashboard.avg_daily * 0.85));
   const velocityDirection = prediction?.velocity.direction;
   const isAccelerating = velocityDirection === 'up';
-  const Icon = risk === 'HIGH' ? AlertTriangle : risk === 'MEDIUM' || isAccelerating ? Zap : CheckCircle2;
+  const Icon = risk === 'HIGH' ? Flame : risk === 'MEDIUM' || isAccelerating ? Activity : Sparkles;
 
   const headline = risk === 'HIGH'
-    ? 'Do not just track today — protect your cash.'
+    ? 'High-spend pattern detected today.'
     : risk === 'MEDIUM'
-    ? 'Spend intentionally today before the pattern gets expensive.'
-    : 'You have room today. Use it to build savings, not impulse spend.';
-
-  const primaryAction = risk === 'HIGH'
-    ? `Keep today under ₦${formatNaira(safeDailyLimit)} and delay non-urgent transfers.`
-    : risk === 'MEDIUM'
-    ? `Make ₦${formatNaira(safeDailyLimit)} your soft cap, then stop spending when you hit it.`
-    : `Move a small win to savings first; then keep spending below ₦${formatNaira(safeDailyLimit)}.`;
+    ? 'Spend intentionally — momentum is building.'
+    : "You're in control. Stay the course.";
 
   const advisorTips = prediction?.advisor_tips?.filter(Boolean).slice(0, 2) ?? [];
   const fallbackTips = [
-    primaryAction,
-    'Pick one avoidable transaction category today and pause it until tomorrow.',
+    risk === 'HIGH'
+      ? `Cap today at ₦${formatNaira(safeDailyLimit)}. Delay non-urgent transfers.`
+      : risk === 'MEDIUM'
+      ? `Soft-cap at ₦${formatNaira(safeDailyLimit)}, then pause when you hit it.`
+      : `Move a win to savings first, then stay below ₦${formatNaira(safeDailyLimit)}.`,
+    'Pause one avoidable spend category until tomorrow.',
   ];
   const tips = advisorTips.length > 0 ? advisorTips : fallbackTips;
 
   return (
-    <View style={[styles.coachCard, { borderColor: `${accent}55` }]}>
-      <View style={styles.coachHeaderRow}>
-        <View style={[styles.coachIconCircle, { backgroundColor: `${accent}22` }]}>
-          <Icon size={18} color={accent} strokeWidth={2} />
-        </View>
-        <View style={styles.coachHeaderCopy}>
-          <Text style={styles.coachEyebrow}>ML MONEY MOVE</Text>
-          <Text style={styles.coachTitle}>{headline}</Text>
-        </View>
-        <View style={[styles.coachRiskPill, { borderColor: `${accent}66`, backgroundColor: `${accent}18` }]}>
-          <Text style={[styles.coachRiskText, { color: accent }]}>{probability}%</Text>
-          <Text style={styles.coachRiskLabel}>risk</Text>
-        </View>
-      </View>
+    <View style={[styles.coachCard, { borderColor: `${accent}25` }]}>
+      <View style={[styles.coachAccentBar, { backgroundColor: accent }]} />
 
-      <Text style={styles.coachPrimaryAction}>{primaryAction}</Text>
-
-      <View style={styles.coachPlanRow}>
-        <View style={styles.coachMetricBlock}>
-          <Text style={styles.coachMetricLabel}>Safe today</Text>
-          <Text style={styles.coachMetricValue}>₦{formatNaira(safeDailyLimit)}</Text>
-        </View>
-        <View style={styles.coachMetricDivider} />
-        <View style={styles.coachMetricBlock}>
-          <Text style={styles.coachMetricLabel}>Budget left</Text>
-          <Text style={styles.coachMetricValue}>₦{formatNaira(remainingBudget)}</Text>
-        </View>
-        <View style={styles.coachMetricDivider} />
-        <View style={styles.coachMetricBlock}>
-          <Text style={styles.coachMetricLabel}>Days left</Text>
-          <Text style={styles.coachMetricValue}>{daysLeft}</Text>
-        </View>
-      </View>
-
-      <View style={styles.coachTipsStack}>
-        {tips.map((tip, index) => (
-          <View key={`${tip}-${index}`} style={styles.coachTipRow}>
-            <View style={[styles.coachTipBullet, { backgroundColor: accent }]} />
-            <Text style={styles.coachTipText}>{tip}</Text>
+      <View style={styles.coachBody}>
+        {/* Header: icon + headline + risk % */}
+        <View style={styles.coachHeaderRow}>
+          <View style={[styles.coachIconCircle, { backgroundColor: `${accent}14` }]}>
+            <Icon size={16} color={accent} strokeWidth={1.8} />
           </View>
-        ))}
+          <View style={styles.coachHeaderCopy}>
+            <Text style={[styles.coachEyebrow, { color: accent }]}>ML MONEY MOVE</Text>
+            <Text style={styles.coachTitle}>{headline}</Text>
+          </View>
+          <View style={[styles.coachRiskPill, { borderColor: `${accent}40`, backgroundColor: `${accent}12` }]}>
+            <Text style={[styles.coachRiskPct, { color: accent }]}>{probability}%</Text>
+            <Text style={styles.coachRiskLabel}>risk</Text>
+          </View>
+        </View>
+
+        {/* Metrics row */}
+        <View style={styles.coachMetricRow}>
+          <View style={styles.coachMetricBlock}>
+            <Text style={styles.coachMetricLabel}>Safe today</Text>
+            <Text style={[styles.coachMetricValue, { color: accent }]}>₦{formatNaira(safeDailyLimit)}</Text>
+          </View>
+          <View style={styles.coachMetricDivider} />
+          <View style={styles.coachMetricBlock}>
+            <Text style={styles.coachMetricLabel}>Budget left</Text>
+            <Text style={styles.coachMetricValue}>₦{formatNaira(remainingBudget)}</Text>
+          </View>
+          <View style={styles.coachMetricDivider} />
+          <View style={styles.coachMetricBlock}>
+            <Text style={styles.coachMetricLabel}>Days left</Text>
+            <Text style={styles.coachMetricValue}>{daysLeft}</Text>
+          </View>
+        </View>
+
+        {/* Tips */}
+        <View style={styles.coachTipsStack}>
+          {tips.map((tip, index) => (
+            <View key={`${tip}-${index}`} style={styles.coachTipRow}>
+              <View style={[styles.coachTipBullet, { backgroundColor: accent }]} />
+              <Text style={styles.coachTipText}>{tip}</Text>
+            </View>
+          ))}
+        </View>
       </View>
     </View>
   );
@@ -679,29 +634,33 @@ function QuickActions() {
     Icon: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
     label: string;
     active?: boolean;
+    accent?: string;
   }[] = [
-    { Icon: BarChart2,  label: 'Summary' },
-    { Icon: PieChart,   label: 'Categories' },
-    { Icon: Zap,        label: 'Predict', active: true },
-    { Icon: PlusCircle, label: 'Log Spend' },
+    { Icon: BarChart2,  label: 'Summary',    accent: '#4FC3F7' },
+    { Icon: PieChart,   label: 'Categories', accent: '#FFB300' },
+    { Icon: Zap,        label: 'Predict',    active: true },
+    { Icon: PlusCircle, label: 'Log Spend',  accent: '#00E676' },
   ];
 
   return (
     <View style={styles.quickActionsRow}>
-      {actions.map(({ Icon, label, active }) => (
-        <PressScale key={label} style={styles.quickActionItem}>
-          <View style={[styles.quickActionCircle, active && styles.predictGlow]}>
-            <Icon
-              size={20}
-              color={active ? MonikeColors.accentPulse : MonikeColors.inkSecondary}
-              strokeWidth={1.8}
-            />
-          </View>
-          <Text style={[styles.quickActionLabel, active && styles.quickActionLabelActive]}>
-            {label}
-          </Text>
-        </PressScale>
-      ))}
+      {actions.map(({ Icon, label, active, accent }) => {
+        const color = active ? MonikeColors.accentPulse : (accent ?? MonikeColors.inkSecondary);
+        return (
+          <PressScale key={label} style={styles.quickActionItem}>
+            <View style={[
+              styles.quickActionCircle,
+              active && styles.quickActionCircleActive,
+              { borderColor: active ? `${MonikeColors.accentPulse}40` : MonikeColors.inkGhost },
+            ]}>
+              <Icon size={18} color={color} strokeWidth={1.7} />
+            </View>
+            <Text style={[styles.quickActionLabel, { color: active ? MonikeColors.accentPulse : MonikeColors.inkSecondary }]}>
+              {label}
+            </Text>
+          </PressScale>
+        );
+      })}
     </View>
   );
 }
@@ -709,12 +668,9 @@ function QuickActions() {
 // ─── 7-Day Chart ──────────────────────────────────────────────────────────────
 
 function SevenDayChart({ days, averageDailySpend, onSelectDay }: { days: DaySpend[]; averageDailySpend: number; onSelectDay: (day: DaySpend) => void }) {
-  // useNativeDriver: false — height is a layout property, must run on JS thread
   const animations = useRef<Animated.Value[]>([]).current;
   while (animations.length < days.length) animations.push(new Animated.Value(0));
   if (animations.length > days.length) animations.splice(days.length);
-  // Separate value for the opacity pulse — runs on native thread, no layout props
-  const todayPulse = useRef(new Animated.Value(1)).current;
 
   const chartLimit = Math.max(averageDailySpend, ...days.map((d) => d.limit), 1);
   const maxSpend  = Math.max(...days.map((d) => d.total), chartLimit);
@@ -724,77 +680,60 @@ function SevenDayChart({ days, averageDailySpend, onSelectDay }: { days: DaySpen
 
   useEffect(() => {
     animations.forEach((animation) => animation.setValue(0));
-    // JS-driver stagger for bar heights
     Animated.stagger(
-      50,
+      55,
       animations.map((anim) =>
         Animated.timing(anim, {
           toValue: 1,
-          duration: 350,
+          duration: 380,
           easing: Easing.out(Easing.cubic),
-          useNativeDriver: false, // height requires JS driver
+          useNativeDriver: false,
         }),
       ),
     ).start();
-
-    // Native-driver loop for today's bar opacity — completely separate Animated.Value
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(todayPulse, { toValue: 0.72, duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(todayPulse, { toValue: 1,    duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [animations, days, todayPulse]);
+  }, [animations, days]);
 
   return (
     <View style={styles.chartSection}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>LAST 7 DAYS</Text>
-        <Text style={styles.sectionValue}>₦{formatNaira(weekTotal)} for week</Text>
+        <Text style={styles.sectionTitle}>7-DAY SPEND</Text>
+        <Text style={styles.sectionValue}>₦{formatNaira(weekTotal)} this week</Text>
       </View>
       <View style={styles.chartCard}>
         {/* Threshold line */}
         <View style={[styles.thresholdLine, { top: `${limitTop}%` as any }]} />
-        <Text style={[styles.thresholdLabel, { top: `${Math.max(limitTop - 6, 0)}%` as any }]}>avg daily</Text>
+        <Text style={[styles.thresholdLabel, { top: `${Math.max(limitTop - 7, 0)}%` as any }]}>avg</Text>
 
         {days.map((day, index) => {
           const isHigh  = day.risk === 'HIGH';
           const isToday = day.isoDate === todayIso;
+          const barColor = isToday
+            ? MonikeColors.accentNeon
+            : isHigh
+            ? MonikeColors.signalRed
+            : MonikeColors.accentPulse;
 
-          // JS-driver: animates height (layout property — cannot use native driver)
           const animatedHeight = animations[index].interpolate({
             inputRange: [0, 1],
-            outputRange: [0, 86 * (day.total / maxSpend)],
+            outputRange: [0, 88 * (day.total / maxSpend)],
           });
-
-          const bar = isToday ? (
-            <Animated.View style={{ opacity: todayPulse }}>
-              <Animated.View
-                style={[
-                  styles.dashboardBar,
-                  styles.dashboardBarToday,
-                  { height: animatedHeight },
-                ]}
-              />
-            </Animated.View>
-          ) : (
-            <Animated.View
-              style={[
-                styles.dashboardBar,
-                isHigh && styles.dashboardBarHigh,
-                { height: animatedHeight },
-              ]}
-            />
-          );
 
           return (
             <PressScale key={day.isoDate} style={styles.chartColumn} onPress={() => onSelectDay(day)}>
-              <View style={styles.barSlot}>{bar}</View>
+              <View style={styles.barSlot}>
+                <Animated.View
+                  style={[
+                    styles.dashboardBar,
+                    isHigh && !isToday && styles.dashboardBarHigh,
+                    isToday && styles.dashboardBarToday,
+                    { height: animatedHeight },
+                  ]}
+                />
+              </View>
               <Text style={[styles.chartDayLabel, isToday && styles.chartDayLabelToday]}>
                 {day.day}
               </Text>
+              {isToday && <View style={styles.todayDot} />}
             </PressScale>
           );
         })}
@@ -810,7 +749,7 @@ function SpendHealthStrip({ dashboard, summary }: { dashboard: DashboardResponse
   const today = new Date();
   const daysElapsed = today.getDate();
   const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-  const budgetText = summary?.budget_limit ? `₦${formatNaira(summary.budget_limit)} budget` : 'budget not set';
+  const budgetText = summary?.budget_limit ? `₦${formatNaira(summary.budget_limit)}` : '—';
 
   const paceColor = {
     Ahead:      MonikeColors.signalRed,
@@ -818,24 +757,16 @@ function SpendHealthStrip({ dashboard, summary }: { dashboard: DashboardResponse
     'On Track': MonikeColors.accentPulse,
   }[paceStatus];
 
-  const PaceIcon = {
-    Ahead:      TrendingUp,
-    Over:       TrendingUp,
-    'On Track': Minus,
-  }[paceStatus];
-
   return (
     <View style={styles.healthStrip}>
-      {/* PACE */}
+      {/* PACE block */}
       <View style={styles.healthBlock}>
         <Text style={styles.healthLabel}>PACE</Text>
-        <View style={styles.healthValueRow}>
-          <PaceIcon size={14} color={paceColor} strokeWidth={2} />
-          <Text style={[styles.healthValue, { color: paceColor }]}>{paceStatus}</Text>
+        <View style={[styles.healthPacePill, { borderColor: `${paceColor}35`, backgroundColor: `${paceColor}10` }]}>
+          <TrendingUp size={10} color={paceColor} strokeWidth={2} />
+          <Text style={[styles.healthPaceText, { color: paceColor }]}>{paceStatus}</Text>
         </View>
-        <Text style={styles.healthMonoSubtext}>
-          Day {daysElapsed} of {daysInMonth}, {budgetText}
-        </Text>
+        <Text style={styles.healthSubtext}>Day {daysElapsed}/{daysInMonth} · {budgetText}</Text>
       </View>
 
       <View style={styles.healthDivider} />
@@ -843,13 +774,13 @@ function SpendHealthStrip({ dashboard, summary }: { dashboard: DashboardResponse
       {/* STREAK */}
       <View style={styles.healthBlock}>
         <Text style={styles.healthLabel}>STREAK</Text>
-        <Text style={styles.streakValue}>{dashboard.spend_health.streak_days} days</Text>
-        <Text style={styles.healthSubtext}>under threshold</Text>
+        <Text style={styles.streakValue}>{dashboard.spend_health.streak_days}d</Text>
         <View style={styles.dotRow}>
           {Array.from({ length: 5 }).map((_, i) => (
             <View key={i} style={[styles.streakDot, i < Math.min(dashboard.spend_health.streak_days, 5) && styles.streakDotFilled]} />
           ))}
         </View>
+        <Text style={styles.healthSubtext}>under threshold</Text>
       </View>
 
       <View style={styles.healthDivider} />
@@ -858,24 +789,127 @@ function SpendHealthStrip({ dashboard, summary }: { dashboard: DashboardResponse
       <View style={styles.healthBlock}>
         <Text style={styles.healthLabel}>SAVED</Text>
         <Text style={styles.savedValue}>₦{formatNaira(dashboard.spend_health.saved_this_month)}</Text>
-        <Text style={styles.healthSubtext}>moved to savings</Text>
+        <Text style={styles.healthSubtext}>this month</Text>
       </View>
     </View>
   );
 }
 
+// ─── Transaction Detail Modal ─────────────────────────────────────────────────
+
+function TransactionDetailModal({
+  transaction,
+  visible,
+  onClose,
+}: {
+  transaction: Transaction | null;
+  visible: boolean;
+  onClose: () => void;
+}) {
+  const sheetY  = useRef(new Animated.Value(480)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.spring(sheetY,  { toValue: 0, speed: 16, bounciness: 4, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 1, duration: 160, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(sheetY,  { toValue: 480, duration: 200, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0,   duration: 140, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      ]).start();
+    }
+  }, [opacity, sheetY, visible]);
+
+  if (!transaction) return null;
+
+  const credit = transaction.amount > 0;
+  const Icon = categoryIcon(transaction.category);
+  const amountColor = credit ? MonikeColors.signalBlue : MonikeColors.inkPrimary;
+
+  const detailRows: { icon: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>; label: string; value: string }[] = [
+    { icon: Tag,      label: 'Category', value: transaction.category },
+    { icon: Calendar, label: 'Date',     value: transaction.date },
+    { icon: Clock,    label: 'Time',     value: transaction.time || '—' },
+  ];
+
+  return (
+    <Modal transparent visible={visible} animationType="none" onRequestClose={onClose}>
+      <Pressable style={styles.sheetBackdrop} onPress={onClose}>
+        <Animated.View style={[styles.backdropTint, { opacity }]} />
+      </Pressable>
+      <Animated.View style={[styles.txDetailSheet, { transform: [{ translateY: sheetY }] }]}>
+        <View style={styles.sheetHandle} />
+
+        {/* Header */}
+        <View style={styles.txDetailHeader}>
+          <View style={[styles.txDetailIconWrap, { backgroundColor: credit ? '#4FC3F714' : MonikeColors.bgElevated }]}>
+            <Icon size={22} color={credit ? MonikeColors.signalBlue : MonikeColors.inkSecondary} strokeWidth={1.6} />
+          </View>
+          <Pressable style={styles.txDetailClose} onPress={onClose} hitSlop={12}>
+            <X size={16} color={MonikeColors.inkMuted} strokeWidth={2} />
+          </Pressable>
+        </View>
+
+        {/* Amount */}
+        <Text style={[styles.txDetailAmount, { color: amountColor }]}>
+          {moneySign(transaction.amount)}₦{formatNaira(transaction.amount)}
+        </Text>
+
+        {/* Description */}
+        <Text style={styles.txDetailDescription}>{transaction.description}</Text>
+
+        {/* Divider */}
+        <View style={styles.txDetailDivider} />
+
+        {/* Detail rows */}
+        <View style={styles.txDetailRows}>
+          {detailRows.map(({ icon: RowIcon, label, value }) => (
+            <View key={label} style={styles.txDetailRow}>
+              <View style={styles.txDetailRowLeft}>
+                <RowIcon size={13} color={MonikeColors.inkMuted} strokeWidth={1.8} />
+                <Text style={styles.txDetailRowLabel}>{label}</Text>
+              </View>
+              <Text style={styles.txDetailRowValue}>{value}</Text>
+            </View>
+          ))}
+          <View style={styles.txDetailRow}>
+            <View style={styles.txDetailRowLeft}>
+              <View style={[styles.txDetailTypeDot, { backgroundColor: credit ? MonikeColors.signalBlue : MonikeColors.signalRed }]} />
+              <Text style={styles.txDetailRowLabel}>Type</Text>
+            </View>
+            <Text style={[styles.txDetailRowValue, { color: credit ? MonikeColors.signalBlue : MonikeColors.signalRed }]}>
+              {credit ? 'Credit' : 'Debit'}
+            </Text>
+          </View>
+        </View>
+      </Animated.View>
+    </Modal>
+  );
+}
+
 // ─── Transaction Row ──────────────────────────────────────────────────────────
 
-function TransactionRow({ transaction, showSeparator = true }: { transaction: Transaction; showSeparator?: boolean }) {
+function TransactionRow({
+  transaction,
+  showSeparator = true,
+  onPress,
+}: {
+  transaction: Transaction;
+  showSeparator?: boolean;
+  onPress?: () => void;
+}) {
   const credit  = transaction.amount > 0;
   const Icon    = categoryIcon(transaction.category);
 
   return (
-    <PressScale>
+    <PressScale onPress={onPress}>
       <View style={[styles.transactionRow, !showSeparator && styles.transactionRowLast]}>
-        <View style={styles.transactionIconCircle}>
+        <View style={[styles.transactionIconCircle, { backgroundColor: credit ? '#4FC3F714' : MonikeColors.bgElevated }]}>
           <Icon
-            size={16}
+            size={14}
             color={credit ? MonikeColors.signalBlue : MonikeColors.inkSecondary}
             strokeWidth={1.8}
           />
@@ -886,16 +920,14 @@ function TransactionRow({ transaction, showSeparator = true }: { transaction: Tr
           </Text>
           <View style={styles.transactionMetaRow}>
             <Text style={styles.transactionDate}>{transaction.date}</Text>
-            <View style={styles.categoryPill}>
-              <Text style={styles.categoryPillText}>{transaction.category}</Text>
-            </View>
+            {transaction.time ? <Text style={styles.transactionTimeMeta}>{transaction.time}</Text> : null}
           </View>
         </View>
         <View style={styles.transactionRight}>
-          <Text style={[styles.transactionAmount, { color: credit ? MonikeColors.signalBlue : MonikeColors.signalRed }]}>
+          <Text style={[styles.transactionAmount, { color: credit ? MonikeColors.signalBlue : MonikeColors.inkPrimary }]}>
             {moneySign(transaction.amount)}₦{formatNaira(transaction.amount)}
           </Text>
-          <Text style={styles.transactionTime}>{transaction.time}</Text>
+          <Text style={styles.transactionCategory}>{transaction.category}</Text>
         </View>
       </View>
     </PressScale>
@@ -904,27 +936,49 @@ function TransactionRow({ transaction, showSeparator = true }: { transaction: Tr
 
 // ─── Recent Transactions ──────────────────────────────────────────────────────
 
-function RecentTransactions({ transactions }: { transactions: Transaction[] }) {
+function RecentTransactions({ transactions, onSeeAll }: { transactions: Transaction[]; onSeeAll?: () => void }) {
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const [detailVisible, setDetailVisible] = useState(false);
+
+  const openDetail = useCallback((t: Transaction) => {
+    setSelectedTransaction(t);
+    setDetailVisible(true);
+  }, []);
+
+  const closeDetail = useCallback(() => {
+    setDetailVisible(false);
+  }, []);
+
   return (
-    <View style={styles.recentSection}>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>RECENT</Text>
-        <Pressable>
-          <Text style={styles.seeAllText}>See all →</Text>
-        </Pressable>
+    <>
+      <View style={styles.recentSection}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>RECENT</Text>
+          <Pressable onPress={onSeeAll} style={styles.seeAllButton}>
+            <Text style={styles.seeAllText}>See all</Text>
+            <ChevronRight size={11} color={MonikeColors.accentPulse} strokeWidth={2.5} />
+          </Pressable>
+        </View>
+        <View style={styles.transactionsCard}>
+          {transactions.length > 0 ? transactions.map((t, i) => (
+            <TransactionRow
+              key={t.id}
+              transaction={t}
+              showSeparator={i < Math.min(transactions.length, 5) - 1}
+              onPress={() => openDetail(t)}
+            />
+          )) : (
+            <Text style={styles.emptyStateText}>No recent transactions returned by the backend.</Text>
+          )}
+        </View>
       </View>
-      <View style={styles.transactionsCard}>
-        {transactions.length > 0 ? transactions.map((t, i) => (
-          <TransactionRow
-            key={t.id}
-            transaction={t}
-            showSeparator={i < transactions.length - 1}
-          />
-        )) : (
-          <Text style={styles.emptyStateText}>No recent transactions returned by the backend.</Text>
-        )}
-      </View>
-    </View>
+
+      <TransactionDetailModal
+        transaction={selectedTransaction}
+        visible={detailVisible}
+        onClose={closeDetail}
+      />
+    </>
   );
 }
 
@@ -952,7 +1006,7 @@ function DayDetailSheet({
   useEffect(() => {
     if (visible) {
       Animated.parallel([
-        Animated.spring(sheetY,  { toValue: 0,   speed: 14, bounciness: 6, useNativeDriver: true }),
+        Animated.spring(sheetY,  { toValue: 0,   speed: 14, bounciness: 4, useNativeDriver: true }),
         Animated.timing(opacity, { toValue: 1, duration: 180, easing: Easing.out(Easing.quad), useNativeDriver: true }),
       ]).start();
     } else {
@@ -983,9 +1037,8 @@ function DayDetailSheet({
         <Text style={styles.sheetDebit}>₦{formatNaira(totalDebit)}</Text>
 
         {logLoading ? <Text style={styles.sheetStatusText}>Loading daily breakdown…</Text> : null}
-        {logError ? <Text style={styles.sheetStatusText}>No daily log breakdown returned for this date.</Text> : null}
+        {logError ? <Text style={styles.sheetStatusText}>No daily log breakdown for this date.</Text> : null}
 
-        {/* Category breakdown bar */}
         {categoryTotals.length > 0 ? (
           <>
             <View style={styles.breakdownTrack}>
@@ -1038,16 +1091,16 @@ function DayDetailSheet({
 function DashboardScreen({
   prefetchedDashboard,
   prefetchedSummary,
+  onNavigateToTransactions,
 }: {
   prefetchedDashboard?: DashboardResponse;
   prefetchedSummary?: SummaryResponse;
+  onNavigateToTransactions?: () => void;
 }) {
   const [selectedDay,  setSelectedDay]  = useState<DaySpend | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
   const insets = useSafeAreaInsets();
 
-  // useSWR will return prefetched data immediately if you pass initialData,
-  // or just use the props directly since MonikeHome already fetched them
   const { data: dashboard, error: dashboardError, isLoading: dashboardLoading } =
     useSWR<DashboardResponse>('/dashboard', apiFetch);
   const { data: summary } = useSWR<SummaryResponse>(currentSummaryPath(), apiFetch);
@@ -1065,7 +1118,7 @@ function DashboardScreen({
   const resolvedSummary   = summary   ?? prefetchedSummary;
 
   if (!resolvedDashboard) {
-    return
+    return null;
   }
 
   return (
@@ -1075,20 +1128,21 @@ function DashboardScreen({
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[
             styles.content,
-            { paddingBottom: insets.bottom + BottomTabInset + 22 },
+            { paddingBottom: insets.bottom + BottomTabInset + 28 },
           ]}
         >
           <TopBar onSettings={() => {}} />
-          {dashboardLoading ? <Text style={styles.screenStatusText}>Loading dashboard from backend…</Text> : null}
-          {dashboardError ? <Text style={styles.screenStatusText}>Unable to load backend dashboard: {dashboardError.message}</Text> : null}
+          {dashboardLoading ? <Text style={styles.screenStatusText}>Loading dashboard…</Text> : null}
+          {dashboardError ? <Text style={styles.screenStatusText}>Unable to load dashboard: {dashboardError.message}</Text> : null}
           {dashboard ? (
             <>
               <HeroCard dashboard={resolvedDashboard} summary={resolvedSummary} />
+              {/* Coach placed immediately after hero — most actionable context */}
               <FinancialCoachCard dashboard={resolvedDashboard} prediction={prediction} summary={resolvedSummary} />
               <QuickActions />
               <SevenDayChart days={sevenDaySpend} averageDailySpend={resolvedDashboard.avg_daily} onSelectDay={openDay} />
               <SpendHealthStrip dashboard={resolvedDashboard} summary={resolvedSummary} />
-              <RecentTransactions transactions={recentTransactions} />
+              <RecentTransactions transactions={recentTransactions} onSeeAll={onNavigateToTransactions} />
             </>
           ) : null}
         </ScrollView>
@@ -1108,7 +1162,6 @@ export default function MonikeHome() {
 
   const dataReady = !dashboardLoading && !!dashboard;
 
-  // Module-level guard — once true, never show splash again this app session
   const [showSplash, setShowSplash] = useState(!splashAlreadyShown);
 
   const handleSplashComplete = useCallback(() => {
@@ -1123,7 +1176,6 @@ export default function MonikeHome() {
   return <DashboardScreen prefetchedDashboard={dashboard} prefetchedSummary={summary} />;
 }
 
-
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
@@ -1135,27 +1187,7 @@ const styles = StyleSheet.create({
     backgroundColor: MonikeColors.bgVoid,
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
   },
-  splashHalo: {
-    position: 'absolute',
-    width: 280,
-    height: 280,
-    borderRadius: 140,
-    backgroundColor: '#00E6760A',
-    shadowColor: MonikeColors.accentPulse,
-    shadowOpacity: 0.08,
-    shadowRadius: 80,
-  },
-  scanLine: { position: 'absolute', left: 0, right: 0, height: 1, backgroundColor: 'rgba(255,255,255,0.015)' },
-  scanLineOne:   { top: '25%' },
-  scanLineTwo:   { top: '50%' },
-  scanLineThree: { top: '75%' },
-  cornerBracket: { position: 'absolute', width: 16, height: 16, borderColor: MonikeColors.inkGhost },
-  cornerTopLeft:    { top: 20, left: 20,   borderTopWidth: 1,    borderLeftWidth: 1  },
-  cornerTopRight:   { top: 20, right: 20,  borderTopWidth: 1,    borderRightWidth: 1 },
-  cornerBottomLeft: { bottom: 20, left: 20,  borderBottomWidth: 1, borderLeftWidth: 1  },
-  cornerBottomRight:{ bottom: 20, right: 20, borderBottomWidth: 1, borderRightWidth: 1 },
   splashCenter: { alignItems: 'center', justifyContent: 'center' },
   logoUnit: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', gap: 14 },
   monikeGlyph: {
@@ -1192,15 +1224,13 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   splashProgressTrack: {
-    width: 200, height: 2, marginTop: 40,
+    width: 200, height: 1.5, marginTop: 40,
     backgroundColor: MonikeColors.bgElevated,
     overflow: 'hidden',
   },
-  splashProgressFill: { height: 2, overflow: 'hidden', backgroundColor: MonikeColors.accentPulse },
-  progressShimmer:    { height: 2, width: 120, flexDirection: 'row' },
-  shimmerStop:        { flex: 1, height: 2 },
+  splashProgressFill: { height: 1.5, backgroundColor: MonikeColors.accentPulse },
   loadingStatus: {
-    marginTop: 16,
+    marginTop: 18,
     color: MonikeColors.inkMuted,
     fontFamily: Fonts.mono,
     fontSize: 11,
@@ -1223,303 +1253,406 @@ const styles = StyleSheet.create({
     backgroundColor: MonikeColors.bgSurface,
   },
 
-  // ── Top Bar ──────────────────────────────────────────────────────────────────
-  topBar: {
-    height: 48,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  avatarButton: {
-    width: 32, height: 32, borderRadius: 16,
-    backgroundColor: MonikeColors.bgElevated,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  avatarText: {
-    color: MonikeColors.accentPulse,
-    fontFamily: Fonts.heading,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  topBrand: {
-    color: MonikeColors.inkSecondary,
-    fontFamily: Fonts.heading,
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 2.6,
-  },
-  bellButton: {
-    width: 32, height: 32,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  alertDot: {
-    position: 'absolute',
-    top: 6, right: 6,
-    width: 6, height: 6, borderRadius: 3,
-    backgroundColor: MonikeColors.accentPulse,
-  },
-
   // ── Hero Card ────────────────────────────────────────────────────────────────
   heroCard: {
-    overflow: 'hidden',
     backgroundColor: MonikeColors.bgSurface,
     borderWidth: 1,
     borderColor: MonikeColors.inkGhost,
     borderRadius: 20,
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 24,
-    elevation: 8,
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 18,
   },
-  diagonalTexture: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, opacity: 1 },
-  textureLine: {
-    position: 'absolute',
-    top: -80,
-    width: 1,
-    height: 360,
-    backgroundColor: 'rgba(255,255,255,0.012)',
-    transform: [{ rotate: '45deg' }],
+  heroGreetingRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 20,
   },
-  heroTopRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  heroGreeting: { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 16, fontWeight: '600' },
-  heroMonth:    { color: MonikeColors.inkSecondary, fontFamily: Fonts.mono, fontSize: 12 },
-  heroLabel: {
-    marginTop: 14,
-    color: MonikeColors.inkSecondary,
-    fontFamily: Fonts.sans,
+  heroGreetingLabel: {
+    color: MonikeColors.inkPrimary,
+    fontFamily: Fonts.heading,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  heroMonthBadge: {
+    marginTop: 3,
+    color: MonikeColors.inkMuted,
+    fontFamily: Fonts.mono,
     fontSize: 11,
-    letterSpacing: 1.1,
-    textTransform: 'uppercase',
   },
-  heroAmountRow: { marginTop: 6, flexDirection: 'row', alignItems: 'baseline' },
+  heroAmountBlock: {
+    marginBottom: 20,
+  },
+  heroSpentLabel: {
+    color: MonikeColors.inkMuted,
+    fontFamily: Fonts.sans,
+    fontSize: 10,
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+  },
+  heroAmountRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    marginBottom: 12,
+  },
   heroNairaPrefix: {
     color: MonikeColors.inkSecondary,
     fontFamily: Fonts.mono,
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700',
-    marginRight: 4,
+    marginRight: 3,
+    marginBottom: 6,
   },
   heroAmount: {
     color: MonikeColors.inkPrimary,
     fontFamily: Fonts.mono,
-    fontSize: 38,
-    lineHeight: 46,
+    fontSize: 40,
+    lineHeight: 48,
     fontWeight: '700',
-    letterSpacing: -0.76,
+    letterSpacing: -1,
   },
-  comparisonText: { marginTop: 2, color: MonikeColors.signalRed, fontFamily: Fonts.mono, fontSize: 12 },
-
-  // Budget progress bar (improvement)
+  heroAmountDec: {
+    color: MonikeColors.inkSecondary,
+    fontFamily: Fonts.mono,
+    fontSize: 20,
+    fontWeight: '600',
+    marginBottom: 6,
+    letterSpacing: -0.3,
+  },
+  comparisonChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  comparisonChipText: {
+    fontFamily: Fonts.mono,
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  budgetSection: { marginBottom: 18 },
+  budgetLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  budgetLabelLeft:  { color: MonikeColors.inkSecondary, fontFamily: Fonts.mono, fontSize: 11 },
+  budgetLabelRight: { color: MonikeColors.inkMuted,     fontFamily: Fonts.mono, fontSize: 11 },
   budgetBarTrack: {
     height: 3,
     borderRadius: 2,
     backgroundColor: MonikeColors.bgElevated,
-    marginTop: 10,
     overflow: 'hidden',
   },
   budgetBarFill: { height: 3, borderRadius: 2 },
-  budgetLabel: {
-    marginTop: 5,
-    color: MonikeColors.inkMuted,
+  budgetNoneText: {
+    color: MonikeColors.inkGhost,
     fontFamily: Fonts.mono,
     fontSize: 10,
+    marginBottom: 18,
   },
-
-  heroSeparator: {
-    height: 1,
-    backgroundColor: MonikeColors.inkGhost,
-    opacity: 0.5,
-    marginTop: 16,
-    marginBottom: 14,
+  heroStatPills: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: MonikeColors.bgElevated,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: MonikeColors.inkGhost,
+    paddingVertical: 12,
   },
-  heroStatsRow:  { flexDirection: 'row', alignItems: 'center' },
-  heroStatColumn:{ flex: 1, alignItems: 'center', gap: 5 },
-  heroStatValue: { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 14, fontWeight: '700' },
-  heroStatLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 10 },
-  verticalSeparator: { width: 1, height: 32, backgroundColor: MonikeColors.inkGhost },
+  heroStatPill: { flex: 1, alignItems: 'center', gap: 4 },
+  heroStatPillDivider: { width: 1, height: 26, backgroundColor: MonikeColors.inkGhost },
+  heroStatPillValue: { color: MonikeColors.inkPrimary,   fontFamily: Fonts.mono, fontSize: 13, fontWeight: '700' },
+  heroStatPillLabel: { color: MonikeColors.inkMuted,     fontFamily: Fonts.sans, fontSize: 9,  textTransform: 'uppercase', letterSpacing: 0.4 },
 
   // ── Risk Badge ───────────────────────────────────────────────────────────────
   riskBadge: {
-    overflow: 'hidden',
     borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
     borderWidth: 1,
-    fontFamily: Fonts.mono,
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    alignSelf: 'center',
-  },
-
-  // ── Financial Coach ──────────────────────────────────────────────────────────
-  coachCard: {
-    backgroundColor: MonikeColors.bgSurface,
-    borderWidth: 1,
-    borderRadius: CardRadius,
-    padding: 16,
-    gap: 13,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.28,
-    shadowRadius: 18,
-    elevation: 6,
-  },
-  coachHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 11 },
-  coachIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  coachHeaderCopy: { flex: 1, minWidth: 0 },
-  coachEyebrow: {
-    color: MonikeColors.accentPulse,
     fontFamily: Fonts.mono,
     fontSize: 10,
     fontWeight: '700',
-    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+    alignSelf: 'flex-start',
+    letterSpacing: 0.6,
   },
-  coachTitle: {
-    marginTop: 3,
-    color: MonikeColors.inkPrimary,
-    fontFamily: Fonts.heading,
-    fontSize: 15,
-    fontWeight: '700',
-    lineHeight: 20,
-  },
-  coachRiskPill: {
-    minWidth: 58,
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    alignItems: 'center',
-  },
-  coachRiskText: { fontFamily: Fonts.mono, fontSize: 13, fontWeight: '800' },
-  coachRiskLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 9, textTransform: 'uppercase' },
-  coachPrimaryAction: {
-    color: MonikeColors.inkSecondary,
-    fontFamily: Fonts.sans,
-    fontSize: 13,
-    lineHeight: 20,
-  },
-  coachPlanRow: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    backgroundColor: MonikeColors.bgElevated,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: MonikeColors.inkGhost,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-  },
-  coachMetricBlock: { flex: 1, gap: 4 },
-  coachMetricLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 9, textTransform: 'uppercase' },
-  coachMetricValue: { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 13, fontWeight: '700' },
-  coachMetricDivider: { width: 1, backgroundColor: MonikeColors.inkGhost, marginHorizontal: 8 },
-  coachTipsStack: { gap: 8 },
-  coachTipRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
-  coachTipBullet: { width: 5, height: 5, borderRadius: 3, marginTop: 7 },
-  coachTipText: { flex: 1, color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 12, lineHeight: 18 },
 
   // ── Quick Actions ─────────────────────────────────────────────────────────────
   quickActionsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   quickActionItem: { alignItems: 'center', width: 76, gap: 7 },
   quickActionCircle: {
     width: 52, height: 52, borderRadius: 26,
-    backgroundColor: MonikeColors.bgElevated,
-    borderWidth: 1, borderColor: MonikeColors.inkGhost,
+    backgroundColor: MonikeColors.bgSurface,
+    borderWidth: 1,
     alignItems: 'center', justifyContent: 'center',
   },
-  predictGlow: {
-    shadowColor: MonikeColors.accentPulse,
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 10,
-    borderColor: '#00E67644',
+  quickActionCircleActive: {
+    backgroundColor: '#00E67610',
   },
-  quickActionLabel:       { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 10 },
-  quickActionLabelActive: { color: MonikeColors.accentPulse },
+  quickActionLabel: { fontFamily: Fonts.sans, fontSize: 10, letterSpacing: 0.2 },
+
+  // ── Financial Coach ──────────────────────────────────────────────────────────
+  coachCard: {
+    backgroundColor: MonikeColors.bgSurface,
+    borderWidth: 1,
+    borderRadius: CardRadius,
+    overflow: 'hidden',
+  },
+  coachAccentBar: {
+    height: 2,
+    width: '100%',
+  },
+  coachBody: {
+    paddingTop: 14,
+    paddingBottom: 14,
+  },
+  coachHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  coachIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  coachHeaderCopy: { flex: 1, minWidth: 0 },
+  coachEyebrow: {
+    fontFamily: Fonts.mono,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  coachTitle: {
+    color: MonikeColors.inkPrimary,
+    fontFamily: Fonts.heading,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  coachRiskPill: {
+    minWidth: 48,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    alignItems: 'center',
+    flexShrink: 0,
+  },
+  coachRiskPct:  { fontFamily: Fonts.mono, fontSize: 13, fontWeight: '800' },
+  coachRiskLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 8, textTransform: 'uppercase', marginTop: 1 },
+  coachMetricRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    backgroundColor: MonikeColors.bgElevated,
+    marginHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: MonikeColors.inkGhost,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    marginBottom: 12,
+  },
+  coachMetricBlock: { flex: 1, gap: 3 },
+  coachMetricLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.4 },
+  coachMetricValue: { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 13, fontWeight: '700' },
+  coachMetricDivider: { width: 1, backgroundColor: MonikeColors.inkGhost, marginHorizontal: 8 },
+  coachTipsStack: { gap: 6, paddingHorizontal: 16 },
+  coachTipRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  coachTipBullet: { width: 4, height: 4, borderRadius: 2, marginTop: 7, flexShrink: 0 },
+  coachTipText: { flex: 1, color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 12, lineHeight: 18 },
 
   // ── Chart ─────────────────────────────────────────────────────────────────────
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  sectionTitle:  { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 11, fontWeight: '600', letterSpacing: 0.44, textTransform: 'uppercase' },
+  sectionTitle: {
+    color: MonikeColors.inkMuted,
+    fontFamily: Fonts.mono,
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+  },
   sectionValue:  { color: MonikeColors.inkSecondary, fontFamily: Fonts.mono, fontSize: 12 },
-  chartSection:  { gap: 10 },
+  chartSection:  { gap: 12 },
   chartCard: {
-    height: 124,
+    height: 128,
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
     paddingTop: 10,
-    paddingRight: 58,
+    paddingRight: 40,
     position: 'relative',
   },
-  chartColumn: { width: 32, alignItems: 'center', gap: 7 },
-  barSlot:     { height: 100, width: 28, justifyContent: 'flex-end', alignItems: 'center' },
+  chartColumn: { width: 32, alignItems: 'center', gap: 6 },
+  barSlot: {
+    height: 100, width: 28,
+    justifyContent: 'flex-end', alignItems: 'center',
+  },
   dashboardBar: {
-    width: 24,
+    width: 20,
     borderTopLeftRadius: 4,
     borderTopRightRadius: 4,
-    backgroundColor: MonikeColors.accentPulse,
+    backgroundColor: '#00E67650',
   },
-  dashboardBarHigh:  { backgroundColor: MonikeColors.signalRed },
+  dashboardBarHigh:  { backgroundColor: '#FF3D3D70' },
   dashboardBarToday: {
-    borderTopWidth: 2,
-    borderTopColor: MonikeColors.accentNeon,
     backgroundColor: MonikeColors.accentNeon,
+    width: 20,
   },
-  chartDayLabel:      { color: MonikeColors.inkMuted,    fontFamily: Fonts.mono, fontSize: 10 },
+  chartDayLabel:      { color: MonikeColors.inkGhost,    fontFamily: Fonts.mono, fontSize: 10 },
   chartDayLabelToday: { color: MonikeColors.accentPulse, fontFamily: Fonts.mono, fontSize: 10, fontWeight: '700' },
+  todayDot: {
+    width: 4, height: 4, borderRadius: 2,
+    backgroundColor: MonikeColors.accentPulse,
+    marginTop: -2,
+  },
   thresholdLine: {
     position: 'absolute',
-    left: 0, right: 58,
+    left: 0, right: 40,
     borderTopWidth: 1,
-    borderStyle: 'dotted',
-    borderColor: MonikeColors.signalAmber,
-    opacity: 0.65,
+    borderStyle: 'dashed',
+    borderColor: '#FFB30050',
   },
   thresholdLabel: {
     position: 'absolute',
     right: 0,
-    color: MonikeColors.signalAmber,
+    color: '#FFB300',
     fontFamily: Fonts.mono,
     fontSize: 9,
+    opacity: 0.75,
   },
 
   // ── Health Strip ─────────────────────────────────────────────────────────────
   healthStrip: {
-    minHeight: 92,
     backgroundColor: MonikeColors.bgSurface,
     borderWidth: 1,
     borderColor: MonikeColors.inkGhost,
     borderRadius: CardRadius,
     paddingVertical: 14,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     flexDirection: 'row',
-    alignItems: 'stretch',
+    alignItems: 'flex-start',
   },
-  healthBlock:      { flex: 1, gap: 4 },
-  healthDivider:    { width: 1, backgroundColor: MonikeColors.inkGhost, marginHorizontal: 9 },
-  healthLabel:      { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 10 },
-  healthValueRow:   { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  healthValue:      { fontFamily: Fonts.heading, fontSize: 13, fontWeight: '700' },
-  healthMonoSubtext:{ color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 9, lineHeight: 12 },
-  streakValue:      { color: MonikeColors.accentPulse, fontFamily: Fonts.mono, fontSize: 14, fontWeight: '700' },
-  savedValue:       { color: MonikeColors.signalBlue,  fontFamily: Fonts.mono, fontSize: 14, fontWeight: '700' },
-  healthSubtext:    { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 10 },
-  dotRow:           { flexDirection: 'row', gap: 4, marginTop: 1 },
-  streakDot:        { width: 5, height: 5, borderRadius: 3, backgroundColor: MonikeColors.inkGhost },
-  streakDotFilled:  { backgroundColor: MonikeColors.accentPulse },
+  healthBlock: { flex: 1, gap: 5 },
+  healthDivider: { width: 1, backgroundColor: MonikeColors.inkGhost, marginHorizontal: 10, marginTop: 2 },
+  healthLabel: {
+    color: MonikeColors.inkMuted,
+    fontFamily: Fonts.mono,
+    fontSize: 9,
+    textTransform: 'uppercase',
+    letterSpacing: 1.1,
+  },
+  healthPacePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  healthPaceText: { fontFamily: Fonts.mono, fontSize: 11, fontWeight: '700' },
+  healthSubtext: { color: MonikeColors.inkGhost, fontFamily: Fonts.sans, fontSize: 9, lineHeight: 12 },
+  streakValue: { color: MonikeColors.accentPulse, fontFamily: Fonts.mono, fontSize: 16, fontWeight: '700' },
+  savedValue:  { color: MonikeColors.signalBlue,  fontFamily: Fonts.mono, fontSize: 14, fontWeight: '700' },
+  dotRow:      { flexDirection: 'row', gap: 4 },
+  streakDot:   { width: 5, height: 5, borderRadius: 3, backgroundColor: MonikeColors.inkGhost },
+  streakDotFilled: { backgroundColor: MonikeColors.accentPulse },
+
+  // ── Transaction Detail Modal ──────────────────────────────────────────────────
+  txDetailSheet: {
+    position: 'absolute',
+    left: 0, right: 0, bottom: 0,
+    backgroundColor: MonikeColors.bgOverlay,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderWidth: 1,
+    borderColor: MonikeColors.inkGhost,
+    paddingHorizontal: ScreenPadding,
+    paddingTop: 10,
+    paddingBottom: 40,
+  },
+  txDetailHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+    marginTop: 6,
+  },
+  txDetailIconWrap: {
+    width: 52, height: 52, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  txDetailClose: {
+    width: 32, height: 32, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: MonikeColors.bgElevated,
+  },
+  txDetailAmount: {
+    fontFamily: Fonts.mono,
+    fontSize: 34,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+    marginBottom: 6,
+  },
+  txDetailDescription: {
+    color: MonikeColors.inkSecondary,
+    fontFamily: Fonts.sans,
+    fontSize: 15,
+    fontWeight: '500',
+    marginBottom: 22,
+  },
+  txDetailDivider: {
+    height: 1,
+    backgroundColor: MonikeColors.inkGhost,
+    marginBottom: 18,
+  },
+  txDetailRows: { gap: 16 },
+  txDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  txDetailRowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  txDetailRowLabel: {
+    color: MonikeColors.inkMuted,
+    fontFamily: Fonts.sans,
+    fontSize: 13,
+  },
+  txDetailRowValue: {
+    color: MonikeColors.inkPrimary,
+    fontFamily: Fonts.mono,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  txDetailTypeDot: {
+    width: 8, height: 8, borderRadius: 4,
+  },
 
   // ── Transactions ─────────────────────────────────────────────────────────────
-  recentSection:    { gap: 10 },
-  seeAllText:       { color: MonikeColors.accentPulse, fontFamily: Fonts.sans, fontSize: 11 },
+  recentSection: { gap: 12 },
+  seeAllButton: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  seeAllText:   { color: MonikeColors.accentPulse, fontFamily: Fonts.sans, fontSize: 11 },
   transactionsCard: {
     backgroundColor: MonikeColors.bgSurface,
     borderWidth: 1,
@@ -1532,23 +1665,24 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.sans,
     fontSize: 12,
     lineHeight: 18,
-    padding: 14,
+    padding: 16,
   },
   transactionRow: {
     minHeight: 60,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingLeft: 10,
-    paddingRight: 12,
+    paddingLeft: 14,
+    paddingRight: 14,
+    paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#2A30404D',
+    borderBottomColor: `${MonikeColors.inkGhost}50`,
   },
   transactionRowLast: { borderBottomWidth: 0 },
   transactionIconCircle: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: MonikeColors.bgElevated,
+    width: 36, height: 36, borderRadius: 10,
     alignItems: 'center', justifyContent: 'center',
-    marginRight: 10,
+    marginRight: 12,
+    flexShrink: 0,
   },
   transactionCenter:    { flex: 1, minWidth: 0 },
   transactionDescription: {
@@ -1556,25 +1690,17 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.sans,
     fontSize: 13,
     fontWeight: '500',
-    maxWidth: 156,
   },
-  transactionMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 5 },
+  transactionMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 },
   transactionDate:    { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11 },
-  categoryPill: {
-    backgroundColor: MonikeColors.bgElevated,
-    borderRadius: 999,
-    paddingHorizontal: 4,
-    paddingVertical: 2,
-    maxWidth: 96,
-  },
-  categoryPillText:  { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 10 },
-  transactionRight:  { alignItems: 'flex-end', minWidth: 86 },
-  transactionAmount: { fontFamily: Fonts.mono, fontSize: 14, fontWeight: '600' },
-  transactionTime:   { marginTop: 5, color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 10 },
+  transactionTimeMeta: { color: MonikeColors.inkGhost, fontFamily: Fonts.sans, fontSize: 11 },
+  transactionRight:  { alignItems: 'flex-end', marginLeft: 8, flexShrink: 0 },
+  transactionAmount: { fontFamily: Fonts.mono, fontSize: 13, fontWeight: '600' },
+  transactionCategory: { marginTop: 3, color: MonikeColors.inkGhost, fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 0.2 },
 
   // ── Day Sheet ────────────────────────────────────────────────────────────────
   sheetBackdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
-  backdropTint:  { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: '#00000099' },
+  backdropTint:  { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: '#000000A0' },
   daySheet: {
     position: 'absolute',
     left: 0, right: 0, bottom: 0,
@@ -1589,25 +1715,25 @@ const styles = StyleSheet.create({
     paddingBottom: 26,
   },
   sheetHandle: {
-    width: 36, height: 4, borderRadius: 2,
-    backgroundColor: MonikeColors.inkMuted,
+    width: 32, height: 3, borderRadius: 2,
+    backgroundColor: `${MonikeColors.inkMuted}60`,
     alignSelf: 'center',
-    marginBottom: 14,
+    marginBottom: 16,
   },
-  sheetHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  sheetHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   sheetTitle:     { color: MonikeColors.inkPrimary,   fontFamily: Fonts.heading, fontSize: 18, fontWeight: '700' },
   sheetSubtitle:  { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans,    fontSize: 12, marginTop: 2 },
-  sheetDebit:     { color: MonikeColors.signalRed,    fontFamily: Fonts.mono,    fontSize: 32, fontWeight: '700', marginTop: 10 },
+  sheetDebit:     { color: MonikeColors.signalRed,    fontFamily: Fonts.mono,    fontSize: 30, fontWeight: '700', marginTop: 12, marginBottom: 2 },
   sheetStatusText:{ color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 12, marginTop: 8 },
   breakdownTrack: {
-    height: 10, borderRadius: 5,
+    height: 6, borderRadius: 4,
     overflow: 'hidden',
     flexDirection: 'row',
-    marginTop: 14,
+    marginTop: 16,
     backgroundColor: MonikeColors.bgElevated,
   },
-  breakdownSegment: { height: 10 },
-  breakdownLabels:  { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8, marginBottom: 10 },
+  breakdownSegment: { height: 6 },
+  breakdownLabels:  { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10, marginBottom: 12 },
   breakdownLabel:   { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 10 },
   sheetTransactionList: { maxHeight: 260 },
 });

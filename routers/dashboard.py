@@ -47,7 +47,7 @@ async def _fetch_recent_transactions() -> list[RecentTransaction]:
             SELECT trans_date, description, category, debit, credit FROM statement_transactions
         ) AS txns
         ORDER BY trans_date DESC
-        LIMIT 5
+        LIMIT 20
         """
     )
     return [

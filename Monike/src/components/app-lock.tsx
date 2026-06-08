@@ -7,10 +7,12 @@ import {
   StyleSheet,
   Text,
   View,
+  Animated,
+  Easing,
 } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
-import { Fingerprint, LockKeyhole, ShieldCheck } from 'lucide-react-native';
+import { Fingerprint, LockKeyhole, ShieldCheck, Delete } from 'lucide-react-native';
 
 import { Fonts, MonikeColors } from '@/constants/theme';
 
@@ -56,17 +58,191 @@ function normaliseAutoLock(value: string | null): AutoLockMinutes {
   return value === '30' ? 30 : 5;
 }
 
+// ─── PIN Flow modes ────────────────────────────────────────────────────────────
+// 'unlock'         → normal unlock at startup / after auto-lock
+// 'create'         → first-time PIN setup
+// 'change_current' → verifying current PIN before change
+// 'change_new'     → entering new PIN
+// 'change_confirm' → confirming new PIN
+
+type PinMode = 'unlock' | 'create' | 'change_current' | 'change_new' | 'change_confirm';
+
+// ─── Digit display ─────────────────────────────────────────────────────────────
+
+function PinDigit({ filled, shake }: { filled: boolean; shake: Animated.Value }) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (filled) {
+      Animated.sequence([
+        Animated.timing(scale, { toValue: 1.25, duration: 80, useNativeDriver: true, easing: Easing.out(Easing.quad) }),
+        Animated.timing(scale, { toValue: 1, duration: 120, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [filled, scale]);
+
+  const translateX = shake.interpolate({
+    inputRange: [0, 0.1, 0.3, 0.5, 0.7, 0.9, 1],
+    outputRange: [0, -8, 8, -8, 8, -4, 0],
+  });
+
+  return (
+    <Animated.View style={[styles.pinDigit, filled && styles.pinDigitFilled, { transform: [{ scale }, { translateX }] }]}>
+      {filled && <View style={styles.pinDigitDot} />}
+    </Animated.View>
+  );
+}
+
+function triggerShake(anim: Animated.Value) {
+  anim.setValue(0);
+  Animated.timing(anim, {
+    toValue: 1,
+    duration: 400,
+    useNativeDriver: true,
+    easing: Easing.linear,
+  }).start(() => anim.setValue(0));
+}
+
+// ─── Keypad ────────────────────────────────────────────────────────────────────
+
+const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'DEL'];
+
+function Keypad({ onKey }: { onKey: (k: string) => void }) {
+  return (
+    <View style={styles.keypad}>
+      {KEYS.map((key, idx) => {
+        if (key === '') {
+          return <View key={idx} style={styles.keypadEmpty} />;
+        }
+        const isDel = key === 'DEL';
+        return (
+          <Pressable
+            key={idx}
+            style={({ pressed }) => [styles.keypadKey, isDel && styles.keypadKeyDel, pressed && styles.keypadKeyPressed]}
+            onPress={() => onKey(key)}
+          >
+            {isDel
+              ? <Delete size={18} color={MonikeColors.inkSecondary} strokeWidth={1.8} />
+              : <Text style={styles.keypadKeyText}>{key}</Text>
+            }
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+// ─── Pin Screen ────────────────────────────────────────────────────────────────
+
+function PinScreen({
+  mode,
+  entry,
+  message,
+  shakeAnim,
+  biometricEnabled,
+  biometricAvailable,
+  autoLockMinutes,
+  onKey,
+  onBiometric,
+  onBack,
+}: {
+  mode: PinMode;
+  entry: string;
+  message: string;
+  shakeAnim: Animated.Value;
+  biometricEnabled: boolean;
+  biometricAvailable: boolean;
+  autoLockMinutes: AutoLockMinutes;
+  onKey: (k: string) => void;
+  onBiometric: () => void;
+  onBack?: () => void;
+}) {
+  const titleMap: Record<PinMode, string> = {
+    unlock: 'Enter PIN',
+    create: 'Create PIN',
+    change_current: 'Confirm current PIN',
+    change_new: 'Choose new PIN',
+    change_confirm: 'Confirm new PIN',
+  };
+
+  const subtitleMap: Record<PinMode, string> = {
+    unlock: 'Your finance data is locked.',
+    create: 'Set a 4-digit PIN to protect your data.',
+    change_current: 'Enter your existing PIN to continue.',
+    change_new: 'Enter a new 4-digit PIN.',
+    change_confirm: 'Re-enter the PIN to confirm.',
+  };
+
+  const showBiometric = mode === 'unlock' && biometricEnabled && biometricAvailable;
+  const showBack = mode === 'change_current';
+
+  return (
+    <View style={styles.lockOverlay}>
+      <View style={styles.lockCard}>
+        {/* Header */}
+        <View style={styles.lockCardHeader}>
+          {showBack && (
+            <Pressable onPress={onBack} style={styles.backButton} hitSlop={12}>
+              <Text style={styles.backButtonText}>← Back</Text>
+            </Pressable>
+          )}
+          <View style={styles.lockIconWrap}>
+            <LockKeyhole size={26} color={MonikeColors.accentPulse} strokeWidth={1.6} />
+          </View>
+          <Text style={styles.lockTitle}>{titleMap[mode]}</Text>
+          <Text style={styles.lockSubtitle}>{subtitleMap[mode]}</Text>
+        </View>
+
+        {/* PIN dots */}
+        <View style={styles.pinRow}>
+          {[0, 1, 2, 3].map((i) => (
+            <PinDigit key={i} filled={i < entry.length} shake={i < entry.length ? shakeAnim : new Animated.Value(0)} />
+          ))}
+        </View>
+
+        {/* Error message */}
+        {message ? (
+          <Text style={styles.pinMessage}>{message}</Text>
+        ) : (
+          <View style={{ height: 18 }} />
+        )}
+
+        {/* Keypad */}
+        <Keypad onKey={onKey} />
+
+        {/* Biometric */}
+        {showBiometric && (
+          <Pressable style={styles.biometricButton} onPress={onBiometric}>
+            <Fingerprint size={16} color={MonikeColors.accentPulse} strokeWidth={1.8} />
+            <Text style={styles.biometricText}>Use biometrics</Text>
+          </Pressable>
+        )}
+
+        {/* Footer */}
+        <View style={styles.secureRow}>
+          <ShieldCheck size={12} color={MonikeColors.inkGhost} strokeWidth={1.8} />
+          <Text style={styles.secureText}>Locks after {autoLockMinutes} min away</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// ─── Provider ──────────────────────────────────────────────────────────────────
+
 export function AppLockProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [locked, setLocked] = useState(true);
   const [pin, setPin] = useState<string | null>(null);
-  const [pinEntry, setPinEntry] = useState('');
-  const [mode, setMode] = useState<'create' | 'unlock'>('unlock');
+  const [mode, setMode] = useState<PinMode>('unlock');
+  const [entry, setEntry] = useState('');
+  const [pendingNewPin, setPendingNewPin] = useState('');
   const [message, setMessage] = useState('');
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricEnabled, setBiometricEnabledState] = useState(false);
   const [autoLockMinutes, setAutoLockMinutesState] = useState<AutoLockMinutes>(DEFAULT_AUTO_LOCK_MINUTES);
   const lastInactiveAt = useRef<number | null>(null);
+  const shakeAnim = useRef(new Animated.Value(0)).current;
 
   const unlockWithBiometrics = useCallback(async () => {
     if (!biometricAvailable || !biometricEnabled) return false;
@@ -77,12 +253,23 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
     });
     if (result.success) {
       setLocked(false);
-      setPinEntry('');
+      setEntry('');
       setMessage('');
       return true;
     }
     return false;
   }, [biometricAvailable, biometricEnabled]);
+
+  // Standalone biometric prompt (not tied to lock state) — for enabling feature
+  const promptBiometricForEnabling = useCallback(async (): Promise<boolean> => {
+    if (!biometricAvailable) return false;
+    const result = await LocalAuthentication.authenticateAsync({
+      promptMessage: 'Confirm with biometrics to enable',
+      fallbackLabel: 'Cancel',
+      disableDeviceFallback: true,
+    });
+    return result.success;
+  }, [biometricAvailable]);
 
   useEffect(() => {
     let mounted = true;
@@ -108,6 +295,7 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
     return () => { mounted = false; };
   }, []);
 
+  // Auto-attempt biometrics on lock screen
   useEffect(() => {
     if (!ready || !locked || mode !== 'unlock') return;
     void unlockWithBiometrics();
@@ -130,45 +318,113 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
     return () => subscription.remove();
   }, [autoLockMinutes, pin]);
 
-  const submitPin = async () => {
-    if (pinEntry.length !== 4) {
-      setMessage('Enter a 4-digit PIN.');
+  const handleKey = useCallback((key: string) => {
+    if (key === 'DEL') {
+      setEntry((prev) => prev.slice(0, -1));
+      setMessage('');
       return;
     }
+
+    setEntry((prev) => {
+      if (prev.length >= 4) return prev;
+      const next = prev + key;
+
+      // Auto-submit when 4th digit entered
+      if (next.length === 4) {
+        // defer to avoid batched setState conflict
+        setTimeout(() => handleSubmit(next), 80);
+      }
+
+      return next;
+    });
+  }, [mode, pin, pendingNewPin]); // eslint-disable-line
+
+  const handleSubmit = useCallback((submittedEntry: string) => {
+    if (submittedEntry.length !== 4) return;
 
     if (mode === 'create') {
-      await setStoredValue(PIN_KEY, pinEntry);
-      setPin(pinEntry);
-      setMode('unlock');
-      setLocked(false);
-      setPinEntry('');
+      void (async () => {
+        await setStoredValue(PIN_KEY, submittedEntry);
+        setPin(submittedEntry);
+        setMode('unlock');
+        setLocked(false);
+        setEntry('');
+        setMessage('');
+      })();
+      return;
+    }
+
+    if (mode === 'unlock') {
+      if (submittedEntry === pin) {
+        setLocked(false);
+        setEntry('');
+        setMessage('');
+      } else {
+        triggerShake(shakeAnim);
+        setEntry('');
+        setMessage('Incorrect PIN');
+      }
+      return;
+    }
+
+    if (mode === 'change_current') {
+      if (submittedEntry === pin) {
+        setMode('change_new');
+        setEntry('');
+        setMessage('');
+      } else {
+        triggerShake(shakeAnim);
+        setEntry('');
+        setMessage('Incorrect PIN');
+      }
+      return;
+    }
+
+    if (mode === 'change_new') {
+      setPendingNewPin(submittedEntry);
+      setMode('change_confirm');
+      setEntry('');
       setMessage('');
       return;
     }
 
-    if (pinEntry === pin) {
-      setLocked(false);
-      setPinEntry('');
-      setMessage('');
+    if (mode === 'change_confirm') {
+      if (submittedEntry === pendingNewPin) {
+        void (async () => {
+          await setStoredValue(PIN_KEY, submittedEntry);
+          setPin(submittedEntry);
+          setPendingNewPin('');
+          // Return to app — go back to unlock mode but immediately unlock
+          setMode('unlock');
+          setLocked(false);
+          setEntry('');
+          setMessage('');
+        })();
+      } else {
+        triggerShake(shakeAnim);
+        setPendingNewPin('');
+        setMode('change_new');
+        setEntry('');
+        setMessage('PINs don\'t match — try again');
+      }
       return;
     }
+  }, [mode, pin, pendingNewPin, shakeAnim]);
 
-    setPinEntry('');
-    setMessage('Incorrect PIN. Try again.');
-  };
-
+  // Fix: setBiometricEnabled no longer gates on unlockWithBiometrics (which requires lock screen)
+  // Instead, it calls a standalone biometric prompt for confirmation when ENABLING
   const setBiometricEnabled = useCallback(async (enabled: boolean) => {
     if (enabled && !biometricAvailable) {
-      Alert.alert('Biometrics unavailable', 'Set up Face ID, Touch ID, or fingerprint unlock on this device first.');
+      Alert.alert('Biometrics unavailable', 'Set up Face ID, Touch ID, or fingerprint on this device first.');
       return;
     }
     if (enabled) {
-      const ok = await unlockWithBiometrics();
-      if (!ok) return;
+      const confirmed = await promptBiometricForEnabling();
+      if (!confirmed) return; // user cancelled — don't toggle on
     }
     setBiometricEnabledState(enabled);
     await setStoredValue(BIOMETRIC_KEY, String(enabled));
-  }, [biometricAvailable, unlockWithBiometrics]);
+  }, [biometricAvailable, promptBiometricForEnabling]);
 
   const setAutoLockMinutes = useCallback(async (minutes: AutoLockMinutes) => {
     setAutoLockMinutesState(minutes);
@@ -180,10 +436,10 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
     biometricAvailable,
     biometricEnabled,
     beginPinChange: () => {
-      setMode('create');
+      setMode('change_current');
       setLocked(true);
-      setPinEntry('');
-      setMessage('Choose a new 4-digit PIN.');
+      setEntry('');
+      setMessage('');
     },
     lockNow: () => {
       setMode(pin ? 'unlock' : 'create');
@@ -196,126 +452,227 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
   return (
     <AppLockContext.Provider value={context}>
       {children}
-      {!ready || locked ? (
-        <View style={styles.lockOverlay}>
-          <View style={styles.lockCard}>
+      {(!ready || locked) ? (
+        ready ? (
+          <PinScreen
+            mode={mode}
+            entry={entry}
+            message={message}
+            shakeAnim={shakeAnim}
+            biometricEnabled={biometricEnabled}
+            biometricAvailable={biometricAvailable}
+            autoLockMinutes={autoLockMinutes}
+            onKey={handleKey}
+            onBiometric={() => void unlockWithBiometrics()}
+            onBack={mode === 'change_current' ? () => {
+              setMode('unlock');
+              setLocked(false);
+              setEntry('');
+              setMessage('');
+            } : undefined}
+          />
+        ) : (
+          // Boot splash — just the lock icon while SecureStore loads
+          <View style={styles.bootSplash}>
             <View style={styles.lockIconWrap}>
-              <LockKeyhole size={30} color={MonikeColors.accentPulse} strokeWidth={1.8} />
+              <LockKeyhole size={26} color={MonikeColors.accentPulse} strokeWidth={1.6} />
             </View>
-            <Text style={styles.lockTitle}>{!ready ? 'Securing Monike' : mode === 'create' ? 'Protect Monike' : 'Unlock Monike'}</Text>
-            <Text style={styles.lockSubtitle}>
-              {!ready
-                ? 'Preparing the privacy lock before showing your finance data.'
-                : mode === 'create'
-                ? 'Create a 4-digit PIN before using your finance dashboard.'
-                : 'Your spending and cashflow data are locked.'}
-            </Text>
-
-            {ready ? (
-              <>
-                <View style={styles.pinDots}>
-              {[0, 1, 2, 3].map((i) => (
-                <View key={i} style={[styles.pinDot, pinEntry.length > i && styles.pinDotFilled]} />
-              ))}
-                </View>
-            {message ? <Text style={styles.lockMessage}>{message}</Text> : null}
-
-            <View style={styles.keypad}>
-              {['1', '2', '3', '4', '5', '6', '7', '8', '9', '⌫', '0', 'OK'].map((key) => (
-                <Pressable
-                  key={key}
-                  style={[styles.keypadButton, key === 'OK' && styles.keypadButtonPrimary]}
-                  onPress={() => {
-                    if (key === '⌫') {
-                      setPinEntry((prev) => prev.slice(0, -1));
-                    } else if (key === 'OK') {
-                      void submitPin();
-                    } else {
-                      setPinEntry((prev) => (prev.length < 4 ? `${prev}${key}` : prev));
-                    }
-                  }}
-                >
-                  <Text style={[styles.keypadText, key === 'OK' && styles.keypadTextPrimary]}>{key}</Text>
-                </Pressable>
-              ))}
-            </View>
-
-            {mode === 'unlock' && biometricEnabled && biometricAvailable ? (
-              <Pressable style={styles.biometricButton} onPress={() => void unlockWithBiometrics()}>
-                <Fingerprint size={16} color={MonikeColors.accentPulse} strokeWidth={1.8} />
-                <Text style={styles.biometricText}>Use biometrics</Text>
-              </Pressable>
-            ) : null}
-
-            <View style={styles.secureRow}>
-              <ShieldCheck size={13} color={MonikeColors.inkMuted} strokeWidth={1.8} />
-              <Text style={styles.secureText}>Auto-locks after {autoLockMinutes} minutes away.</Text>
-            </View>
-            </>
-            ) : null}
+            <Text style={styles.bootText}>Securing Monike…</Text>
           </View>
-        </View>
+        )
       ) : null}
     </AppLockContext.Provider>
   );
 }
 
+// ─── Styles ────────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   lockOverlay: {
     position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
+    top: 0, right: 0, bottom: 0, left: 0,
     zIndex: 1000,
     backgroundColor: MonikeColors.bgVoid,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
   },
+
   lockCard: {
     width: '100%',
-    maxWidth: 380,
-    borderRadius: 24,
+    maxWidth: 360,
+    borderRadius: 28,
     borderWidth: 1,
     borderColor: MonikeColors.inkGhost,
     backgroundColor: MonikeColors.bgSurface,
-    padding: 22,
+    padding: 24,
+    paddingBottom: 20,
     alignItems: 'center',
+    gap: 0,
   },
+
+  lockCardHeader: {
+    alignItems: 'center',
+    gap: 6,
+    width: '100%',
+    marginBottom: 8,
+  },
+
+  backButton: {
+    alignSelf: 'flex-start',
+    marginBottom: 4,
+  },
+  backButtonText: {
+    color: MonikeColors.accentPulse,
+    fontFamily: Fonts.sans,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
   lockIconWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    backgroundColor: `${MonikeColors.accentPulse}16`,
-    borderWidth: 1,
-    borderColor: `${MonikeColors.accentPulse}35`,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  lockTitle: { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 22, fontWeight: '800' },
-  lockSubtitle: { marginTop: 8, color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 13, lineHeight: 20, textAlign: 'center' },
-  pinDots: { flexDirection: 'row', gap: 12, marginTop: 24, marginBottom: 8 },
-  pinDot: { width: 13, height: 13, borderRadius: 7, borderWidth: 1, borderColor: MonikeColors.inkMuted },
-  pinDotFilled: { backgroundColor: MonikeColors.accentPulse, borderColor: MonikeColors.accentPulse },
-  lockMessage: { color: MonikeColors.signalAmber, fontFamily: Fonts.sans, fontSize: 12, marginBottom: 6 },
-  keypad: { marginTop: 12, width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 10 },
-  keypadButton: {
-    width: '29%',
-    height: 52,
+    width: 56,
+    height: 56,
     borderRadius: 16,
-    backgroundColor: MonikeColors.bgElevated,
+    backgroundColor: `${MonikeColors.accentPulse}14`,
     borderWidth: 1,
-    borderColor: MonikeColors.inkGhost,
+    borderColor: `${MonikeColors.accentPulse}28`,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+
+  lockTitle: {
+    color: MonikeColors.inkPrimary,
+    fontFamily: Fonts.heading,
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  lockSubtitle: {
+    color: MonikeColors.inkMuted,
+    fontFamily: Fonts.sans,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginTop: 2,
+  },
+
+  // PIN dots — large, airy, elegant
+  pinRow: {
+    flexDirection: 'row',
+    gap: 16,
+    marginTop: 20,
+    marginBottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  keypadButtonPrimary: { backgroundColor: MonikeColors.accentPulse, borderColor: MonikeColors.accentPulse },
-  keypadText: { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 18, fontWeight: '700' },
-  keypadTextPrimary: { color: MonikeColors.bgVoid },
-  biometricButton: { marginTop: 18, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  biometricText: { color: MonikeColors.accentPulse, fontFamily: Fonts.sans, fontSize: 13, fontWeight: '700' },
-  secureRow: { marginTop: 18, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  secureText: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11 },
+  pinDigit: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    borderColor: MonikeColors.inkGhost,
+    backgroundColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pinDigitFilled: {
+    borderColor: MonikeColors.accentPulse,
+    backgroundColor: `${MonikeColors.accentPulse}20`,
+  },
+  pinDigitDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: MonikeColors.accentPulse,
+  },
+  pinMessage: {
+    color: MonikeColors.signalAmber,
+    fontFamily: Fonts.sans,
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 10,
+    height: 18,
+  },
+
+  // Keypad — clean, spacious, no border clutter
+  keypad: {
+    marginTop: 20,
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    justifyContent: 'center',
+  },
+  keypadKey: {
+    width: '29.5%',
+    height: 56,
+    borderRadius: 14,
+    backgroundColor: MonikeColors.bgElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  keypadKeyDel: {
+    backgroundColor: 'transparent',
+  },
+  keypadKeyPressed: {
+    backgroundColor: `${MonikeColors.accentPulse}18`,
+  },
+  keypadEmpty: {
+    width: '29.5%',
+    height: 56,
+  },
+  keypadKeyText: {
+    color: MonikeColors.inkPrimary,
+    fontFamily: Fonts.mono,
+    fontSize: 20,
+    fontWeight: '600',
+  },
+
+  biometricButton: {
+    marginTop: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    backgroundColor: `${MonikeColors.accentPulse}10`,
+    borderWidth: 1,
+    borderColor: `${MonikeColors.accentPulse}25`,
+  },
+  biometricText: {
+    color: MonikeColors.accentPulse,
+    fontFamily: Fonts.sans,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  secureRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  secureText: {
+    color: MonikeColors.inkGhost,
+    fontFamily: Fonts.sans,
+    fontSize: 10,
+  },
+
+  // Boot splash
+  bootSplash: {
+    position: 'absolute',
+    top: 0, right: 0, bottom: 0, left: 0,
+    zIndex: 1000,
+    backgroundColor: MonikeColors.bgVoid,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+  },
+  bootText: {
+    color: MonikeColors.inkMuted,
+    fontFamily: Fonts.sans,
+    fontSize: 13,
+  },
 });
