@@ -12,8 +12,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { HelpCircle } from 'lucide-react-native';
 
 import { MonikeHeader } from '@/components/monike-header';
-import { BottomNavigation } from '@/components/bottom-navigation';
-import { BottomTabInset, CardRadius, Fonts, MonikeColors, ScreenPadding } from '@/constants/theme';
+import { CardRadius, Fonts, MonikeColors, ScreenPadding } from '@/constants/theme';
 import { apiFetch } from '@/services/api';
 import { useSWR } from '@/hooks/use-swr';
 
@@ -991,7 +990,7 @@ export default function FlowVelocityScreen() {
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <MonikeHeader title="Flow & Velocity" />
+        <MonikeHeader title="Flow & Velocity" back />
 
         {isLoading ? (
           <SkeletonScreen />
@@ -1002,7 +1001,7 @@ export default function FlowVelocityScreen() {
         ) : data ? (
           <ScrollView
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + BottomTabInset + 32 }]}
+            contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}
           >
             {/* Page header */}
             <View style={styles.pageHeader}>
@@ -1072,7 +1071,6 @@ export default function FlowVelocityScreen() {
           </ScrollView>
         ) : null}
       </SafeAreaView>
-      <BottomNavigation activeRoute="home" />
     </View>
   );
 }

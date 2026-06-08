@@ -29,8 +29,8 @@ import {
 import * as DocumentPicker from 'expo-document-picker';
 import { mutateAll } from '@/hooks/use-swr';
 import { MonikeHeader } from '@/components/monike-header';
-import { BottomNavigation } from '@/components/bottom-navigation';
-import { BottomTabInset, CardRadius, Fonts, MonikeColors, ScreenPadding } from '@/constants/theme';
+import { useAppLock } from '@/components/app-lock';
+import { CardRadius, Fonts, MonikeColors, ScreenPadding } from '@/constants/theme';
 import { apiPost, apiFetch } from '@/services/api';
 import { useSWR } from '@/hooks/use-swr';
 
@@ -81,6 +81,51 @@ function SectionHeader({ icon, title }: { icon: React.ReactNode; title: string }
 
 function SettingsCard({ children }: { children: React.ReactNode }) {
   return <View style={styles.card}>{children}</View>;
+}
+
+function ShimmerBlock({ style }: { style?: object }) {
+  const opacity = useRef(new Animated.Value(0.08)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0.18, duration: 720, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.08, duration: 720, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [opacity]);
+
+  return <Animated.View style={[styles.shimmerBlock, { opacity }, style]} />;
+}
+
+function SettingsSkeleton() {
+  return (
+    <View style={styles.skeletonWrap}>
+      <View style={styles.skeletonHeaderRow}>
+        <ShimmerBlock style={styles.skeletonAvatar} />
+        <View style={styles.skeletonCopy}>
+          <ShimmerBlock style={styles.skeletonLineWide} />
+          <ShimmerBlock style={styles.skeletonLineMedium} />
+        </View>
+      </View>
+      <ShimmerBlock style={styles.skeletonCard} />
+      <ShimmerBlock style={styles.skeletonCardSmall} />
+    </View>
+  );
+}
+
+function ModelStatusSkeleton() {
+  return (
+    <View style={styles.modelSkeletonCard}>
+      <View style={styles.skeletonHeaderRow}>
+        <ShimmerBlock style={styles.skeletonDot} />
+        <ShimmerBlock style={styles.skeletonLineWide} />
+      </View>
+      <ShimmerBlock style={styles.skeletonCardSmall} />
+    </View>
+  );
 }
 
 function SettingsRow({
@@ -448,8 +493,16 @@ export default function SettingsScreen() {
   const [retraining, setRetraining] = useState(false);
   const [retrainProgress, setRetrainProgress] = useState('');
 
-  const { data: settingsData, mutate: mutateSettings } = useSWR<SettingsData>('/settings', apiFetch);
-  const { data: modelStatus, mutate: mutateModel } = useSWR<ModelStatus>('/model/status', apiFetch);
+  const { data: settingsData, isLoading: settingsLoading, mutate: mutateSettings } = useSWR<SettingsData>('/settings', apiFetch);
+  const { data: modelStatus, isLoading: modelLoading, mutate: mutateModel } = useSWR<ModelStatus>('/model/status', apiFetch);
+  const {
+    autoLockMinutes,
+    beginPinChange,
+    biometricAvailable,
+    biometricEnabled,
+    setAutoLockMinutes,
+    setBiometricEnabled,
+  } = useAppLock();
 
   const [form, setForm] = useState<SettingsData>({
     display_name: 'Chijioke',
@@ -526,16 +579,18 @@ export default function SettingsScreen() {
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <MonikeHeader title="Settings" />
+        <MonikeHeader title="Settings" back />
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[
             styles.content,
-            { paddingBottom: insets.bottom + BottomTabInset + 32 },
+            { paddingBottom: insets.bottom + 32 },
           ]}
         >
+          {settingsLoading ? <SettingsSkeleton /> : null}
+
           {/* ── Profile ─────────────────────────────────────────── */}
-          <View style={styles.section}>
+          <View style={[styles.section, settingsLoading && styles.sectionDimmed]}>
             <SectionHeader
               icon={<User size={14} color={MonikeColors.accentPulse} strokeWidth={2} />}
               title="PROFILE"
@@ -617,12 +672,16 @@ export default function SettingsScreen() {
               icon={<BrainCircuit size={14} color={MonikeColors.accentPulse} strokeWidth={2} />}
               title="ML MODEL"
             />
-            <ModelStatusCard
-              status={modelStatus}
-              retraining={retraining}
-              retrainProgress={retrainProgress}
-              onRetrain={handleRetrain}
-            />
+            {modelLoading ? (
+              <ModelStatusSkeleton />
+            ) : (
+              <ModelStatusCard
+                status={modelStatus}
+                retraining={retraining}
+                retrainProgress={retrainProgress}
+                onRetrain={handleRetrain}
+              />
+            )}
             <Text style={styles.footNote}>
               Retrain uses all rows in daily_log. Run after importing new statement data to improve tomorrow's risk prediction.
             </Text>
@@ -653,9 +712,40 @@ export default function SettingsScreen() {
               title="SECURITY"
             />
             <SettingsCard>
-              <SettingsRow label="Change PIN" onPress={() => {}} />
+              <SettingsRow
+                label="Change PIN"
+                sublabel="Update the 4-digit PIN used on startup"
+                onPress={beginPinChange}
+              />
               <View style={styles.cardDivider} />
-              <SettingsRow label="Biometric Unlock" right={<Switch value={false} disabled trackColor={{ false: MonikeColors.bgElevated, true: `${MonikeColors.accentPulse}66` }} thumbColor={MonikeColors.inkMuted} />} noBorder />
+              <SettingsRow
+                label="Biometric Unlock"
+                sublabel={biometricAvailable ? 'Use Face ID, Touch ID, or fingerprint after PIN setup' : 'No enrolled biometrics found on this device'}
+                right={
+                  <Switch
+                    value={biometricEnabled}
+                    disabled={!biometricAvailable}
+                    onValueChange={(value) => void setBiometricEnabled(value)}
+                    trackColor={{ false: MonikeColors.bgElevated, true: `${MonikeColors.accentPulse}66` }}
+                    thumbColor={biometricEnabled ? MonikeColors.accentPulse : MonikeColors.inkMuted}
+                  />
+                }
+              />
+              <View style={styles.cardDivider} />
+              <SettingsRow
+                label="Auto-lock after 5 minutes"
+                sublabel="Best for daily finance privacy"
+                onPress={() => void setAutoLockMinutes(5)}
+                right={<Text style={autoLockMinutes === 5 ? styles.selectedValue : styles.unselectedValue}>5 min</Text>}
+              />
+              <View style={styles.cardDivider} />
+              <SettingsRow
+                label="Auto-lock after 30 minutes"
+                sublabel="Less frequent unlock prompts"
+                onPress={() => void setAutoLockMinutes(30)}
+                right={<Text style={autoLockMinutes === 30 ? styles.selectedValue : styles.unselectedValue}>30 min</Text>}
+                noBorder
+              />
             </SettingsCard>
           </View>
 
@@ -676,7 +766,6 @@ export default function SettingsScreen() {
           <Text style={styles.versionText}>MONIKE v1.0.0 · PostgreSQL monike</Text>
         </ScrollView>
       </SafeAreaView>
-      <BottomNavigation activeRoute="home" />
     </View>
   );
 }
@@ -687,6 +776,35 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: MonikeColors.bgVoid },
   safeArea: { flex: 1 },
   content: { paddingHorizontal: ScreenPadding, paddingTop: 8, gap: 6 },
+
+  // Loading skeleton
+  shimmerBlock: { backgroundColor: MonikeColors.inkPrimary, borderRadius: 8 },
+  skeletonWrap: {
+    borderRadius: CardRadius,
+    borderWidth: 1,
+    borderColor: MonikeColors.inkGhost,
+    backgroundColor: MonikeColors.bgSurface,
+    padding: 16,
+    gap: 14,
+    marginBottom: 8,
+  },
+  skeletonHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  skeletonAvatar: { width: 38, height: 38, borderRadius: 19 },
+  skeletonCopy: { flex: 1, gap: 8 },
+  skeletonLineWide: { height: 12, width: '70%' },
+  skeletonLineMedium: { height: 10, width: '45%' },
+  skeletonCard: { height: 78, width: '100%' },
+  skeletonCardSmall: { height: 44, width: '100%' },
+  skeletonDot: { width: 12, height: 12, borderRadius: 6 },
+  modelSkeletonCard: {
+    borderRadius: CardRadius,
+    borderWidth: 1,
+    borderColor: MonikeColors.inkGhost,
+    backgroundColor: MonikeColors.bgSurface,
+    padding: 16,
+    gap: 12,
+  },
+  sectionDimmed: { opacity: 0.72 },
 
   // Section
   section: { gap: 8, marginBottom: 8 },
@@ -744,6 +862,8 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.sans,
     fontSize: 11,
   },
+  selectedValue: { color: MonikeColors.accentPulse, fontFamily: Fonts.mono, fontSize: 12, fontWeight: '800' },
+  unselectedValue: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 12 },
 
   // Avatar
   avatarBubble: {

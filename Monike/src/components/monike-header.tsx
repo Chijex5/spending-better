@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
+import { useRouter } from 'expo-router';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Bell, Menu } from 'lucide-react-native';
+import { ArrowLeft, Bell, Menu } from 'lucide-react-native';
 
 import { useMonikeShell } from '@/components/shell-context';
 import { Fonts, MonikeColors } from '@/constants/theme';
@@ -9,12 +10,15 @@ export function MonikeHeader({
   hasAlerts = false,
   home = false,
   title,
+  back = false,
 }: {
   hasAlerts?: boolean;
   home?: boolean;
   title: string;
+  back?: boolean;
 }) {
   const { openDrawer, showAlerts } = useMonikeShell();
+  const router = useRouter();
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(-8)).current;
@@ -29,8 +33,15 @@ export function MonikeHeader({
   return (
     <Animated.View style={[styles.header, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
 
-      <HapticButton onPress={openDrawer} accessibilityLabel="Open menu">
-        <Menu size={18} color={MonikeColors.inkPrimary} strokeWidth={1.7} />
+      <HapticButton
+        onPress={back ? () => (router.canGoBack() ? router.back() : router.replace('/')) : openDrawer}
+        accessibilityLabel={back ? 'Go back' : 'Open menu'}
+      >
+        {back ? (
+          <ArrowLeft size={18} color={MonikeColors.inkPrimary} strokeWidth={1.9} />
+        ) : (
+          <Menu size={18} color={MonikeColors.inkPrimary} strokeWidth={1.7} />
+        )}
       </HapticButton>
 
       <View style={styles.centre}>
@@ -47,10 +58,14 @@ export function MonikeHeader({
         )}
       </View>
 
-      <HapticButton onPress={() => showAlerts(hasAlerts)} accessibilityLabel="Notifications">
-        <Bell size={18} color={MonikeColors.inkPrimary} strokeWidth={1.7} />
-        {hasAlerts ? <Pip /> : null}
-      </HapticButton>
+      {back ? (
+        <View style={styles.headerSpacer} />
+      ) : (
+        <HapticButton onPress={() => showAlerts(hasAlerts)} accessibilityLabel="Notifications">
+          <Bell size={18} color={MonikeColors.inkPrimary} strokeWidth={1.7} />
+          {hasAlerts ? <Pip /> : null}
+        </HapticButton>
+      )}
 
     </Animated.View>
   );
@@ -110,6 +125,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  headerSpacer: { width: 38, height: 38 },
   iconButton: {
     width: 38,
     height: 38,
