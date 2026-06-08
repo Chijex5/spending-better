@@ -13,7 +13,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronRight, Pencil, DollarSign, RefreshCw, Settings, X, Activity } from 'lucide-react-native';
+import { ChevronRight, Pencil, DollarSign, PieChart, Shield, RefreshCw, Settings, X, Activity } from 'lucide-react-native';
 
 import { Fonts, MonikeColors } from '@/constants/theme';
 
@@ -237,6 +237,22 @@ export function MonikeShellProvider({ children }: { children: ReactNode }) {
                 }}
               />
 
+              <ActionRow
+                icon={<PieChart size={17} color={MonikeColors.inkSecondary} strokeWidth={1.7} />}
+                title="Insights"
+                subtitle="Get actionable insights from your data"
+                onPress={() => {
+                  closeDrawer();
+                  router.navigate('/categories');
+                }}
+              />
+
+              <ActionRow
+                icon={<Shield size={17} color={MonikeColors.inkSecondary} strokeWidth={1.7} />}
+                title="Alerts"
+                subtitle="View recent notifications and alerts"
+                onPress={() => router.navigate('/forecast')}
+              />
               {toastVisible && (
                 <Animated.View style={[styles.toastWrap, { opacity: toastOpacity }]}>
                   <View style={styles.toastPip} />
