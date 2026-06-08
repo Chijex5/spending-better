@@ -25,12 +25,15 @@ import {
   Trash2,
   Upload,
   User,
+  Fingerprint,
+  Timer,
+  Key,
 } from 'lucide-react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { mutateAll } from '@/hooks/use-swr';
 import { MonikeHeader } from '@/components/monike-header';
-import { BottomNavigation } from '@/components/bottom-navigation';
-import { BottomTabInset, CardRadius, Fonts, MonikeColors, ScreenPadding } from '@/constants/theme';
+import { useAppLock } from '@/components/app-lock';
+import { CardRadius, Fonts, MonikeColors, ScreenPadding } from '@/constants/theme';
 import { apiPost, apiFetch } from '@/services/api';
 import { useSWR } from '@/hooks/use-swr';
 
@@ -68,44 +71,117 @@ function formatNaira(value: number) {
   return new Intl.NumberFormat('en-NG', { maximumFractionDigits: 0 }).format(value);
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ─── Shimmer ──────────────────────────────────────────────────────────────────
 
-function SectionHeader({ icon, title }: { icon: React.ReactNode; title: string }) {
+function ShimmerBlock({ style }: { style?: object }) {
+  const opacity = useRef(new Animated.Value(0.06)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0.16, duration: 800, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.06, duration: 800, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [opacity]);
+
+  return <Animated.View style={[{ backgroundColor: MonikeColors.inkPrimary, borderRadius: 8 }, { opacity }, style]} />;
+}
+
+function SettingsSkeleton() {
   return (
-    <View style={styles.sectionHeader}>
-      <View style={styles.sectionIconWrap}>{icon}</View>
-      <Text style={styles.sectionTitle}>{title}</Text>
+    <View style={{ gap: 20, paddingTop: 8 }}>
+      <View style={{ gap: 12 }}>
+        <ShimmerBlock style={{ height: 110, borderRadius: CardRadius }} />
+        <ShimmerBlock style={{ height: 76, borderRadius: CardRadius }} />
+        <ShimmerBlock style={{ height: 76, borderRadius: CardRadius }} />
+        <ShimmerBlock style={{ height: 140, borderRadius: CardRadius }} />
+      </View>
     </View>
   );
 }
 
-function SettingsCard({ children }: { children: React.ReactNode }) {
-  return <View style={styles.card}>{children}</View>;
+// ─── Profile Hero Card ────────────────────────────────────────────────────────
+
+function ProfileCard({ name, email }: { name: string; email: string }) {
+  const initial = name?.[0]?.toUpperCase() ?? '?';
+
+  return (
+    <View style={styles.profileCard}>
+      {/* Subtle grid texture lines */}
+      <View style={styles.profileGrid} pointerEvents="none">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <View key={i} style={[styles.profileGridLine, { top: 18 + i * 18 }]} />
+        ))}
+      </View>
+
+      <View style={styles.profileInner}>
+        <View style={styles.profileAvatarWrap}>
+          <Text style={styles.profileAvatarLetter}>{initial}</Text>
+        </View>
+        <View style={styles.profileCopy}>
+          <Text style={styles.profileName}>{name}</Text>
+          <Text style={styles.profileEmail}>{email}</Text>
+        </View>
+        <View style={styles.profileBadge}>
+          <Text style={styles.profileBadgeText}>PRO</Text>
+        </View>
+      </View>
+    </View>
+  );
 }
 
-function SettingsRow({
+// ─── Section Label ────────────────────────────────────────────────────────────
+
+function SectionLabel({ icon, title }: { icon: React.ReactNode; title: string }) {
+  return (
+    <View style={styles.sectionLabel}>
+      {icon}
+      <Text style={styles.sectionLabelText}>{title}</Text>
+    </View>
+  );
+}
+
+// ─── Group Card ───────────────────────────────────────────────────────────────
+// Wraps a list of rows in a single bordered card with internal dividers
+
+function GroupCard({ children }: { children: React.ReactNode }) {
+  return <View style={styles.groupCard}>{children}</View>;
+}
+
+function GroupDivider() {
+  return <View style={styles.groupDivider} />;
+}
+
+// ─── Row types ────────────────────────────────────────────────────────────────
+
+function Row({
   label,
   sublabel,
   right,
   onPress,
   danger,
-  noBorder,
+  first,
+  last,
 }: {
   label: string;
   sublabel?: string;
   right?: React.ReactNode;
   onPress?: () => void;
   danger?: boolean;
-  noBorder?: boolean;
+  first?: boolean;
+  last?: boolean;
 }) {
   const bg = useRef(new Animated.Value(0)).current;
 
   const pressIn = () => {
     if (!onPress) return;
-    Animated.timing(bg, { toValue: 1, duration: 60, useNativeDriver: false }).start();
+    Animated.timing(bg, { toValue: 1, duration: 50, useNativeDriver: false }).start();
   };
   const pressOut = () => {
-    Animated.timing(bg, { toValue: 0, duration: 200, useNativeDriver: false }).start();
+    Animated.timing(bg, { toValue: 0, duration: 180, useNativeDriver: false }).start();
   };
 
   const bgColor = bg.interpolate({
@@ -115,35 +191,57 @@ function SettingsRow({
 
   return (
     <Pressable onPress={onPress} onPressIn={pressIn} onPressOut={pressOut} disabled={!onPress}>
-      <Animated.View
-        style={[
-          styles.settingsRow,
-          noBorder && styles.settingsRowNoBorder,
-          { backgroundColor: bgColor },
-        ]}
-      >
-        <View style={styles.settingsRowLeft}>
-          <Text style={[styles.settingsRowLabel, danger && { color: MonikeColors.signalRed }]}>
-            {label}
-          </Text>
-          {sublabel ? <Text style={styles.settingsRowSublabel}>{sublabel}</Text> : null}
+      <Animated.View style={[styles.row, { backgroundColor: bgColor }]}>
+        <View style={styles.rowLeft}>
+          <Text style={[styles.rowLabel, danger && { color: MonikeColors.signalRed }]}>{label}</Text>
+          {sublabel ? <Text style={styles.rowSublabel}>{sublabel}</Text> : null}
         </View>
-        {right ?? (onPress ? <ChevronRight size={15} color={MonikeColors.inkGhost} strokeWidth={2} /> : null)}
+        {right !== undefined ? right : onPress ? (
+          <ChevronRight size={14} color={MonikeColors.inkGhost} strokeWidth={2} />
+        ) : null}
       </Animated.View>
     </Pressable>
   );
 }
 
-function NairaInput({
+function ToggleRow({
   label,
+  sublabel,
   value,
   onChange,
-  sublabel,
 }: {
   label: string;
+  sublabel?: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <Row
+      label={label}
+      sublabel={sublabel}
+      right={
+        <Switch
+          value={value}
+          onValueChange={onChange}
+          trackColor={{ false: MonikeColors.bgElevated, true: `${MonikeColors.accentPulse}55` }}
+          thumbColor={value ? MonikeColors.accentPulse : MonikeColors.inkMuted}
+          ios_backgroundColor={MonikeColors.bgElevated}
+        />
+      }
+    />
+  );
+}
+
+function NairaRow({
+  label,
+  sublabel,
+  value,
+  onChange,
+}: {
+  label: string;
+  sublabel?: string;
   value: number;
   onChange: (v: number) => void;
-  sublabel?: string;
 }) {
   const [raw, setRaw] = useState(String(value));
   const [focused, setFocused] = useState(false);
@@ -153,63 +251,32 @@ function NairaInput({
   }, [value, focused]);
 
   return (
-    <View style={[styles.settingsRow, styles.settingsRowNoBorder]}>
-      <View style={styles.settingsRowLeft}>
-        <Text style={styles.settingsRowLabel}>{label}</Text>
-        {sublabel ? <Text style={styles.settingsRowSublabel}>{sublabel}</Text> : null}
-      </View>
-      <View style={[styles.nairaInputWrap, focused && styles.nairaInputWrapFocused]}>
-        <Text style={styles.nairaSymbol}>₦</Text>
-        <TextInput
-          style={styles.nairaInput}
-          value={raw}
-          keyboardType="numeric"
-          onFocus={() => setFocused(true)}
-          onBlur={() => {
-            setFocused(false);
-            const parsed = parseInt(raw.replace(/[^0-9]/g, ''), 10);
-            if (!isNaN(parsed) && parsed > 0) {
-              onChange(parsed);
-              setRaw(String(parsed));
-            } else {
-              setRaw(String(value));
-            }
-          }}
-          onChangeText={setRaw}
-          placeholderTextColor={MonikeColors.inkMuted}
-          selectionColor={MonikeColors.accentPulse}
-        />
-      </View>
-    </View>
-  );
-}
-
-function ToggleRow({
-  label,
-  sublabel,
-  value,
-  onChange,
-  noBorder,
-}: {
-  label: string;
-  sublabel?: string;
-  value: boolean;
-  onChange: (v: boolean) => void;
-  noBorder?: boolean;
-}) {
-  return (
-    <SettingsRow
+    <Row
       label={label}
       sublabel={sublabel}
-      noBorder={noBorder}
       right={
-        <Switch
-          value={value}
-          onValueChange={onChange}
-          trackColor={{ false: MonikeColors.bgElevated, true: `${MonikeColors.accentPulse}66` }}
-          thumbColor={value ? MonikeColors.accentPulse : MonikeColors.inkMuted}
-          ios_backgroundColor={MonikeColors.bgElevated}
-        />
+        <View style={[styles.nairaWrap, focused && styles.nairaWrapFocused]}>
+          <Text style={styles.nairaSymbol}>₦</Text>
+          <TextInput
+            style={styles.nairaInput}
+            value={raw}
+            keyboardType="numeric"
+            onFocus={() => setFocused(true)}
+            onBlur={() => {
+              setFocused(false);
+              const parsed = parseInt(raw.replace(/[^0-9]/g, ''), 10);
+              if (!isNaN(parsed) && parsed > 0) {
+                onChange(parsed);
+                setRaw(String(parsed));
+              } else {
+                setRaw(String(value));
+              }
+            }}
+            onChangeText={setRaw}
+            placeholderTextColor={MonikeColors.inkMuted}
+            selectionColor={MonikeColors.accentPulse}
+          />
+        </View>
       }
     />
   );
@@ -229,13 +296,12 @@ function ModelStatusCard({
   onRetrain: () => void;
 }) {
   const spin = useRef(new Animated.Value(0)).current;
-  const pulseScale = useRef(new Animated.Value(1)).current;
+  const pulseOpacity = useRef(new Animated.Value(0.3)).current;
 
   useEffect(() => {
-    if (!retraining) return;
-    spin.setValue(0);
+    if (!retraining) { spin.setValue(0); return; }
     const loop = Animated.loop(
-      Animated.timing(spin, { toValue: 1, duration: 900, easing: Easing.linear, useNativeDriver: true }),
+      Animated.timing(spin, { toValue: 1, duration: 800, easing: Easing.linear, useNativeDriver: true }),
     );
     loop.start();
     return () => loop.stop();
@@ -244,79 +310,73 @@ function ModelStatusCard({
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseScale, { toValue: 1.3, duration: 1200, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(pulseScale, { toValue: 1, duration: 1200, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(pulseOpacity, { toValue: 0.7, duration: 1400, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(pulseOpacity, { toValue: 0.3, duration: 1400, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
       ]),
     );
     loop.start();
     return () => loop.stop();
-  }, [pulseScale]);
+  }, [pulseOpacity]);
 
   const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
-
-  const accuracy = status?.accuracy != null ? `${(status.accuracy * 100).toFixed(1)}%` : 'N/A';
+  const accuracy = status?.accuracy != null ? `${(status.accuracy * 100).toFixed(1)}%` : '—';
   const lastTrained = status?.last_trained_at
     ? new Date(status.last_trained_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })
     : 'Never';
+  const trained = status?.trained ?? false;
 
   return (
     <View style={styles.modelCard}>
-      {/* Status indicator */}
-      <View style={styles.modelTopRow}>
-        <View style={styles.modelStatusDotWrap}>
-          <Animated.View style={[styles.modelStatusPulse, { transform: [{ scale: pulseScale }] }]} />
-          <View style={[styles.modelStatusDot, !status?.trained && { backgroundColor: MonikeColors.signalAmber }]} />
+      {/* Status badge row */}
+      <View style={styles.modelHeader}>
+        <View style={styles.modelStatusPill}>
+          <Animated.View style={[styles.modelPulseDot, { opacity: pulseOpacity, backgroundColor: trained ? MonikeColors.accentPulse : MonikeColors.signalAmber }]} />
+          <View style={[styles.modelCoreDot, { backgroundColor: trained ? MonikeColors.accentPulse : MonikeColors.signalAmber }]} />
+          <Text style={[styles.modelStatusText, { color: trained ? MonikeColors.accentPulse : MonikeColors.signalAmber }]}>
+            {trained ? 'Active' : 'Untrained'}
+          </Text>
         </View>
-        <Text style={styles.modelStatusLabel}>
-          {status?.trained ? 'Model Active' : 'Model Not Trained'}
-        </Text>
-        <Text style={styles.modelVersion}>{status?.model_version ?? 'v0'}</Text>
+        <Text style={styles.modelVersionText}>{status?.model_version ?? 'v0'}</Text>
       </View>
 
-      {/* Stats row */}
-      <View style={styles.modelStatsRow}>
+      {/* Stats */}
+      <View style={styles.modelStats}>
         <View style={styles.modelStat}>
-          <Text style={styles.modelStatValue}>{status?.training_rows ?? 0}</Text>
-          <Text style={styles.modelStatLabel}>TRAINING ROWS</Text>
+          <Text style={styles.modelStatVal}>{status?.training_rows ?? 0}</Text>
+          <Text style={styles.modelStatKey}>rows</Text>
         </View>
         <View style={styles.modelStatDivider} />
         <View style={styles.modelStat}>
-          <Text style={[styles.modelStatValue, { color: MonikeColors.accentPulse }]}>{accuracy}</Text>
-          <Text style={styles.modelStatLabel}>ACCURACY</Text>
+          <Text style={[styles.modelStatVal, trained && { color: MonikeColors.accentPulse }]}>{accuracy}</Text>
+          <Text style={styles.modelStatKey}>accuracy</Text>
         </View>
         <View style={styles.modelStatDivider} />
         <View style={styles.modelStat}>
-          <Text style={styles.modelStatValue}>{lastTrained}</Text>
-          <Text style={styles.modelStatLabel}>LAST TRAINED</Text>
+          <Text style={styles.modelStatVal}>{lastTrained}</Text>
+          <Text style={styles.modelStatKey}>last trained</Text>
         </View>
       </View>
 
       {/* Retrain button */}
       <Pressable
-        style={[styles.retrainButton, retraining && styles.retrainButtonDisabled]}
+        style={[styles.retrainBtn, retraining && styles.retrainBtnDisabled]}
         onPress={onRetrain}
         disabled={retraining}
       >
         {retraining ? (
           <>
             <Animated.View style={{ transform: [{ rotate }] }}>
-              <RefreshCw size={15} color={MonikeColors.bgVoid} strokeWidth={2} />
+              <RefreshCw size={14} color={MonikeColors.bgVoid} strokeWidth={2} />
             </Animated.View>
-            <Text style={styles.retrainButtonText}>{retrainProgress || 'Training…'}</Text>
+            <Text style={styles.retrainBtnText}>{retrainProgress || 'Training…'}</Text>
           </>
         ) : (
           <>
-            <BrainCircuit size={15} color={MonikeColors.bgVoid} strokeWidth={2} />
-            <Text style={styles.retrainButtonText}>Retrain Model</Text>
+            <BrainCircuit size={14} color={MonikeColors.bgVoid} strokeWidth={2} />
+            <Text style={styles.retrainBtnText}>Retrain model</Text>
           </>
         )}
       </Pressable>
-
-      {retraining && (
-        <View style={styles.retrainProgressTrack}>
-          <Animated.View style={[styles.retrainProgressFill]} />
-        </View>
-      )}
     </View>
   );
 }
@@ -327,6 +387,19 @@ function UploadCard() {
   const [uploading, setUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const progressAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (uploading) {
+      Animated.loop(
+        Animated.timing(progressAnim, { toValue: 1, duration: 1800, easing: Easing.inOut(Easing.quad), useNativeDriver: false }),
+      ).start();
+    } else {
+      progressAnim.setValue(0);
+    }
+  }, [uploading, progressAnim]);
+
+  const progressWidth = progressAnim.interpolate({ inputRange: [0, 1], outputRange: ['20%', '90%'] });
 
   const pickAndUpload = async () => {
     try {
@@ -341,7 +414,7 @@ function UploadCard() {
 
       const asset = result.assets[0];
       setUploading(true);
-      setUploadStatus('Uploading file…');
+      setUploadStatus('Uploading…');
       setUploadError(null);
 
       const formData = new FormData();
@@ -351,7 +424,6 @@ function UploadCard() {
         type: asset.mimeType ?? 'application/octet-stream',
       } as any);
 
-      // POST to kick off background job
       const uploadResp = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/log/upload`, {
         method: 'POST',
         body: formData,
@@ -361,26 +433,22 @@ function UploadCard() {
         throw new Error(err.detail ?? 'Upload failed');
       }
       const { job_id } = await uploadResp.json();
-
       setUploadStatus('Processing…');
 
-      // Open WebSocket to track progress
       const wsUrl = `${(process.env.EXPO_PUBLIC_API_URL ?? '').replace('http', 'ws')}/ws/upload/${job_id}`;
       const ws = new WebSocket(wsUrl);
 
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
         if (msg.event === 'started') {
-          setUploadStatus(`Parsing ${msg.total} transactions…`);
+          setUploadStatus(`Parsing ${msg.total} rows…`);
         } else if (msg.event === 'dedup') {
           setUploadStatus(`${msg.kept} new · ${msg.skipped} skipped`);
         } else if (msg.event === 'progress') {
-          setUploadStatus(`${msg.phase === 'transactions' ? 'Inserting' : 'Building daily'} ${msg.done}/${msg.total}…`);
+          setUploadStatus(`${msg.done}/${msg.total} inserted`);
         } else if (msg.event === 'complete') {
           const r = msg.result;
-          setUploadStatus(
-            `Done — ${r.new_days_inserted} new days, ${r.duplicate_transactions_skipped} dupes skipped`,
-          );
+          setUploadStatus(`✓ ${r.new_days_inserted} new days · ${r.duplicate_transactions_skipped} dupes skipped`);
           setUploading(false);
           ws.close();
         } else if (msg.event === 'error') {
@@ -401,55 +469,103 @@ function UploadCard() {
 
   return (
     <View style={styles.uploadCard}>
-      <View style={styles.uploadIconRow}>
-        <View style={styles.uploadIconWrap}>
-          <Upload size={22} color={MonikeColors.accentPulse} strokeWidth={1.8} />
+      <View style={styles.uploadTop}>
+        <View style={styles.uploadIconBox}>
+          <Upload size={18} color={MonikeColors.accentPulse} strokeWidth={1.8} />
         </View>
-        <View style={styles.uploadCopy}>
-          <Text style={styles.uploadTitle}>Import Statement</Text>
-          <Text style={styles.uploadSubtitle}>OPay .xlsx / .xls / .csv</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.uploadTitle}>Import statement</Text>
+          <Text style={styles.uploadSubtitle}>OPay · .xlsx  ·  .xls  ·  .csv</Text>
         </View>
+        <Pressable
+          style={[styles.uploadChooseBtn, uploading && { opacity: 0.45 }]}
+          onPress={pickAndUpload}
+          disabled={uploading}
+        >
+          {uploading
+            ? <ActivityIndicator size="small" color={MonikeColors.inkMuted} style={{ width: 40 }} />
+            : <Text style={styles.uploadChooseBtnText}>Browse</Text>
+          }
+        </Pressable>
       </View>
 
-      {uploadStatus && !uploadError ? (
-        <View style={styles.uploadStatusRow}>
-          {uploading && <ActivityIndicator size="small" color={MonikeColors.accentPulse} style={{ marginRight: 8 }} />}
-          <Text style={styles.uploadStatusText}>{uploadStatus}</Text>
+      {/* Progress track — only shown while uploading */}
+      {uploading && (
+        <View style={styles.uploadProgressTrack}>
+          <Animated.View style={[styles.uploadProgressFill, { width: progressWidth }]} />
         </View>
+      )}
+
+      {/* Status / error */}
+      {uploadStatus && !uploadError ? (
+        <Text style={styles.uploadStatusText}>{uploadStatus}</Text>
       ) : null}
       {uploadError ? (
         <View style={styles.uploadErrorRow}>
-          <AlertTriangle size={12} color={MonikeColors.signalRed} />
+          <AlertTriangle size={11} color={MonikeColors.signalRed} />
           <Text style={styles.uploadErrorText}>{uploadError}</Text>
         </View>
       ) : null}
-
-      <Pressable
-        style={[styles.uploadButton, uploading && styles.uploadButtonDisabled]}
-        onPress={pickAndUpload}
-        disabled={uploading}
-      >
-        {uploading
-          ? <ActivityIndicator size="small" color={MonikeColors.inkMuted} />
-          : <Text style={styles.uploadButtonText}>Choose File</Text>
-        }
-      </Pressable>
     </View>
+  );
+}
+
+// ─── Auto-lock Selector ────────────────────────────────────────────────────────
+
+function AutoLockSelector({
+  value,
+  onChange,
+}: {
+  value: 5 | 30;
+  onChange: (v: 5 | 30) => void;
+}) {
+  const OPTIONS: { label: string; value: 5 | 30 }[] = [
+    { label: '5 min', value: 5 },
+    { label: '30 min', value: 30 },
+  ];
+
+  return (
+    <Row
+      label="Auto-lock"
+      sublabel="Lock when app is backgrounded"
+      right={
+        <View style={styles.segmentControl}>
+          {OPTIONS.map((opt) => (
+            <Pressable
+              key={opt.value}
+              style={[styles.segmentOption, value === opt.value && styles.segmentOptionActive]}
+              onPress={() => void onChange(opt.value)}
+            >
+              <Text style={[styles.segmentOptionText, value === opt.value && styles.segmentOptionTextActive]}>
+                {opt.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      }
+    />
   );
 }
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function SettingsScreen() {
-// inside SettingsScreen:
   const insets = useSafeAreaInsets();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [retraining, setRetraining] = useState(false);
   const [retrainProgress, setRetrainProgress] = useState('');
 
-  const { data: settingsData, mutate: mutateSettings } = useSWR<SettingsData>('/settings', apiFetch);
-  const { data: modelStatus, mutate: mutateModel } = useSWR<ModelStatus>('/model/status', apiFetch);
+  const { data: settingsData, isLoading: settingsLoading, mutate: mutateSettings } = useSWR<SettingsData>('/settings', apiFetch);
+  const { data: modelStatus, isLoading: modelLoading, mutate: mutateModel } = useSWR<ModelStatus>('/model/status', apiFetch);
+  const {
+    autoLockMinutes,
+    beginPinChange,
+    biometricAvailable,
+    biometricEnabled,
+    setAutoLockMinutes,
+    setBiometricEnabled,
+  } = useAppLock();
 
   const [form, setForm] = useState<SettingsData>({
     display_name: 'Chijioke',
@@ -475,7 +591,7 @@ export default function SettingsScreen() {
       await apiPost('/settings', form);
       mutateSettings();
       setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      setTimeout(() => setSaved(false), 2200);
     } catch (e: any) {
       Alert.alert('Save failed', e.message ?? 'Unknown error');
     } finally {
@@ -486,10 +602,10 @@ export default function SettingsScreen() {
   const handleRetrain = async () => {
     if (retraining) return;
     setRetraining(true);
-    setRetrainProgress('Loading training data…');
+    setRetrainProgress('Loading data…');
     try {
       const result: RetrainResult = await apiPost('/retrain', {});
-      setRetrainProgress(`Done — ${(result.accuracy * 100).toFixed(1)}% accuracy`);
+      setRetrainProgress(`Done — ${(result.accuracy * 100).toFixed(1)}%`);
       mutateModel();
       setTimeout(() => setRetrainProgress(''), 3000);
     } catch (e: any) {
@@ -500,10 +616,10 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleClearCache = async () => {
+  const handleClearCache = () => {
     Alert.alert(
-      'Clear Cache',
-      'This will force all dashboard, prediction, and explore data to reload from the database. Continue?',
+      'Clear cache',
+      'Forces dashboard, prediction, and explore data to reload from the database.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -512,8 +628,8 @@ export default function SettingsScreen() {
           onPress: async () => {
             try {
               await apiPost('/cache/clear');
-              mutateAll(); // wipes cache map + fires every mounted useSWR's revalidate
-              Alert.alert('Cache cleared', 'All data is reloading.');
+              mutateAll();
+              Alert.alert('Done', 'All data reloading.');
             } catch (e: any) {
               Alert.alert('Error', e.message);
             }
@@ -525,241 +641,293 @@ export default function SettingsScreen() {
 
   return (
     <View style={styles.root}>
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <MonikeHeader title="Settings" />
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <MonikeHeader title="Settings" back />
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={[
-            styles.content,
-            { paddingBottom: insets.bottom + BottomTabInset + 32 },
-          ]}
+          contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 40 }]}
         >
-          {/* ── Profile ─────────────────────────────────────────── */}
-          <View style={styles.section}>
-            <SectionHeader
-              icon={<User size={14} color={MonikeColors.accentPulse} strokeWidth={2} />}
-              title="PROFILE"
-            />
-            <SettingsCard>
-              <SettingsRow
-                label={form.display_name}
-                sublabel={form.email}
-                noBorder
-                right={
-                  <View style={styles.avatarBubble}>
-                    <Text style={styles.avatarLetter}>{form.display_name[0]}</Text>
-                  </View>
-                }
-              />
-            </SettingsCard>
-          </View>
+          {settingsLoading ? (
+            <SettingsSkeleton />
+          ) : (
+            <>
+              {/* ── Profile ──────────────────────────────────────── */}
+              <ProfileCard name={form.display_name} email={form.email} />
 
-          {/* ── Spending Limits ──────────────────────────────────── */}
-          <View style={styles.section}>
-            <SectionHeader
-              icon={<Sliders size={14} color={MonikeColors.accentPulse} strokeWidth={2} />}
-              title="SPENDING LIMITS"
-            />
-            <SettingsCard>
-              <NairaInput
-                label="Monthly Budget"
-                sublabel="Hero card budget bar target"
-                value={form.monthly_budget}
-                onChange={(v) => patch('monthly_budget', v)}
-              />
-              <View style={styles.cardDivider} />
-              <NairaInput
-                label="Daily High-Spend Threshold"
-                sublabel="Marks a day as HIGH risk in charts"
-                value={form.high_spend_threshold}
-                onChange={(v) => patch('high_spend_threshold', v)}
-              />
-            </SettingsCard>
-            <Text style={styles.footNote}>
-              Threshold is used by the ML model, explore risk colors, and spend health streak. Changes take effect on next retrain.
-            </Text>
-          </View>
+              {/* ── Spending limits ───────────────────────────────── */}
+              <View style={styles.section}>
+                <SectionLabel
+                  icon={<Sliders size={13} color={MonikeColors.accentPulse} strokeWidth={2} />}
+                  title="Spending limits"
+                />
+                <GroupCard>
+                  <NairaRow
+                    label="Monthly budget"
+                    sublabel="Budget bar target on the dashboard"
+                    value={form.monthly_budget}
+                    onChange={(v) => patch('monthly_budget', v)}
+                  />
+                  <GroupDivider />
+                  <NairaRow
+                    label="High-spend threshold"
+                    sublabel="Flags a day as HIGH risk in charts"
+                    value={form.high_spend_threshold}
+                    onChange={(v) => patch('high_spend_threshold', v)}
+                  />
+                </GroupCard>
+                <Text style={styles.footNote}>Changes apply on next model retrain.</Text>
+              </View>
 
-          {/* ── Notifications ────────────────────────────────────── */}
-          <View style={styles.section}>
-            <SectionHeader
-              icon={<Bell size={14} color={MonikeColors.accentPulse} strokeWidth={2} />}
-              title="NOTIFICATIONS"
-            />
-            <SettingsCard>
-              <ToggleRow
-                label="High-Spend Alerts"
-                sublabel="Notify when daily spend exceeds threshold"
-                value={form.notify_high_spend}
-                onChange={(v) => patch('notify_high_spend', v)}
-              />
-              <View style={styles.cardDivider} />
-              <ToggleRow
-                label="Weekly Summary"
-                sublabel="Every Monday morning"
-                value={form.notify_weekly_summary}
-                onChange={(v) => patch('notify_weekly_summary', v)}
-              />
-              <View style={styles.cardDivider} />
-              <ToggleRow
-                label="Model Update Alerts"
-                sublabel="When retraining completes"
-                value={form.notify_model_updates}
-                onChange={(v) => patch('notify_model_updates', v)}
-                noBorder
-              />
-            </SettingsCard>
-          </View>
+              {/* ── Notifications ─────────────────────────────────── */}
+              <View style={styles.section}>
+                <SectionLabel
+                  icon={<Bell size={13} color={MonikeColors.accentPulse} strokeWidth={2} />}
+                  title="Notifications"
+                />
+                <GroupCard>
+                  <ToggleRow
+                    label="High-spend alerts"
+                    sublabel="When daily spend exceeds threshold"
+                    value={form.notify_high_spend}
+                    onChange={(v) => patch('notify_high_spend', v)}
+                  />
+                  <GroupDivider />
+                  <ToggleRow
+                    label="Weekly summary"
+                    sublabel="Every Monday morning"
+                    value={form.notify_weekly_summary}
+                    onChange={(v) => patch('notify_weekly_summary', v)}
+                  />
+                  <GroupDivider />
+                  <ToggleRow
+                    label="Model update alerts"
+                    sublabel="When retraining completes"
+                    value={form.notify_model_updates}
+                    onChange={(v) => patch('notify_model_updates', v)}
+                  />
+                </GroupCard>
+              </View>
 
-          {/* ── ML Model ─────────────────────────────────────────── */}
-          <View style={styles.section}>
-            <SectionHeader
-              icon={<BrainCircuit size={14} color={MonikeColors.accentPulse} strokeWidth={2} />}
-              title="ML MODEL"
-            />
-            <ModelStatusCard
-              status={modelStatus}
-              retraining={retraining}
-              retrainProgress={retrainProgress}
-              onRetrain={handleRetrain}
-            />
-            <Text style={styles.footNote}>
-              Retrain uses all rows in daily_log. Run after importing new statement data to improve tomorrow's risk prediction.
-            </Text>
-          </View>
+              {/* ── ML model ──────────────────────────────────────── */}
+              <View style={styles.section}>
+                <SectionLabel
+                  icon={<BrainCircuit size={13} color={MonikeColors.accentPulse} strokeWidth={2} />}
+                  title="ML model"
+                />
+                {modelLoading ? (
+                  <ShimmerBlock style={{ height: 140, borderRadius: CardRadius }} />
+                ) : (
+                  <ModelStatusCard
+                    status={modelStatus}
+                    retraining={retraining}
+                    retrainProgress={retrainProgress}
+                    onRetrain={handleRetrain}
+                  />
+                )}
+                <Text style={styles.footNote}>
+                  Retrain after importing new statement data to improve tomorrow's risk prediction.
+                </Text>
+              </View>
 
-          {/* ── Data ─────────────────────────────────────────────── */}
-          <View style={styles.section}>
-            <SectionHeader
-              icon={<Database size={14} color={MonikeColors.accentPulse} strokeWidth={2} />}
-              title="DATA"
-            />
-            <UploadCard />
-            <SettingsCard>
-              <SettingsRow
-                label="Clear App Cache"
-                sublabel="Force reload of dashboard, explore & predictions"
-                onPress={handleClearCache}
-                right={<Trash2 size={15} color={MonikeColors.inkMuted} strokeWidth={1.8} />}
-                noBorder
-              />
-            </SettingsCard>
-          </View>
+              {/* ── Data ──────────────────────────────────────────── */}
+              <View style={styles.section}>
+                <SectionLabel
+                  icon={<Database size={13} color={MonikeColors.accentPulse} strokeWidth={2} />}
+                  title="Data"
+                />
+                <UploadCard />
+                <GroupCard>
+                  <Row
+                    label="Clear app cache"
+                    sublabel="Force reload of dashboard, explore & predictions"
+                    onPress={handleClearCache}
+                    right={<Trash2 size={15} color={MonikeColors.inkMuted} strokeWidth={1.8} />}
+                  />
+                </GroupCard>
+              </View>
 
-          {/* ── Security ──────────────────────────────────────────── */}
-          <View style={styles.section}>
-            <SectionHeader
-              icon={<Shield size={14} color={MonikeColors.accentPulse} strokeWidth={2} />}
-              title="SECURITY"
-            />
-            <SettingsCard>
-              <SettingsRow label="Change PIN" onPress={() => {}} />
-              <View style={styles.cardDivider} />
-              <SettingsRow label="Biometric Unlock" right={<Switch value={false} disabled trackColor={{ false: MonikeColors.bgElevated, true: `${MonikeColors.accentPulse}66` }} thumbColor={MonikeColors.inkMuted} />} noBorder />
-            </SettingsCard>
-          </View>
+              {/* ── Security ──────────────────────────────────────── */}
+              <View style={styles.section}>
+                <SectionLabel
+                  icon={<Shield size={13} color={MonikeColors.accentPulse} strokeWidth={2} />}
+                  title="Security"
+                />
+                <GroupCard>
+                  <Row
+                    label="Change PIN"
+                    sublabel="Update the 4-digit startup PIN"
+                    onPress={beginPinChange}
+                    right={<Key size={15} color={MonikeColors.inkMuted} strokeWidth={1.8} />}
+                  />
+                  <GroupDivider />
+                  <ToggleRow
+                    label="Biometric unlock"
+                    sublabel={
+                      biometricAvailable
+                        ? 'Face ID, Touch ID, or fingerprint'
+                        : 'No enrolled biometrics on this device'
+                    }
+                    value={biometricEnabled}
+                    onChange={(value) => void setBiometricEnabled(value)}
+                  />
+                  <GroupDivider />
+                  <AutoLockSelector value={autoLockMinutes} onChange={(v) => void setAutoLockMinutes(v)} />
+                </GroupCard>
+              </View>
 
-          {/* ── Save button ───────────────────────────────────────── */}
-          <Pressable
-            style={[styles.saveButton, saving && styles.saveButtonDisabled, saved && styles.saveButtonSaved]}
-            onPress={saveSettings}
-            disabled={saving}
-          >
-            {saving ? (
-              <ActivityIndicator size="small" color={MonikeColors.bgVoid} />
-            ) : (
-              <Text style={styles.saveButtonText}>{saved ? '✓ Saved' : 'Save Settings'}</Text>
-            )}
-          </Pressable>
+              {/* ── Save ──────────────────────────────────────────── */}
+              <Pressable
+                style={[styles.saveBtn, saving && { opacity: 0.6 }, saved && styles.saveBtnSaved]}
+                onPress={saveSettings}
+                disabled={saving}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color={MonikeColors.bgVoid} />
+                ) : (
+                  <Text style={styles.saveBtnText}>{saved ? '✓  Saved' : 'Save settings'}</Text>
+                )}
+              </Pressable>
 
-          {/* Version */}
-          <Text style={styles.versionText}>MONIKE v1.0.0 · PostgreSQL monike</Text>
+              <Text style={styles.versionText}>MONIKE v1.0.0  ·  PostgreSQL monike</Text>
+            </>
+          )}
         </ScrollView>
       </SafeAreaView>
-      <BottomNavigation activeRoute="home" />
     </View>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
+const ACCENT = MonikeColors.accentPulse;
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: MonikeColors.bgVoid },
-  safeArea: { flex: 1 },
-  content: { paddingHorizontal: ScreenPadding, paddingTop: 8, gap: 6 },
+  safe: { flex: 1 },
+  scroll: { paddingHorizontal: ScreenPadding, paddingTop: 12, gap: 0 },
 
-  // Section
-  section: { gap: 8, marginBottom: 8 },
-  sectionHeader: {
+  // ── Profile card ────────────────────────────────────────
+  profileCard: {
+    borderRadius: CardRadius + 2,
+    borderWidth: 1,
+    borderColor: MonikeColors.inkGhost,
+    backgroundColor: MonikeColors.bgSurface,
+    overflow: 'hidden',
+    marginBottom: 24,
+  },
+  profileGrid: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  profileGridLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: `${MonikeColors.inkGhost}40`,
+  },
+  profileInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 4,
-    paddingTop: 8,
-    paddingBottom: 4,
+    padding: 18,
+    gap: 14,
   },
-  sectionIconWrap: {
-    width: 22, height: 22, borderRadius: 6,
-    backgroundColor: `${MonikeColors.accentPulse}15`,
-    alignItems: 'center', justifyContent: 'center',
+  profileAvatarWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: ACCENT,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  sectionTitle: {
-    color: MonikeColors.inkMuted,
+  profileAvatarLetter: {
+    color: MonikeColors.bgVoid,
+    fontFamily: Fonts.heading,
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  profileCopy: { flex: 1, gap: 3 },
+  profileName: {
+    color: MonikeColors.inkPrimary,
     fontFamily: Fonts.sans,
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  profileEmail: {
+    color: MonikeColors.inkMuted,
+    fontFamily: Fonts.mono,
+    fontSize: 11,
+  },
+  profileBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: `${ACCENT}18`,
+    borderWidth: 1,
+    borderColor: `${ACCENT}35`,
+  },
+  profileBadgeText: {
+    color: ACCENT,
+    fontFamily: Fonts.mono,
     fontSize: 10,
-    fontWeight: '600',
-    letterSpacing: 1.1,
+    fontWeight: '800',
+    letterSpacing: 1.2,
   },
 
-  // Card
-  card: {
+  // ── Section ──────────────────────────────────────────────
+  section: { gap: 8, marginBottom: 22 },
+  sectionLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 2,
+    marginBottom: 2,
+  },
+  sectionLabelText: {
+    color: MonikeColors.inkSecondary,
+    fontFamily: Fonts.sans,
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+
+  // ── Group card ───────────────────────────────────────────
+  groupCard: {
     backgroundColor: MonikeColors.bgSurface,
     borderWidth: 1,
     borderColor: MonikeColors.inkGhost,
     borderRadius: CardRadius,
     overflow: 'hidden',
   },
-  cardDivider: { height: 1, backgroundColor: `${MonikeColors.inkGhost}88`, marginHorizontal: 16 },
+  groupDivider: {
+    height: 1,
+    backgroundColor: `${MonikeColors.inkGhost}60`,
+    marginLeft: 16,
+  },
 
-  // Settings Row
-  settingsRow: {
+  // ── Row ──────────────────────────────────────────────────
+  row: {
     minHeight: 54,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: `${MonikeColors.inkGhost}55`,
+    gap: 12,
   },
-  settingsRowNoBorder: { borderBottomWidth: 0 },
-  settingsRowLeft: { flex: 1, gap: 3 },
-  settingsRowLabel: {
+  rowLeft: { flex: 1, gap: 2 },
+  rowLabel: {
     color: MonikeColors.inkPrimary,
     fontFamily: Fonts.sans,
     fontSize: 14,
     fontWeight: '500',
   },
-  settingsRowSublabel: {
+  rowSublabel: {
     color: MonikeColors.inkMuted,
     fontFamily: Fonts.sans,
     fontSize: 11,
+    lineHeight: 15,
   },
 
-  // Avatar
-  avatarBubble: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: MonikeColors.accentPulse,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  avatarLetter: {
-    color: MonikeColors.bgVoid,
-    fontFamily: Fonts.heading,
-    fontSize: 16,
-    fontWeight: '800',
-  },
-
-  // Naira Input
-  nairaInputWrap: {
+  // ── Naira input ──────────────────────────────────────────
+  nairaWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: MonikeColors.bgElevated,
@@ -767,11 +935,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: MonikeColors.inkGhost,
     paddingHorizontal: 10,
-    height: 36,
-    minWidth: 120,
+    height: 34,
+    minWidth: 110,
   },
-  nairaInputWrapFocused: { borderColor: MonikeColors.accentPulse },
-  nairaSymbol: { color: MonikeColors.inkSecondary, fontFamily: Fonts.mono, fontSize: 13, marginRight: 4 },
+  nairaWrapFocused: { borderColor: ACCENT },
+  nairaSymbol: {
+    color: MonikeColors.inkSecondary,
+    fontFamily: Fonts.mono,
+    fontSize: 13,
+    marginRight: 3,
+  },
   nairaInput: {
     color: MonikeColors.inkPrimary,
     fontFamily: Fonts.mono,
@@ -780,16 +953,17 @@ const styles = StyleSheet.create({
     padding: 0,
   },
 
-  // Foot note
+  // ── Foot note ────────────────────────────────────────────
   footNote: {
-    color: MonikeColors.inkMuted,
+    color: MonikeColors.inkGhost,
     fontFamily: Fonts.sans,
     fontSize: 11,
     lineHeight: 16,
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
+    marginTop: 2,
   },
 
-  // Model card
+  // ── Model card ───────────────────────────────────────────
   modelCard: {
     backgroundColor: MonikeColors.bgSurface,
     borderWidth: 1,
@@ -798,89 +972,214 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 14,
   },
-  modelTopRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  modelStatusDotWrap: { width: 12, height: 12, alignItems: 'center', justifyContent: 'center' },
-  modelStatusPulse: {
-    position: 'absolute', width: 12, height: 12, borderRadius: 6,
-    backgroundColor: MonikeColors.accentPulse, opacity: 0.3,
+  modelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  modelStatusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: MonikeColors.accentPulse },
-  modelStatusLabel: {
-    flex: 1, color: MonikeColors.inkPrimary,
-    fontFamily: Fonts.sans, fontSize: 13, fontWeight: '600',
-  },
-  modelVersion: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 10 },
-  modelStatsRow: {
-    flexDirection: 'row', alignItems: 'center',
+  modelStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
     backgroundColor: MonikeColors.bgElevated,
-    borderRadius: 8, borderWidth: 1, borderColor: MonikeColors.inkGhost,
-    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: MonikeColors.inkGhost,
+  },
+  modelPulseDot: {
+    position: 'absolute',
+    left: 8,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  modelCoreDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  modelStatusText: {
+    fontFamily: Fonts.sans,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  modelVersionText: {
+    color: MonikeColors.inkGhost,
+    fontFamily: Fonts.mono,
+    fontSize: 10,
+  },
+  modelStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: MonikeColors.bgElevated,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: MonikeColors.inkGhost,
+    paddingVertical: 12,
   },
   modelStat: { flex: 1, alignItems: 'center', gap: 3 },
-  modelStatValue: {
-    color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 12, fontWeight: '700',
+  modelStatVal: {
+    color: MonikeColors.inkPrimary,
+    fontFamily: Fonts.mono,
+    fontSize: 13,
+    fontWeight: '700',
   },
-  modelStatLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 9, letterSpacing: 0.5 },
-  modelStatDivider: { width: 1, height: 28, backgroundColor: MonikeColors.inkGhost },
-  retrainButton: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: MonikeColors.accentPulse,
-    borderRadius: 10, height: 44,
+  modelStatKey: {
+    color: MonikeColors.inkGhost,
+    fontFamily: Fonts.sans,
+    fontSize: 10,
+    letterSpacing: 0.3,
   },
-  retrainButtonDisabled: { backgroundColor: MonikeColors.bgElevated },
-  retrainButtonText: {
-    color: MonikeColors.bgVoid, fontFamily: Fonts.sans, fontSize: 14, fontWeight: '600',
+  modelStatDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: MonikeColors.inkGhost,
   },
-  retrainProgressTrack: {
-    height: 2, borderRadius: 1, backgroundColor: MonikeColors.bgElevated, overflow: 'hidden',
+  retrainBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: ACCENT,
+    borderRadius: 10,
+    height: 42,
   },
-  retrainProgressFill: {
-    height: 2, width: '60%', backgroundColor: MonikeColors.accentPulse,
+  retrainBtnDisabled: { backgroundColor: MonikeColors.bgElevated },
+  retrainBtnText: {
+    color: MonikeColors.bgVoid,
+    fontFamily: Fonts.sans,
+    fontSize: 13,
+    fontWeight: '600',
   },
 
-  // Upload card
+  // ── Upload card ──────────────────────────────────────────
   uploadCard: {
     backgroundColor: MonikeColors.bgSurface,
     borderWidth: 1,
     borderColor: MonikeColors.inkGhost,
     borderRadius: CardRadius,
-    padding: 16,
+    padding: 14,
+    gap: 10,
+  },
+  uploadTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
-    marginBottom: 8,
   },
-  uploadIconRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  uploadIconWrap: {
-    width: 42, height: 42, borderRadius: 10,
-    backgroundColor: `${MonikeColors.accentPulse}15`,
-    borderWidth: 1, borderColor: `${MonikeColors.accentPulse}30`,
-    alignItems: 'center', justifyContent: 'center',
+  uploadIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: `${ACCENT}12`,
+    borderWidth: 1,
+    borderColor: `${ACCENT}28`,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  uploadCopy: { gap: 3 },
-  uploadTitle: { color: MonikeColors.inkPrimary, fontFamily: Fonts.sans, fontSize: 14, fontWeight: '600' },
-  uploadSubtitle: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11 },
-  uploadStatusRow: { flexDirection: 'row', alignItems: 'center' },
-  uploadStatusText: { color: MonikeColors.accentPulse, fontFamily: Fonts.mono, fontSize: 12 },
-  uploadErrorRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  uploadErrorText: { color: MonikeColors.signalRed, fontFamily: Fonts.sans, fontSize: 12 },
-  uploadButton: {
+  uploadTitle: {
+    color: MonikeColors.inkPrimary,
+    fontFamily: Fonts.sans,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  uploadSubtitle: {
+    color: MonikeColors.inkGhost,
+    fontFamily: Fonts.mono,
+    fontSize: 10,
+    marginTop: 2,
+    letterSpacing: 0.3,
+  },
+  uploadChooseBtn: {
+    paddingHorizontal: 14,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: MonikeColors.inkGhost,
     backgroundColor: MonikeColors.bgElevated,
-    borderRadius: 8, borderWidth: 1, borderColor: MonikeColors.inkGhost,
-    height: 38, alignItems: 'center', justifyContent: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  uploadButtonDisabled: { opacity: 0.5 },
-  uploadButtonText: { color: MonikeColors.inkPrimary, fontFamily: Fonts.sans, fontSize: 13, fontWeight: '500' },
+  uploadChooseBtnText: {
+    color: MonikeColors.inkPrimary,
+    fontFamily: Fonts.sans,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  uploadProgressTrack: {
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: MonikeColors.bgElevated,
+    overflow: 'hidden',
+  },
+  uploadProgressFill: {
+    height: 2,
+    backgroundColor: ACCENT,
+    borderRadius: 1,
+  },
+  uploadStatusText: {
+    color: ACCENT,
+    fontFamily: Fonts.mono,
+    fontSize: 11,
+    paddingHorizontal: 2,
+  },
+  uploadErrorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  uploadErrorText: {
+    color: MonikeColors.signalRed,
+    fontFamily: Fonts.sans,
+    fontSize: 11,
+    flex: 1,
+  },
 
-  // Save
-  saveButton: {
-    backgroundColor: MonikeColors.accentPulse,
-    borderRadius: 12, height: 50,
-    alignItems: 'center', justifyContent: 'center',
-    marginTop: 8,
+  // ── Segment control (auto-lock) ──────────────────────────
+  segmentControl: {
+    flexDirection: 'row',
+    backgroundColor: MonikeColors.bgElevated,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: MonikeColors.inkGhost,
+    overflow: 'hidden',
   },
-  saveButtonDisabled: { opacity: 0.6 },
-  saveButtonSaved: { backgroundColor: '#00C766' },
-  saveButtonText: {
-    color: MonikeColors.bgVoid, fontFamily: Fonts.sans, fontSize: 15, fontWeight: '700',
+  segmentOption: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  segmentOptionActive: {
+    backgroundColor: ACCENT,
+  },
+  segmentOptionText: {
+    color: MonikeColors.inkMuted,
+    fontFamily: Fonts.mono,
+    fontSize: 12,
+  },
+  segmentOptionTextActive: {
+    color: MonikeColors.bgVoid,
+    fontWeight: '700',
+  },
+
+  // ── Save button ──────────────────────────────────────────
+  saveBtn: {
+    backgroundColor: ACCENT,
+    borderRadius: 12,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  saveBtnSaved: { backgroundColor: '#00C766' },
+  saveBtnText: {
+    color: MonikeColors.bgVoid,
+    fontFamily: Fonts.sans,
+    fontSize: 15,
+    fontWeight: '700',
   },
 
   versionText: {
@@ -888,7 +1187,6 @@ const styles = StyleSheet.create({
     color: MonikeColors.inkGhost,
     fontFamily: Fonts.mono,
     fontSize: 10,
-    marginTop: 8,
-    marginBottom: 4,
+    opacity: 0.7,
   },
 });
