@@ -42,8 +42,7 @@ import {
   Landmark,
   Banknote,
   MoreHorizontal,
-} from 'lucide-react-native';
-
+} from 'lucide-react-native'
 import { BottomNavigation } from '@/components/bottom-navigation';
 import { useSWR } from '@/hooks/use-swr';
 import { apiFetch, type DashboardResponse, type LogEntry, type PredictionResponse, type SummaryResponse } from '@/services/api';
@@ -777,8 +776,8 @@ function TransactionDetailModal({
         <View style={styles.txDetailDivider} />
 
         <View style={styles.txDetailRows}>
-          {detailRows.map(({ icon: RowIcon, label, value }) => (
-            <View key={label} style={styles.txDetailRow}>
+          {detailRows.map(({ icon: RowIcon, label, value }, index) => (
+            <View key={`${label}-${index}`} style={styles.txDetailRow}>
               <View style={styles.txDetailRowLeft}>
                 <RowIcon size={13} color={MonikeColors.inkMuted} strokeWidth={1.8} />
                 <Text style={styles.txDetailRowLabel}>{label}</Text>
@@ -869,7 +868,7 @@ function SpendingList({
       </View>
 
       <View style={styles.spendingList}>
-        {transactions.length > 0 ? transactions.slice(0, 5).map((t, i) => (
+        {transactions.length > 0 ? transactions.slice(0, 25).map((t, i) => (
           <TransactionRow
             key={t.id}
             transaction={t}
@@ -1044,6 +1043,8 @@ function DashboardScreen({
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
+
+        <MonikeHeader home title='Home' />
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[
@@ -1051,23 +1052,6 @@ function DashboardScreen({
             { paddingBottom: insets.bottom + BottomTabInset + 28 },
           ]}
         >
-          {/* ── Top bar ───────────────────────────────────────────────── */}
-          <View style={styles.topBar}>
-            {/* Left: avatar + greeting */}
-            <View style={styles.topBarLeft}>
-              <View style={styles.avatarCircle}>
-                <Text style={styles.avatarInitials}>CU</Text>
-              </View>
-              <View>
-                <Text style={styles.topBarGreeting}>{getGreeting()}, Chijioke</Text>
-                <Text style={styles.topBarSubtitle}>Your Budget</Text>
-              </View>
-            </View>
-            {/* Right: transactions button */}
-            <Pressable style={styles.transactionsButton} onPress={onNavigateToTransactions}>
-              <Text style={styles.transactionsButtonText}>My Transactions</Text>
-            </Pressable>
-          </View>
 
           {/* ── Expenses + Category ─────────────────────────────────────── */}
           <ExpensesSection dashboard={resolvedDashboard} categoryData={categoryData} />
@@ -1333,7 +1317,7 @@ transactionAmount: {
   },
 
   // ── Expenses Section ──────────────────────────────────────────────────────────
-  expensesSection: { gap: 16 },
+  expensesSection: { gap: 16, marginTop: 20, paddingBottom: 8 },
   expensesHeaderRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -1354,7 +1338,7 @@ transactionAmount: {
   expensesCurrencySymbol: {
     color: MonikeColors.inkSecondary,
     fontFamily: Fonts.mono,
-    fontSize: 22,
+    fontSize: 35,
     fontWeight: '700',
     marginBottom: 6,
     marginRight: 2,

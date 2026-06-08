@@ -47,7 +47,6 @@ type Category =
   | 'Electricity'
   | 'Other';
 
-// The day-sheet still needs a small local type for what gets passed on tap
 type DaySpend = {
   date: string;
   day: string;
@@ -64,7 +63,7 @@ const DAY_NAMES: Record<string, string> = {
   Thu: 'Thursday', Fri: 'Friday', Sat: 'Saturday', Sun: 'Sunday',
 };
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function normaliseRisk(raw: string): Risk {
   const u = raw.toUpperCase();
@@ -93,7 +92,7 @@ function categoryIcon(category: string) {
   return map[category] ?? CreditCard;
 }
 
-// ─── Shimmer skeleton primitive ───────────────────────────────────────────────
+// ─── Shimmer ──────────────────────────────────────────────────────────────────
 
 function Shimmer({ style }: { style?: object }) {
   const anim = useRef(new Animated.Value(0)).current;
@@ -111,70 +110,83 @@ function Shimmer({ style }: { style?: object }) {
   return <Animated.View style={[{ backgroundColor: MonikeColors.inkPrimary, borderRadius: 6, opacity }, style]} />;
 }
 
-// ─── Skeleton for full page ───────────────────────────────────────────────────
+// ─── Skeleton ─────────────────────────────────────────────────────────────────
 
 function ExploreSkeleton() {
   return (
-    <View style={{ gap: 18 }}>
-      {/* Hero card */}
-      <View style={[sk.card, { padding: 18, gap: 12 }]}>
-        <Shimmer style={{ height: 11, width: 120 }} />
-        <Shimmer style={{ height: 48, width: '70%' }} />
-        <View style={{ flexDirection: 'row', gap: 16, marginTop: 4 }}>
-          <View style={{ flex: 1, gap: 6 }}>
-            <Shimmer style={{ height: 14, width: '60%' }} />
-            <Shimmer style={{ height: 10, width: '50%' }} />
+    <View style={{ gap: 24 }}>
+      {/* Hero */}
+      <View style={[sk.card, { padding: 24, gap: 16 }]}>
+        <Shimmer style={{ height: 11, width: 100, borderRadius: 4 }} />
+        <Shimmer style={{ height: 56, width: '65%', borderRadius: 6 }} />
+        <View style={{ flexDirection: 'row', gap: 0, marginTop: 8 }}>
+          <View style={{ flex: 1, gap: 8 }}>
+            <Shimmer style={{ height: 18, width: '70%' }} />
+            <Shimmer style={{ height: 11, width: '50%' }} />
           </View>
-          <View style={{ width: 1, backgroundColor: MonikeColors.inkGhost }} />
-          <View style={{ flex: 1, gap: 6 }}>
-            <Shimmer style={{ height: 14, width: '60%' }} />
-            <Shimmer style={{ height: 10, width: '50%' }} />
+          <View style={{ width: 1, backgroundColor: MonikeColors.inkGhost, marginHorizontal: 16 }} />
+          <View style={{ flex: 1, gap: 8 }}>
+            <Shimmer style={{ height: 18, width: '70%' }} />
+            <Shimmer style={{ height: 11, width: '50%' }} />
           </View>
         </View>
       </View>
-      {/* Budget bar */}
-      <View style={[sk.card, { padding: 16, gap: 12 }]}>
-        <Shimmer style={{ height: 8, borderRadius: 4 }} />
-        <Shimmer style={{ height: 10, width: '40%' }} />
+      {/* Budget */}
+      <View style={[sk.card, { padding: 20, gap: 16 }]}>
+        <Shimmer style={{ height: 11, width: 80 }} />
+        <Shimmer style={{ height: 10, borderRadius: 5 }} />
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+          <Shimmer style={{ height: 10, width: '30%' }} />
+          <Shimmer style={{ height: 10, width: '35%' }} />
+        </View>
       </View>
       {/* Weekly */}
-      <View style={{ gap: 10 }}>
-        <Shimmer style={{ height: 12, width: 160 }} />
+      <View style={{ gap: 12 }}>
+        <Shimmer style={{ height: 11, width: 140, borderRadius: 4 }} />
         <View style={sk.card}>
           {[0, 1, 2, 3].map((i) => (
             <View key={i} style={sk.weekRow}>
-              <View style={{ width: 58, gap: 5 }}>
-                <Shimmer style={{ height: 11, width: 40 }} />
-                <Shimmer style={{ height: 10, width: 52 }} />
+              <View style={{ width: 56, gap: 6 }}>
+                <Shimmer style={{ height: 12, width: 36 }} />
+                <Shimmer style={{ height: 10, width: 50 }} />
               </View>
-              <View style={{ flex: 1, paddingHorizontal: 10 }}>
-                <Shimmer style={{ height: 22, borderRadius: 11, width: `${40 + i * 12}%` }} />
+              <View style={{ flex: 1, paddingHorizontal: 12 }}>
+                <Shimmer style={{ height: 24, borderRadius: 12, width: `${35 + i * 14}%` }} />
               </View>
-              <View style={{ width: 78, alignItems: 'flex-end', gap: 5 }}>
-                <Shimmer style={{ height: 14, width: 62 }} />
+              <View style={{ width: 80, alignItems: 'flex-end', gap: 6 }}>
+                <Shimmer style={{ height: 14, width: 64 }} />
                 <Shimmer style={{ height: 10, width: 36 }} />
               </View>
             </View>
           ))}
         </View>
       </View>
-      {/* Stats grid */}
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', ...sk.card }}>
-        {[0, 1, 2, 3, 4, 5].map((i) => (
-          <View key={i} style={[sk.statCell, { gap: 8 }]}>
-            <Shimmer style={{ height: 10, width: '60%' }} />
-            <Shimmer style={{ height: 18, width: '75%' }} />
+      {/* Stats 2-col */}
+      <View style={{ flexDirection: 'row', gap: 12 }}>
+        {[0, 1].map((i) => (
+          <View key={i} style={[sk.card, { flex: 1, padding: 16, gap: 10 }]}>
+            <Shimmer style={{ height: 10, width: '55%' }} />
+            <Shimmer style={{ height: 22, width: '80%' }} />
+            <Shimmer style={{ height: 10, width: '45%' }} />
+          </View>
+        ))}
+      </View>
+      <View style={{ flexDirection: 'row', gap: 12 }}>
+        {[0, 1].map((i) => (
+          <View key={i} style={[sk.card, { flex: 1, padding: 16, gap: 10 }]}>
+            <Shimmer style={{ height: 10, width: '55%' }} />
+            <Shimmer style={{ height: 22, width: '80%' }} />
             <Shimmer style={{ height: 10, width: '45%' }} />
           </View>
         ))}
       </View>
       {/* Heatmap */}
-      <View style={{ gap: 10 }}>
-        <Shimmer style={{ height: 12, width: 200 }} />
-        <View style={[sk.card, { padding: 12 }]}>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+      <View style={{ gap: 12 }}>
+        <Shimmer style={{ height: 11, width: 180 }} />
+        <View style={[sk.card, { padding: 16 }]}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
             {Array.from({ length: 35 }).map((_, i) => (
-              <Shimmer key={i} style={{ width: 36, height: 36, borderRadius: 6 }} />
+              <Shimmer key={i} style={{ width: 36, height: 36, borderRadius: 8 }} />
             ))}
           </View>
         </View>
@@ -192,40 +204,32 @@ const sk = StyleSheet.create({
     overflow: 'hidden',
   },
   weekRow: {
-    minHeight: 72,
+    height: 72,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: MonikeColors.inkGhost,
   },
-  statCell: {
-    width: '33.333%',
-    minHeight: 116,
-    padding: 14,
-    borderRightWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: MonikeColors.inkGhost,
-  },
 });
 
-// ─── Error state ──────────────────────────────────────────────────────────────
+// ─── Error State ──────────────────────────────────────────────────────────────
 
 function ErrorState({ onRetry }: { onRetry: () => void }) {
   return (
-    <View style={{ alignItems: 'center', paddingTop: 80, gap: 10 }}>
-      <Text style={{ color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 16, fontWeight: '700' }}>
+    <View style={{ alignItems: 'center', paddingTop: 80, gap: 12 }}>
+      <Text style={{ color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 17, fontWeight: '700' }}>
         Couldn't load summary
       </Text>
-      <Text style={{ color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 13 }}>
+      <Text style={{ color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 14 }}>
         Check your connection and try again.
       </Text>
       <Pressable
-        style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20, backgroundColor: MonikeColors.bgElevated, borderWidth: 1, borderColor: '#21282F' }}
+        style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 24, backgroundColor: MonikeColors.bgElevated, borderWidth: 1, borderColor: MonikeColors.inkGhost }}
         onPress={onRetry}
       >
         <RefreshCw size={14} color={MonikeColors.inkPrimary} strokeWidth={2} />
-        <Text style={{ color: MonikeColors.inkPrimary, fontFamily: Fonts.sans, fontSize: 13, fontWeight: '700' }}>Retry</Text>
+        <Text style={{ color: MonikeColors.inkPrimary, fontFamily: Fonts.sans, fontSize: 13, fontWeight: '600' }}>Retry</Text>
       </Pressable>
     </View>
   );
@@ -235,11 +239,11 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
 
 function PressScale({ children, disabled, style, onPress }: { children: ReactNode; disabled?: boolean; style?: ViewStyle; onPress?: () => void }) {
   const scale = useRef(new Animated.Value(1)).current;
-  const pressIn  = () => { if (disabled) return; Animated.timing(scale, { toValue: 0.94, duration: 60, easing: Easing.out(Easing.quad), useNativeDriver: true }).start(); };
+  const pressIn  = () => { if (disabled) return; Animated.timing(scale, { toValue: 0.95, duration: 60, easing: Easing.out(Easing.quad), useNativeDriver: true }).start(); };
   const pressOut = () => { if (disabled) return; Animated.spring(scale, { toValue: 1, speed: 22, bounciness: 7, useNativeDriver: true }).start(); };
   return (
     <Pressable disabled={disabled} onPress={onPress} onPressIn={pressIn} onPressOut={pressOut}>
-      <Animated.View style={[style, { opacity: disabled ? 0.46 : 1, transform: [{ scale }] }]}>{children}</Animated.View>
+      <Animated.View style={[style, { opacity: disabled ? 0.4 : 1, transform: [{ scale }] }]}>{children}</Animated.View>
     </Pressable>
   );
 }
@@ -248,11 +252,11 @@ function PressScale({ children, disabled, style, onPress }: { children: ReactNod
 
 function Toast({ message, visible }: { message: string; visible: boolean }) {
   const fade = useRef(new Animated.Value(0)).current;
-  const lift = useRef(new Animated.Value(10)).current;
+  const lift = useRef(new Animated.Value(8)).current;
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fade, { toValue: visible ? 1 : 0, duration: 160, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-      Animated.timing(lift, { toValue: visible ? 0 : 10, duration: 160, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.timing(lift, { toValue: visible ? 0 : 8,   duration: 160, easing: Easing.out(Easing.quad), useNativeDriver: true }),
     ]).start();
   }, [fade, lift, visible]);
   return (
@@ -262,30 +266,27 @@ function Toast({ message, visible }: { message: string; visible: boolean }) {
   );
 }
 
-// ─── SectionTitle ─────────────────────────────────────────────────────────────
+// ─── Label ────────────────────────────────────────────────────────────────────
+// Consistent micro-label used everywhere: REAL SPENDING, WEEKLY BREAKDOWN, etc.
 
-function SectionTitle({ children }: { children: ReactNode }) {
-  return <Text style={styles.sectionTitle}>{children}</Text>;
+function Label({ children }: { children: ReactNode }) {
+  return <Text style={styles.label}>{children}</Text>;
 }
 
 // ─── MonthSelector ────────────────────────────────────────────────────────────
 
 function MonthSelector({ canGoForward, canGoBack, label, onAttemptFuture, onNext, onPrevious }: {
-  canGoForward: boolean;
-  canGoBack: boolean;
-  label: string;
-  onAttemptFuture: () => void;
-  onNext: () => void;
-  onPrevious: () => void;
+  canGoForward: boolean; canGoBack: boolean; label: string;
+  onAttemptFuture: () => void; onNext: () => void; onPrevious: () => void;
 }) {
   return (
     <View style={styles.monthSelector}>
       <PressScale style={styles.monthChevron} disabled={!canGoBack} onPress={onPrevious}>
-        <ChevronLeft size={24} color={canGoBack ? MonikeColors.inkSecondary : MonikeColors.inkGhost} strokeWidth={1.8} />
+        <ChevronLeft size={22} color={canGoBack ? MonikeColors.inkSecondary : MonikeColors.inkGhost} strokeWidth={2} />
       </PressScale>
       <Text style={styles.monthLabel}>{label}</Text>
       <PressScale style={styles.monthChevron} onPress={canGoForward ? onNext : onAttemptFuture}>
-        <ChevronRight size={24} color={canGoForward ? MonikeColors.inkSecondary : MonikeColors.inkGhost} strokeWidth={1.8} />
+        <ChevronRight size={22} color={canGoForward ? MonikeColors.inkSecondary : MonikeColors.inkGhost} strokeWidth={2} />
       </PressScale>
     </View>
   );
@@ -299,12 +300,13 @@ function CountUpAmount({ value }: { value: number }) {
   useEffect(() => {
     progress.setValue(0);
     const listener = progress.addListener(({ value: v }) => setDisplayValue(value * v));
-    Animated.timing(progress, { toValue: 1, duration: 720, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
+    Animated.timing(progress, { toValue: 1, duration: 800, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
     return () => progress.removeListener(listener);
   }, [progress, value]);
   return (
     <Text style={styles.heroAmount}>
-      <Text style={styles.heroCurrency}>₦</Text>{formatNaira(displayValue, 2)}
+      <Text style={styles.heroCurrency}>₦</Text>
+      {formatNaira(displayValue, 2)}
     </Text>
   );
 }
@@ -325,8 +327,13 @@ function HeroSpendBlock({ summary }: { summary: ExploreSummaryResponse }) {
 
   return (
     <View style={styles.heroCard}>
-      <Text style={styles.heroLabel}>REAL SPENDING</Text>
+      <Label>REAL SPENDING</Label>
       <CountUpAmount value={summary.real_spend} />
+
+      {/* Divider */}
+      <View style={styles.heroDivider} />
+
+      {/* Two metrics side by side */}
       <View style={styles.heroMetricRow}>
         <View style={styles.heroMetricBlock}>
           <Text style={[styles.heroMetricValue, { color: change > 0 ? MonikeColors.signalRed : MonikeColors.accentPulse }]}>
@@ -334,12 +341,12 @@ function HeroSpendBlock({ summary }: { summary: ExploreSummaryResponse }) {
           </Text>
           <Text style={styles.heroMetricLabel}>vs {prevLabel} {summary.previous_spend > 0 ? summary.year : ''}</Text>
         </View>
-        <View style={styles.heroMetricDivider} />
+        <View style={styles.heroMetricSplit} />
         <View style={styles.heroMetricBlock}>
           <Text style={[styles.heroMetricValue, { color: isUnderPace ? MonikeColors.accentPulse : MonikeColors.signalRed }]}>
             ₦{formatNaira(Math.abs(paceDelta))}
           </Text>
-          <Text style={styles.heroMetricLabel}>{isUnderPace ? 'under pace' : 'over daily pace'}</Text>
+          <Text style={styles.heroMetricLabel}>{isUnderPace ? 'under daily pace' : 'over daily pace'}</Text>
         </View>
       </View>
     </View>
@@ -361,27 +368,33 @@ function BudgetProgress({ summary }: { summary: ExploreSummaryResponse }) {
     : 0;
 
   return (
-    <View style={styles.budgetBlock}>
-      <View style={styles.budgetScaleRow}>
-        <Text style={styles.budgetScale}>₦0</Text>
-        <Text style={styles.budgetScale}>₦{formatNaira(summary.budget)}</Text>
+    <View style={styles.card}>
+      {/* Header row */}
+      <View style={styles.budgetHeaderRow}>
+        <Label>BUDGET</Label>
+        <Text style={[styles.budgetPct, { color: fillColor }]}>{Math.round(fillPercent)}%</Text>
       </View>
-      <View style={styles.progressMarkerLayer}>
-        <View style={[styles.progressAmountMarker, { left: `${Math.max(0, Math.min(fillPercent - 8, 82))}%` }]}>
-          <Text style={[styles.progressAmountLabel, { color: fillColor }]}>₦{formatNaira(summary.real_spend)}</Text>
-        </View>
+
+      {/* Amount labels */}
+      <View style={styles.budgetAmountRow}>
+        <Text style={styles.budgetSpent}>₦{formatNaira(summary.real_spend)}</Text>
+        <Text style={styles.budgetTotal}>of ₦{formatNaira(summary.budget)}</Text>
       </View>
+
+      {/* Track */}
       <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${fillPercent}%`, backgroundColor: fillColor }]}>
-          <View style={styles.progressTick} />
-        </View>
+        <Animated.View style={[styles.progressFill, { width: `${fillPercent}%` as any, backgroundColor: fillColor }]} />
       </View>
+
+      {/* Footer */}
       <View style={styles.budgetFootRow}>
-        <Text style={styles.budgetFootLeft}>
-          {daysRemaining > 0 ? `${daysRemaining} days remaining` : 'Month complete'}
+        <Text style={styles.budgetFootMuted}>
+          {daysRemaining > 0 ? `${daysRemaining} days left` : 'Month complete'}
         </Text>
         {dailyToStay > 0 && (
-          <Text style={styles.budgetFootRight}>₦{formatNaira(dailyToStay)}/day to stay on track</Text>
+          <Text style={[styles.budgetFootAccent, { color: fillColor }]}>
+            ₦{formatNaira(dailyToStay)}/day
+          </Text>
         )}
       </View>
     </View>
@@ -390,17 +403,18 @@ function BudgetProgress({ summary }: { summary: ExploreSummaryResponse }) {
 
 // ─── SpendBar ─────────────────────────────────────────────────────────────────
 
-function SpendBar({ color, delay, label, percent }: { color: string; delay: number; label?: string; percent: number }) {
+function SpendBar({ color, delay, percent }: { color: string; delay: number; percent: number }) {
   const width = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     width.setValue(0);
-    Animated.timing(width, { toValue: percent, delay, duration: 400, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
+    Animated.timing(width, { toValue: percent, delay, duration: 420, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
   }, [delay, percent, width]);
   return (
     <View style={styles.weekBarTrack}>
-      <Animated.View style={[styles.weekBarFill, { backgroundColor: color, width: width.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }) }]}>
-        {percent > 42 && label ? <Text style={styles.weekBarLabel}>₦{label}</Text> : null}
-      </Animated.View>
+      <Animated.View style={[
+        styles.weekBarFill,
+        { backgroundColor: color, width: width.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }) },
+      ]} />
     </View>
   );
 }
@@ -412,21 +426,24 @@ function WeeklyBreakdown({ weekly }: { weekly: WeekBreakdown[] }) {
   const avgSpend = weekly.reduce((s, w) => s + w.spend, 0) / Math.max(weekly.length, 1);
   return (
     <View style={styles.sectionGap}>
-      <SectionTitle>WEEKLY BREAKDOWN</SectionTitle>
-      <View style={styles.weeklyCard}>
+      <Label>WEEKLY BREAKDOWN</Label>
+      <View style={styles.card}>
         {weekly.map((week, index) => {
           const aboveAvg = avgSpend > 0 ? (week.spend - avgSpend) / avgSpend : 0;
           const color = aboveAvg >= 0.3 ? MonikeColors.signalRed : aboveAvg >= 0.1 ? MonikeColors.signalAmber : MonikeColors.accentPulse;
           const percent = (week.spend / maxSpend) * 100;
           return (
-            <View key={week.week} style={[styles.weekRow, index % 2 === 1 && styles.weekRowStripe]}>
+            <View key={week.week} style={[styles.weekRow, index < weekly.length - 1 && styles.weekRowBorder]}>
+              {/* Left: week label + range */}
               <View style={styles.weekLeft}>
-                <Text style={styles.weekCode}>WK {String(week.week).padStart(2, '0')}</Text>
+                <Text style={styles.weekCode}>W{week.week}</Text>
                 <Text style={styles.weekRange}>{week.range}</Text>
               </View>
+              {/* Center: bar */}
               <View style={styles.weekCenter}>
-                <SpendBar color={color} delay={index * 80} label={formatNaira(week.spend)} percent={percent} />
+                <SpendBar color={color} delay={index * 80} percent={percent} />
               </View>
+              {/* Right: amount + txns */}
               <View style={styles.weekRight}>
                 <Text style={[styles.weekAmount, { color }]}>₦{formatNaira(week.spend)}</Text>
                 <Text style={styles.weekTxn}>{week.txns} txns</Text>
@@ -439,43 +456,83 @@ function WeeklyBreakdown({ weekly }: { weekly: WeekBreakdown[] }) {
   );
 }
 
-// ─── KeyStatsCard ─────────────────────────────────────────────────────────────
+// ─── KeyStatsCard — 2-column grid, each stat its own card ────────────────────
 
 function KeyStatsCard({ summary }: { summary: ExploreSummaryResponse }) {
   const daysInMonth = new Date(summary.year, summary.month, 0).getDate();
   const dailyAvg = summary.real_spend / daysInMonth;
   const cells = summary.daily.filter((d) => d.total > 0);
-  const peakDay  = cells.reduce((p, d) => (d.total > (p?.total ?? 0) ? d : p), cells[0]);
-  const lowestDay = cells.reduce((p, d) => (d.total < (p?.total ?? Infinity) ? d : p), cells[0]);
-  const highDays = cells.filter((d) => d.total > dailyAvg).map((d) => d.day).slice(0, 30);
-  const netFlow  = summary.credits - summary.real_spend;
+  const peakDay    = cells.reduce((p, d) => (d.total > (p?.total ?? 0) ? d : p), cells[0]);
+  const lowestDay  = cells.reduce((p, d) => (d.total < (p?.total ?? Infinity) ? d : p), cells[0]);
+  const highDays   = cells.filter((d) => d.total > dailyAvg).map((d) => d.day).slice(0, 30);
+  const netFlow    = summary.credits - summary.real_spend;
 
   return (
     <View style={styles.sectionGap}>
-      <View style={styles.statsCard}>
-        <StatCell title="DAILY AVG"         value={`₦${formatNaira(dailyAvg)}`} />
-        <StatCell title="PEAK DAY"          value={`₦${formatNaira(peakDay?.total ?? 0)}`}   color={MonikeColors.signalRed}   sub={peakDay?.date} />
-        <StatCell title="HIGH-SPEND DAYS"   value={`${highDays.length} / ${daysInMonth}`}      color={MonikeColors.signalRed}   wideDots highDays={highDays} totalDays={daysInMonth} />
-        <StatCell title="LOWEST DAY"        value={`₦${formatNaira(lowestDay?.total ?? 0)}`} color={MonikeColors.accentPulse} sub={lowestDay?.date} />
-        <StatCell title="TOTAL CREDITS"     value={`₦${formatNaira(summary.credits)}`}        color={MonikeColors.signalBlue}  sub="money in" />
-        <StatCell title="NET FLOW"          value={`${netFlow < 0 ? '−' : '+'}₦${formatNaira(netFlow)}`} color={netFlow < 0 ? MonikeColors.signalRed : MonikeColors.accentPulse} sub="in − out" />
+      <Label>KEY STATS</Label>
+      {/* Row 1 */}
+      <View style={styles.statsRow}>
+        <StatCard
+          label="Daily avg"
+          value={`₦${formatNaira(dailyAvg)}`}
+          sub="this month"
+        />
+        <StatCard
+          label="Peak day"
+          value={`₦${formatNaira(peakDay?.total ?? 0)}`}
+          sub={peakDay?.date}
+          valueColor={MonikeColors.signalRed}
+        />
+      </View>
+      {/* Row 2 */}
+      <View style={styles.statsRow}>
+        <StatCard
+          label="Lowest day"
+          value={`₦${formatNaira(lowestDay?.total ?? 0)}`}
+          sub={lowestDay?.date}
+          valueColor={MonikeColors.accentPulse}
+        />
+        <StatCard
+          label="High-spend days"
+          value={`${highDays.length}`}
+          sub={`of ${daysInMonth} days`}
+          valueColor={MonikeColors.signalAmber}
+          dots={highDays}
+          totalDots={daysInMonth}
+        />
+      </View>
+      {/* Row 3 */}
+      <View style={styles.statsRow}>
+        <StatCard
+          label="Total credits"
+          value={`₦${formatNaira(summary.credits)}`}
+          sub="money in"
+          valueColor={MonikeColors.signalBlue}
+        />
+        <StatCard
+          label="Net flow"
+          value={`${netFlow < 0 ? '−' : '+'}₦${formatNaira(netFlow)}`}
+          sub="credits − spend"
+          valueColor={netFlow < 0 ? MonikeColors.signalRed : MonikeColors.accentPulse}
+        />
       </View>
     </View>
   );
 }
 
-function StatCell({ color = MonikeColors.inkPrimary, highDays, totalDays = 30, sub, title, value, wideDots }: {
-  color?: string; highDays?: number[]; totalDays?: number; sub?: string; title: string; value: string; wideDots?: boolean;
+function StatCard({ label, value, sub, valueColor = MonikeColors.inkPrimary, dots, totalDots }: {
+  label: string; value: string; sub?: string;
+  valueColor?: string; dots?: number[]; totalDots?: number;
 }) {
   return (
-    <View style={styles.statCell}>
-      <Text style={styles.statTitle}>{title}</Text>
-      <Text style={[styles.statValue, { color }]}>{value}</Text>
+    <View style={styles.statCard}>
+      <Text style={styles.statLabel}>{label}</Text>
+      <Text style={[styles.statValue, { color: valueColor }]}>{value}</Text>
       {sub ? <Text style={styles.statSub}>{sub}</Text> : null}
-      {wideDots ? (
-        <View style={styles.highDotGrid}>
-          {Array.from({ length: totalDays }).map((_, i) => (
-            <View key={i} style={[styles.highDot, highDays?.includes(i + 1) && styles.highDotActive]} />
+      {dots && totalDots ? (
+        <View style={styles.dotGrid}>
+          {Array.from({ length: totalDots }).map((_, i) => (
+            <View key={i} style={[styles.dot, dots.includes(i + 1) && { backgroundColor: MonikeColors.signalRed }]} />
           ))}
         </View>
       ) : null}
@@ -491,17 +548,18 @@ function SevenDayComparison({ summary }: { summary: ExploreSummaryResponse }) {
   const difference = summary.last7 - summary.previous7;
   const directionColor = difference > 0 ? MonikeColors.signalRed : MonikeColors.accentPulse;
   const BarIcon = difference > 0 ? TrendingUp : TrendingDown;
+
   return (
     <View style={styles.sectionGap}>
-      <SectionTitle>HOW DID LAST WEEK LAND?</SectionTitle>
-      <View style={styles.comparisonCard}>
-        <View style={styles.comparisonBars}>
-          <ComparisonBar color={MonikeColors.accentPulse} height={(summary.previous7 / max) * 120} label="prev 7d" value={summary.previous7} />
-          <View style={[styles.changeBadge, { borderColor: directionColor }]}>
-            <BarIcon size={14} color={directionColor} strokeWidth={2} />
-            <Text style={[styles.changeBadgeText, { color: directionColor }]}>{Math.abs(change).toFixed(1)}%</Text>
+      <Label>LAST 7 DAYS</Label>
+      <View style={styles.card}>
+        <View style={styles.comparisonInner}>
+          <CompBar color={MonikeColors.inkGhost} height={(summary.previous7 / max) * 100} label="prev 7d" value={summary.previous7} />
+          <View style={styles.changePill}>
+            <BarIcon size={13} color={directionColor} strokeWidth={2.5} />
+            <Text style={[styles.changePillText, { color: directionColor }]}>{Math.abs(change).toFixed(1)}%</Text>
           </View>
-          <ComparisonBar color={directionColor} height={(summary.last7 / max) * 120} label="last 7d" value={summary.last7} />
+          <CompBar color={directionColor} height={(summary.last7 / max) * 100} label="last 7d" value={summary.last7} />
         </View>
         <Text style={styles.comparisonFooter}>
           ₦{formatNaira(Math.abs(difference))} {difference > 0 ? 'more' : 'less'} than the week before
@@ -511,14 +569,18 @@ function SevenDayComparison({ summary }: { summary: ExploreSummaryResponse }) {
   );
 }
 
-function ComparisonBar({ color, height, label, value }: { color: string; height: number; label: string; value: number }) {
+function CompBar({ color, height, label, value }: { color: string; height: number; label: string; value: number }) {
+  const animH = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(animH, { toValue: height, duration: 500, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
+  }, [animH, height]);
   return (
-    <View style={styles.comparisonBarWrap}>
-      <Text style={styles.comparisonValue}>₦{formatNaira(value)}</Text>
-      <View style={styles.comparisonBarSlot}>
-        <View style={[styles.comparisonBar, { backgroundColor: color, height }]} />
+    <View style={styles.compBarWrap}>
+      <Text style={styles.compValue}>₦{formatNaira(value)}</Text>
+      <View style={styles.compBarSlot}>
+        <Animated.View style={[styles.compBar, { backgroundColor: color, height: animH }]} />
       </View>
-      <Text style={styles.comparisonLabel}>{label}</Text>
+      <Text style={styles.compLabel}>{label}</Text>
     </View>
   );
 }
@@ -526,25 +588,19 @@ function ComparisonBar({ color, height, label, value }: { color: string; height:
 // ─── DailyHeatmap ─────────────────────────────────────────────────────────────
 
 function heatColor(total: number, threshold: number) {
-  if (total === 0) return { backgroundColor: MonikeColors.bgElevated, textColor: MonikeColors.inkSecondary, showDot: true };
-  if (total < threshold * 0.5)   return { backgroundColor: 'rgba(0,230,118,0.3)',  textColor: MonikeColors.inkPrimary, showDot: false };
-  if (total <= threshold)        return { backgroundColor: 'rgba(255,179,0,0.4)',   textColor: MonikeColors.inkPrimary, showDot: false };
-  if (total <= threshold * 2)    return { backgroundColor: 'rgba(255,61,61,0.5)',   textColor: MonikeColors.inkPrimary, showDot: false };
-  return                               { backgroundColor: 'rgba(255,61,61,0.85)',   textColor: MonikeColors.bgVoid,    showDot: false };
+  if (total === 0)               return { bg: MonikeColors.bgElevated,        text: MonikeColors.inkGhost,     dot: true  };
+  if (total < threshold * 0.5)  return { bg: 'rgba(0,230,118,0.22)',          text: MonikeColors.inkPrimary,   dot: false };
+  if (total <= threshold)       return { bg: 'rgba(255,179,0,0.32)',           text: MonikeColors.inkPrimary,   dot: false };
+  if (total <= threshold * 2)   return { bg: 'rgba(255,61,61,0.42)',           text: MonikeColors.inkPrimary,   dot: false };
+  return                               { bg: 'rgba(255,61,61,0.82)',           text: '#FFFFFF',                 dot: false };
 }
 
-function DailyHeatmap({
-  daily, year, month, threshold, onSelectDay,
-}: {
-  daily: DailyCell[];
-  year: number;
-  month: number;
-  threshold: number;
+function DailyHeatmap({ daily, year, month, threshold, onSelectDay }: {
+  daily: DailyCell[]; year: number; month: number; threshold: number;
   onSelectDay: (day: DaySpend) => void;
 }) {
   const firstDayOffset = (new Date(year, month - 1, 1).getDay() + 6) % 7;
-  const monthLabel = new Date(year, month - 1, 1).toLocaleString('en', { month: 'long' }).toUpperCase();
-  // Pad with nulls for the leading offset
+  const monthLabel = new Date(year, month - 1, 1).toLocaleString('en', { month: 'long' });
   const cells: (DailyCell | null)[] = [
     ...Array.from({ length: firstDayOffset }, () => null),
     ...daily,
@@ -552,34 +608,47 @@ function DailyHeatmap({
 
   return (
     <View style={styles.sectionGap}>
-      <SectionTitle>DAILY HEATMAP — {monthLabel}</SectionTitle>
-      <View style={styles.heatmapCard}>
-        <View style={styles.weekdayRow}>
-          {DOW.map((d) => <Text key={d} style={styles.weekdayLabel}>{d}</Text>)}
+      <Label>DAILY HEATMAP — {monthLabel.toUpperCase()}</Label>
+      <View style={styles.card}>
+        {/* Day-of-week headers */}
+        <View style={styles.heatDowRow}>
+          {DOW.map((d) => <Text key={d} style={styles.heatDowLabel}>{d}</Text>)}
         </View>
         <View style={styles.heatGrid}>
           {cells.map((cell, i) => {
-            if (!cell) return <View key={`blank-${i}`} style={styles.heatCellBlank} />;
-            const { backgroundColor, textColor, showDot } = heatColor(cell.total, threshold);
+            if (!cell) return <View key={`blank-${i}`} style={styles.heatBlank} />;
+            const { bg, text, dot } = heatColor(cell.total, threshold);
             return (
               <Pressable
                 key={cell.date}
-                style={[styles.heatCell, { backgroundColor }, cell.is_today && styles.todayCell]}
-                onPress={() =>
-                  onSelectDay({
-                    date: cell.date,
-                    day: new Date(year, month - 1, cell.day).toLocaleString('en', { weekday: 'short' }),
-                    total: cell.total,
-                    limit: threshold,
-                    risk: normaliseRisk(cell.risk),
-                  })
-                }
+                style={[styles.heatCell, { backgroundColor: bg }, cell.is_today && styles.heatCellToday]}
+                onPress={() => onSelectDay({
+                  date: cell.date,
+                  day: new Date(year, month - 1, cell.day).toLocaleString('en', { weekday: 'short' }),
+                  total: cell.total,
+                  limit: threshold,
+                  risk: normaliseRisk(cell.risk),
+                })}
               >
-                <Text style={[styles.heatCellText, { color: textColor }]}>{cell.day}</Text>
-                {showDot ? <View style={styles.zeroDot} /> : null}
+                <Text style={[styles.heatCellNum, { color: text }]}>{cell.day}</Text>
+                {dot ? <View style={styles.heatDot} /> : null}
               </Pressable>
             );
           })}
+        </View>
+        {/* Legend */}
+        <View style={styles.heatLegend}>
+          {[
+            { bg: 'rgba(0,230,118,0.22)',  label: 'Low' },
+            { bg: 'rgba(255,179,0,0.32)',  label: 'Avg' },
+            { bg: 'rgba(255,61,61,0.42)',  label: 'High' },
+            { bg: 'rgba(255,61,61,0.82)',  label: 'Peak' },
+          ].map(({ bg, label }) => (
+            <View key={label} style={styles.legendItem}>
+              <View style={[styles.legendSwatch, { backgroundColor: bg }]} />
+              <Text style={styles.legendLabel}>{label}</Text>
+            </View>
+          ))}
         </View>
       </View>
     </View>
@@ -590,11 +659,15 @@ function DailyHeatmap({
 
 function RiskBadge({ risk }: { risk: Risk }) {
   const palette = {
-    HIGH:   { color: MonikeColors.signalRed,   backgroundColor: '#FF3D3D22', borderColor: '#FF3D3D44' },
-    MEDIUM: { color: MonikeColors.signalAmber, backgroundColor: '#FFB30022', borderColor: '#FFB30044' },
-    LOW:    { color: MonikeColors.accentPulse, backgroundColor: '#00E67622', borderColor: '#00E67644' },
+    HIGH:   { color: MonikeColors.signalRed,   bg: '#FF3D3D18', border: '#FF3D3D40' },
+    MEDIUM: { color: MonikeColors.signalAmber, bg: '#FFB30018', border: '#FFB30040' },
+    LOW:    { color: MonikeColors.accentPulse, bg: '#00E67618', border: '#00E67640' },
   }[risk];
-  return <Text style={[styles.riskBadge, palette]}>{risk}</Text>;
+  return (
+    <View style={[styles.riskBadge, { backgroundColor: palette.bg, borderColor: palette.border }]}>
+      <Text style={[styles.riskBadgeText, { color: palette.color }]}>{risk}</Text>
+    </View>
+  );
 }
 
 // ─── TransactionRow ───────────────────────────────────────────────────────────
@@ -603,79 +676,77 @@ function TransactionRow({ transaction, showSeparator = true }: { transaction: Da
   const credit = transaction.amount > 0;
   const Icon = categoryIcon(transaction.category);
   return (
-    <View style={[styles.transactionRow, !showSeparator && styles.transactionRowLast]}>
-      <View style={styles.transactionIconCircle}>
-        <Icon size={16} color={credit ? MonikeColors.signalBlue : MonikeColors.inkSecondary} strokeWidth={1.8} />
+    <View style={[styles.txRow, !showSeparator && { borderBottomWidth: 0 }]}>
+      {/* Icon */}
+      <View style={styles.txIcon}>
+        <Icon size={15} color={MonikeColors.inkSecondary} strokeWidth={1.8} />
       </View>
-      <View style={styles.transactionCenter}>
-        <Text numberOfLines={1} style={styles.transactionDescription}>{transaction.description}</Text>
-        <Text style={styles.transactionDate}>{transaction.category}</Text>
+      {/* Center */}
+      <View style={styles.txCenter}>
+        <Text numberOfLines={1} style={styles.txDescription}>{transaction.description}</Text>
+        <Text style={styles.txMeta}>{transaction.category}{transaction.time ? ` · ${transaction.time}` : ''}</Text>
       </View>
-      <View style={styles.transactionRight}>
-        <Text style={[styles.transactionAmount, { color: credit ? MonikeColors.signalBlue : MonikeColors.signalRed }]}>
-          {credit ? '+' : '−'}₦{formatNaira(Math.abs(transaction.amount))}
-        </Text>
-        {transaction.time ? <Text style={styles.transactionTime}>{transaction.time}</Text> : null}
-      </View>
+      {/* Amount */}
+      <Text style={[styles.txAmount, { color: credit ? MonikeColors.accentPulse : MonikeColors.inkPrimary }]}>
+        {credit ? '+' : '−'}₦{formatNaira(Math.abs(transaction.amount))}
+      </Text>
     </View>
   );
 }
 
 // ─── DayDetailSheet ───────────────────────────────────────────────────────────
 
-function DayDetailSheet({
-  day, transactions, visible, onClose,
-}: {
-  day: DaySpend | null;
-  transactions: DayTransaction[];
-  visible: boolean;
-  onClose: () => void;
+function DayDetailSheet({ day, transactions, visible, onClose }: {
+  day: DaySpend | null; transactions: DayTransaction[]; visible: boolean; onClose: () => void;
 }) {
-  const sheetY  = useRef(new Animated.Value(420)).current;
+  const sheetY  = useRef(new Animated.Value(480)).current;
   const opacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(sheetY,  { toValue: visible ? 0 : 420, duration: visible ? 220 : 180, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(sheetY,  { toValue: visible ? 0 : 480, duration: visible ? 240 : 180, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
       Animated.timing(opacity, { toValue: visible ? 1 : 0,   duration: 160,                 easing: Easing.out(Easing.quad),  useNativeDriver: true }),
     ]).start();
   }, [opacity, sheetY, visible]);
 
   if (!day) return null;
 
-  // Filter transactions to the tapped date; fall back to a synthetic entry
   const dayTxns = transactions.filter((t) => t.date === day.date);
   const fallback: DayTransaction[] = day.total > 0 ? [{
-    id: `synth-${day.date}`,
-    description: 'Aggregated spend',
-    category: 'Other',
-    date: day.date,
-    day: day.day,
-    time: '',
-    amount: -day.total,
+    id: `synth-${day.date}`, description: 'Aggregated spend',
+    category: 'Other', date: day.date, day: day.day, time: '', amount: -day.total,
   }] : [];
   const detail = dayTxns.length ? dayTxns : fallback;
 
   return (
     <Modal transparent visible={visible} animationType="none" onRequestClose={onClose}>
-      <Pressable style={styles.sheetBackdrop} onPress={onClose}>
-        <Animated.View style={[styles.backdropTint, { opacity }]} />
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose}>
+        <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: '#000000', opacity: Animated.multiply(opacity, new Animated.Value(0.6)) }]} />
       </Pressable>
-      <Animated.View style={[styles.daySheet, { transform: [{ translateY: sheetY }] }]}>
+      <Animated.View style={[styles.sheet, { transform: [{ translateY: sheetY }] }]}>
+        {/* Handle */}
         <View style={styles.sheetHandle} />
-        <View style={styles.sheetHeaderRow}>
+
+        {/* Header */}
+        <View style={styles.sheetHeader}>
           <View>
-            <Text style={styles.sheetTitle}>{day.date}</Text>
-            <Text style={styles.sheetSubtitle}>{DAY_NAMES[day.day] ?? day.day}</Text>
+            <Text style={styles.sheetDate}>{day.date}</Text>
+            <Text style={styles.sheetDay}>{DAY_NAMES[day.day] ?? day.day}</Text>
           </View>
           <RiskBadge risk={day.risk} />
         </View>
-        <Text style={styles.sheetDebit}>₦{formatNaira(day.total)}</Text>
-        <ScrollView style={styles.sheetTransactionList}>
-          {detail.map((t, i) => (
-            <TransactionRow key={t.id} transaction={t} showSeparator={i < detail.length - 1} />
-          ))}
-        </ScrollView>
+
+        {/* Big debit number */}
+        <Text style={styles.sheetAmount}>₦{formatNaira(day.total)}</Text>
+
+        {/* Transactions */}
+        <View style={styles.sheetTxCard}>
+          <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 300 }}>
+            {detail.map((t, i) => (
+              <TransactionRow key={t.id} transaction={t} showSeparator={i < detail.length - 1} />
+            ))}
+          </ScrollView>
+        </View>
       </Animated.View>
     </Modal>
   );
@@ -686,44 +757,36 @@ function DayDetailSheet({
 export default function MonthlySummaryScreen() {
   const insets = useSafeAreaInsets();
 
-  // ── Available months ────────────────────────────────────────────────────────
   const { data: monthsData, isLoading: monthsLoading } = useExploreMonths();
   const months = monthsData?.months ?? [];
-
-  // Track selected month index within the available list (0 = newest)
   const [monthIndex, setMonthIndex] = useState(0);
   const selectedMonth = months[monthIndex];
-
   const year  = selectedMonth?.year  ?? new Date().getFullYear();
   const month = selectedMonth?.month ?? (new Date().getMonth() + 1);
 
-  // ── Summary data ────────────────────────────────────────────────────────────
   const { data: summary, isLoading: summaryLoading, error, mutate } = useExploreSummary(year, month);
-
   const isLoading = monthsLoading || summaryLoading;
 
-  // ── Navigation ──────────────────────────────────────────────────────────────
-  const canGoForward = monthIndex > 0;                          // newer month
-  const canGoBack    = monthIndex < months.length - 1;         // older month
+  const canGoForward = monthIndex > 0;
+  const canGoBack    = monthIndex < months.length - 1;
 
   const [toastVisible, setToastVisible] = useState(false);
   const slide = useRef(new Animated.Value(0)).current;
 
   const transitionTo = useCallback((nextIndex: number, direction: 1 | -1) => {
     if (nextIndex < 0 || nextIndex >= months.length) return;
-    Animated.timing(slide, { toValue: -direction * 420, duration: 110, easing: Easing.in(Easing.quad), useNativeDriver: true }).start(() => {
+    Animated.timing(slide, { toValue: -direction * 400, duration: 110, easing: Easing.in(Easing.quad), useNativeDriver: true }).start(() => {
       setMonthIndex(nextIndex);
-      slide.setValue(direction * 420);
+      slide.setValue(direction * 400);
       Animated.timing(slide, { toValue: 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
     });
   }, [months.length, slide]);
 
   const attemptFuture = useCallback(() => {
     setToastVisible(true);
-    setTimeout(() => setToastVisible(false), 1500);
+    setTimeout(() => setToastVisible(false), 1600);
   }, []);
 
-  // ── Day sheet ───────────────────────────────────────────────────────────────
   const [selectedDay, setSelectedDay]   = useState<DaySpend | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
 
@@ -732,7 +795,6 @@ export default function MonthlySummaryScreen() {
     setSheetVisible(true);
   }, []);
 
-  // ── Swipe gesture ───────────────────────────────────────────────────────────
   const panResponder = useMemo(() => PanResponder.create({
     onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 28 && Math.abs(g.dx) > Math.abs(g.dy),
     onPanResponderRelease: (_, g) => {
@@ -746,6 +808,8 @@ export default function MonthlySummaryScreen() {
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
+
+        {/* Sticky header */}
         <View style={styles.stickyHeader}>
           <MonikeHeader title="Explore" />
           <MonthSelector
@@ -761,14 +825,12 @@ export default function MonthlySummaryScreen() {
         <ScrollView
           {...panResponder.panHandlers}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + BottomTabInset + 24 }]}
+          contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + BottomTabInset + 32 }]}
         >
           {isLoading && <ExploreSkeleton />}
-
           {!isLoading && error && <ErrorState onRetry={mutate} />}
-
           {!isLoading && !error && summary && (
-            <Animated.View style={[styles.monthContent, { transform: [{ translateX: slide }] }]}>
+            <Animated.View style={{ gap: 24, transform: [{ translateX: slide }] }}>
               <HeroSpendBlock summary={summary} />
               <BudgetProgress summary={summary} />
               <WeeklyBreakdown weekly={summary.weekly} />
@@ -788,7 +850,6 @@ export default function MonthlySummaryScreen() {
 
       <Toast message="No data yet for future months" visible={toastVisible} />
       <BottomNavigation activeRoute="explore" />
-
       <DayDetailSheet
         day={selectedDay}
         transactions={summary?.day_transactions ?? []}
@@ -799,99 +860,455 @@ export default function MonthlySummaryScreen() {
   );
 }
 
-// ─── Styles (preserved from original, additions only) ────────────────────────
+// ─── Styles ───────────────────────────────────────────────────────────────────
+// 8pt grid throughout: all spacing values are multiples of 8 (or 4 for fine control).
+// Typography scale: label 11 / body 13-14 / value 16-20 / hero 44
+// Visual hierarchy: label → value → sub — each level clearly distinct in size + weight
 
 const styles = StyleSheet.create({
-  root:                 { flex: 1, backgroundColor: MonikeColors.bgVoid },
-  safeArea:             { flex: 1 },
-  stickyHeader:         { zIndex: 5, backgroundColor: MonikeColors.bgVoid, paddingHorizontal: ScreenPadding, paddingBottom: 8 },
-  content:              { paddingHorizontal: ScreenPadding, gap: 18 },
-  monthContent:         { gap: 18 },
-  monthSelector:        { height: 48, width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  monthChevron:         { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
-  monthLabel:           { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 18, fontWeight: '700' },
-  toast:                { position: 'absolute', top: 120, alignSelf: 'center', backgroundColor: MonikeColors.bgOverlay, borderWidth: 1, borderColor: MonikeColors.inkGhost, borderRadius: 999, paddingHorizontal: 18, paddingVertical: 10, zIndex: 20 },
-  toastText:            { color: MonikeColors.inkPrimary, fontFamily: Fonts.sans, fontSize: 12, fontWeight: '700' },
-  heroCard:             { backgroundColor: MonikeColors.bgSurface, borderRadius: CardRadius, borderWidth: 1, borderColor: MonikeColors.inkGhost, padding: 18 },
-  heroLabel:            { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11, letterSpacing: 1.1, textTransform: 'uppercase' },
-  heroAmount:           { marginTop: 8, color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 42, fontWeight: '700', letterSpacing: -2 },
-  heroCurrency:         { color: MonikeColors.inkSecondary, fontSize: 24 },
-  heroMetricRow:        { flexDirection: 'row', alignItems: 'center', marginTop: 16 },
-  heroMetricBlock:      { flex: 1, gap: 3 },
-  heroMetricDivider:    { width: 1, height: 38, backgroundColor: MonikeColors.inkGhost, marginHorizontal: 14 },
-  heroMetricValue:      { fontFamily: Fonts.mono, fontSize: 14, fontWeight: '600' },
-  heroMetricLabel:      { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11 },
-  budgetBlock:          { backgroundColor: MonikeColors.bgSurface, borderRadius: CardRadius, borderWidth: 1, borderColor: MonikeColors.inkGhost, padding: 16 },
-  budgetScaleRow:       { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
-  budgetScale:          { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 11 },
-  progressMarkerLayer:  { height: 16, marginTop: -8 },
-  progressAmountMarker: { position: 'absolute', top: 0 },
-  progressAmountLabel:  { fontFamily: Fonts.mono, fontSize: 11, fontWeight: '700' },
-  progressTrack:        { height: 8, borderRadius: 4, backgroundColor: MonikeColors.bgElevated, overflow: 'hidden' },
-  progressFill:         { height: 8, borderRadius: 4, alignItems: 'flex-end' },
-  progressTick:         { width: 2, height: 8, backgroundColor: MonikeColors.inkPrimary },
-  budgetFootRow:        { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10, gap: 10 },
-  budgetFootLeft:       { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11 },
-  budgetFootRight:      { color: MonikeColors.signalAmber, fontFamily: Fonts.mono, fontSize: 11 },
-  sectionGap:           { gap: 10 },
-  sectionTitle:         { color: MonikeColors.inkSecondary, fontFamily: Fonts.heading, fontSize: 12, fontWeight: '800', letterSpacing: 1.6 },
-  weeklyCard:           { borderRadius: CardRadius, borderWidth: 1, borderColor: MonikeColors.inkGhost, overflow: 'hidden', backgroundColor: MonikeColors.bgSurface },
-  weekRow:              { minHeight: 72, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 },
-  weekRowStripe:        { backgroundColor: MonikeColors.bgStripe },
-  weekLeft:             { width: 58 },
-  weekCode:             { color: MonikeColors.inkSecondary, fontFamily: Fonts.mono, fontSize: 12, fontWeight: '700' },
-  weekRange:            { marginTop: 4, color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 10 },
-  weekCenter:           { flex: 1, paddingHorizontal: 10 },
-  weekBarTrack:         { height: 22, backgroundColor: MonikeColors.bgElevated, borderRadius: 11, overflow: 'hidden' },
-  weekBarFill:          { height: 22, borderRadius: 11, justifyContent: 'center', paddingLeft: 8 },
-  weekBarLabel:         { color: MonikeColors.bgVoid, fontFamily: Fonts.mono, fontSize: 10, fontWeight: '700' },
-  weekRight:            { width: 78, alignItems: 'flex-end' },
-  weekAmount:           { fontFamily: Fonts.mono, fontSize: 14, fontWeight: '600' },
-  weekTxn:              { marginTop: 4, color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 10 },
-  statsCard:            { flexDirection: 'row', flexWrap: 'wrap', backgroundColor: MonikeColors.bgSurface, borderRadius: CardRadius, borderWidth: 1, borderColor: MonikeColors.inkGhost, overflow: 'hidden' },
-  statCell:             { width: '33.333%', minHeight: 116, padding: 14, borderRightWidth: 1, borderBottomWidth: 1, borderColor: MonikeColors.inkGhost },
-  statTitle:            { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 10, letterSpacing: 1, textTransform: 'uppercase' },
-  statValue:            { marginTop: 8, fontFamily: Fonts.mono, fontSize: 16, fontWeight: '700' },
-  statSub:              { marginTop: 4, color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 10 },
-  highDotGrid:          { marginTop: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 3, width: 70 },
-  highDot:              { width: 4, height: 4, borderRadius: 2, backgroundColor: MonikeColors.bgElevated },
-  highDotActive:        { backgroundColor: MonikeColors.signalRed },
-  comparisonCard:       { backgroundColor: MonikeColors.bgSurface, borderRadius: CardRadius, borderWidth: 1, borderColor: MonikeColors.inkGhost, padding: 18 },
-  comparisonBars:       { minHeight: 178, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', gap: 20 },
-  comparisonBarWrap:    { alignItems: 'center' },
-  comparisonValue:      { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 14, fontWeight: '700', marginBottom: 8 },
-  comparisonBarSlot:    { width: 80, height: 120, justifyContent: 'flex-end', alignItems: 'center' },
-  comparisonBar:        { width: 80, maxHeight: 120, borderTopLeftRadius: 10, borderTopRightRadius: 10 },
-  comparisonLabel:      { marginTop: 8, color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11 },
-  changeBadge:          { alignSelf: 'center', marginBottom: 48, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1, backgroundColor: MonikeColors.bgOverlay },
-  changeBadgeText:      { fontFamily: Fonts.mono, fontSize: 12, fontWeight: '700' },
-  comparisonFooter:     { marginTop: 10, textAlign: 'center', color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 12 },
-  heatmapCard:          { backgroundColor: MonikeColors.bgSurface, borderRadius: CardRadius, borderWidth: 1, borderColor: MonikeColors.inkGhost, padding: 12 },
-  weekdayRow:           { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  weekdayLabel:         { width: 36, textAlign: 'center', color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 10 },
-  heatGrid:             { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  heatCellBlank:        { width: 36, height: 36 },
-  heatCell:             { width: 36, height: 36, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
-  todayCell:            { borderWidth: 1, borderColor: MonikeColors.inkPrimary },
-  heatCellText:         { fontFamily: Fonts.mono, fontSize: 10, fontWeight: '700' },
-  zeroDot:              { position: 'absolute', bottom: 7, width: 4, height: 4, borderRadius: 2, backgroundColor: MonikeColors.inkSecondary },
-  riskBadge:            { overflow: 'hidden', borderWidth: 1, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4, fontFamily: Fonts.mono, fontSize: 10, fontWeight: '700' },
-  transactionRow:       { minHeight: 60, flexDirection: 'row', alignItems: 'center', paddingLeft: 10, paddingRight: 12, borderBottomWidth: 1, borderBottomColor: '#2A30404D' },
-  transactionRowLast:   { borderBottomWidth: 0 },
-  transactionIconCircle:{ width: 36, height: 36, borderRadius: 18, backgroundColor: MonikeColors.bgElevated, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
-  transactionCenter:    { flex: 1, minWidth: 0 },
-  transactionDescription:{ color: MonikeColors.inkPrimary, fontFamily: Fonts.sans, fontSize: 13, fontWeight: '500' },
-  transactionDate:      { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11, marginTop: 4 },
-  transactionRight:     { alignItems: 'flex-end', minWidth: 88 },
-  transactionAmount:    { fontFamily: Fonts.mono, fontSize: 14, fontWeight: '600' },
-  transactionTime:      { marginTop: 5, color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 10 },
-  sheetBackdrop:        { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
-  backdropTint:         { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: '#00000099' },
-  daySheet:             { position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: 520, backgroundColor: MonikeColors.bgOverlay, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, borderColor: MonikeColors.inkGhost, paddingHorizontal: ScreenPadding, paddingTop: 10, paddingBottom: 26 },
-  sheetHandle:          { width: 36, height: 4, borderRadius: 2, backgroundColor: MonikeColors.inkMuted, alignSelf: 'center', marginBottom: 14 },
-  sheetHeaderRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  sheetTitle:           { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 18, fontWeight: '700' },
-  sheetSubtitle:        { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 12, marginTop: 2 },
-  sheetDebit:           { color: MonikeColors.signalRed, fontFamily: Fonts.mono, fontSize: 32, fontWeight: '700', marginTop: 10, marginBottom: 12 },
-  sheetTransactionList: { maxHeight: 280 },
+
+  // ── Root layout ─────────────────────────────────────────────────────────────
+  root:         { flex: 1, backgroundColor: MonikeColors.bgVoid },
+  safeArea:     { flex: 1 },
+  stickyHeader: {
+    zIndex: 5,
+    backgroundColor: MonikeColors.bgVoid,
+    paddingHorizontal: ScreenPadding,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: MonikeColors.inkGhost,
+  },
+  content:      { paddingHorizontal: ScreenPadding, paddingTop: 24, gap: 0 },
+
+  // ── Month selector ───────────────────────────────────────────────────────────
+  monthSelector: {
+    height: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  monthChevron:  { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  monthLabel:    {
+    color: MonikeColors.inkPrimary,
+    fontFamily: Fonts.heading,
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+  },
+
+  // ── Toast ────────────────────────────────────────────────────────────────────
+  toast: {
+    position: 'absolute',
+    top: 112,
+    alignSelf: 'center',
+    backgroundColor: MonikeColors.bgOverlay,
+    borderWidth: 1,
+    borderColor: MonikeColors.inkGhost,
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    zIndex: 20,
+  },
+  toastText: {
+    color: MonikeColors.inkPrimary,
+    fontFamily: Fonts.sans,
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+
+  // ── Shared label (section micro-title) ────────────────────────────────────
+  label: {
+    color: MonikeColors.inkMuted,
+    fontFamily: Fonts.sans,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+
+  // ── Shared card shell ─────────────────────────────────────────────────────
+  card: {
+    backgroundColor: MonikeColors.bgSurface,
+    borderRadius: CardRadius,
+    borderWidth: 1,
+    borderColor: MonikeColors.inkGhost,
+    overflow: 'hidden',
+    padding: 20,
+  },
+
+  // ── Section gap ───────────────────────────────────────────────────────────
+  sectionGap: { gap: 0, marginTop: 24 },
+
+  // ── Hero card ─────────────────────────────────────────────────────────────
+  heroCard: {
+    backgroundColor: MonikeColors.bgSurface,
+    borderRadius: CardRadius,
+    borderWidth: 1,
+    borderColor: MonikeColors.inkGhost,
+    padding: 24,
+  },
+  heroAmount: {
+    color: MonikeColors.inkPrimary,
+    fontFamily: Fonts.mono,
+    fontSize: 44,
+    fontWeight: '700',
+    letterSpacing: -2,
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  heroCurrency: {
+    color: MonikeColors.inkSecondary,
+    fontSize: 24,
+    fontWeight: '400',
+  },
+  heroDivider: {
+    height: 1,
+    backgroundColor: MonikeColors.inkGhost,
+    marginBottom: 20,
+  },
+  heroMetricRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  heroMetricBlock: { flex: 1, gap: 4 },
+  heroMetricSplit: {
+    width: 1,
+    height: 40,
+    backgroundColor: MonikeColors.inkGhost,
+    marginHorizontal: 20,
+  },
+  heroMetricValue: {
+    fontFamily: Fonts.mono,
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+  },
+  heroMetricLabel: {
+    color: MonikeColors.inkMuted,
+    fontFamily: Fonts.sans,
+    fontSize: 12,
+  },
+
+  // ── Budget card ───────────────────────────────────────────────────────────
+  budgetHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  budgetPct: {
+    fontFamily: Fonts.mono,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  budgetAmountRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+    marginBottom: 16,
+  },
+  budgetSpent: {
+    color: MonikeColors.inkPrimary,
+    fontFamily: Fonts.mono,
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: -1,
+  },
+  budgetTotal: {
+    color: MonikeColors.inkMuted,
+    fontFamily: Fonts.sans,
+    fontSize: 13,
+  },
+  progressTrack: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: MonikeColors.bgElevated,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: 8,
+    borderRadius: 4,
+  },
+  budgetFootRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  budgetFootMuted: {
+    color: MonikeColors.inkMuted,
+    fontFamily: Fonts.sans,
+    fontSize: 12,
+  },
+  budgetFootAccent: {
+    fontFamily: Fonts.mono,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  // ── Weekly ────────────────────────────────────────────────────────────────
+  weekRow: {
+    height: 72,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  weekRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: MonikeColors.inkGhost,
+  },
+  weekLeft:   { width: 48 },
+  weekCode:   { color: MonikeColors.inkSecondary, fontFamily: Fonts.mono, fontSize: 13, fontWeight: '700' },
+  weekRange:  { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 10, marginTop: 3 },
+  weekCenter: { flex: 1, paddingHorizontal: 12 },
+  weekBarTrack: {
+    height: 24,
+    backgroundColor: MonikeColors.bgElevated,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  weekBarFill: { height: 24, borderRadius: 12 },
+  weekRight:  { width: 80, alignItems: 'flex-end' },
+  weekAmount: { fontFamily: Fonts.mono, fontSize: 13, fontWeight: '700' },
+  weekTxn:    { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 10, marginTop: 3 },
+
+  // ── Stats 2-col grid ──────────────────────────────────────────────────────
+  statsRow: { flexDirection: 'row', gap: 12, marginTop: 12 },
+  statCard: {
+    flex: 1,
+    backgroundColor: MonikeColors.bgSurface,
+    borderRadius: CardRadius,
+    borderWidth: 1,
+    borderColor: MonikeColors.inkGhost,
+    padding: 16,
+    minHeight: 96,
+    gap: 4,
+  },
+  statLabel: {
+    color: MonikeColors.inkMuted,
+    fontFamily: Fonts.sans,
+    fontSize: 11,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  statValue: {
+    fontFamily: Fonts.mono,
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+    marginTop: 4,
+  },
+  statSub: {
+    color: MonikeColors.inkMuted,
+    fontFamily: Fonts.sans,
+    fontSize: 11,
+  },
+  dotGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 3,
+    marginTop: 8,
+    maxWidth: 80,
+  },
+  dot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: MonikeColors.bgElevated,
+  },
+
+  // ── 7-day comparison ─────────────────────────────────────────────────────
+  comparisonInner: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: 16,
+    minHeight: 160,
+    marginBottom: 16,
+  },
+  compBarWrap:    { alignItems: 'center', flex: 1 },
+  compValue:      { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 13, fontWeight: '700', marginBottom: 8, textAlign: 'center' },
+  compBarSlot:    { width: '100%', height: 120, justifyContent: 'flex-end', alignItems: 'center' },
+  compBar:        { width: '100%', maxHeight: 120, borderTopLeftRadius: 8, borderTopRightRadius: 8 },
+  compLabel:      { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11, marginTop: 8 },
+  changePill: {
+    alignSelf: 'center',
+    marginBottom: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: MonikeColors.inkGhost,
+    backgroundColor: MonikeColors.bgOverlay,
+  },
+  changePillText:  { fontFamily: Fonts.mono, fontSize: 12, fontWeight: '700' },
+  comparisonFooter: {
+    textAlign: 'center',
+    color: MonikeColors.inkSecondary,
+    fontFamily: Fonts.sans,
+    fontSize: 13,
+    borderTopWidth: 1,
+    borderTopColor: MonikeColors.inkGhost,
+    paddingTop: 16,
+  },
+
+  // ── Heatmap ───────────────────────────────────────────────────────────────
+  heatDowRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  heatDowLabel: {
+    width: 36,
+    textAlign: 'center',
+    color: MonikeColors.inkMuted,
+    fontFamily: Fonts.sans,
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  heatGrid:    { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  heatBlank:   { width: 36, height: 36 },
+  heatCell: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heatCellToday: {
+    borderWidth: 1.5,
+    borderColor: MonikeColors.inkPrimary,
+  },
+  heatCellNum: {
+    fontFamily: Fonts.mono,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  heatDot: {
+    position: 'absolute',
+    bottom: 5,
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: MonikeColors.inkGhost,
+  },
+  heatLegend: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+    marginTop: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: MonikeColors.inkGhost,
+  },
+  legendItem:  { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  legendSwatch: { width: 10, height: 10, borderRadius: 3 },
+  legendLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 10 },
+
+  // ── Risk badge ────────────────────────────────────────────────────────────
+  riskBadge: {
+    borderWidth: 1,
+    borderRadius: 24,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  riskBadgeText: {
+    fontFamily: Fonts.mono,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+  },
+
+  // ── Transaction row (in day sheet) ────────────────────────────────────────
+  txRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: MonikeColors.inkGhost,
+  },
+  txIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: MonikeColors.bgElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  txCenter:      { flex: 1, minWidth: 0 },
+  txDescription: {
+    color: MonikeColors.inkPrimary,
+    fontFamily: Fonts.sans,
+    fontSize: 14,
+    fontWeight: '500',
+    letterSpacing: -0.2,
+  },
+  txMeta: {
+    color: MonikeColors.inkMuted,
+    fontFamily: Fonts.sans,
+    fontSize: 11,
+    marginTop: 3,
+  },
+  txAmount: {
+    fontFamily: Fonts.mono,
+    fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: -0.3,
+    flexShrink: 0,
+  },
+
+  // ── Day sheet ─────────────────────────────────────────────────────────────
+  sheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: MonikeColors.bgOverlay,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderTopWidth: 1,
+    borderColor: MonikeColors.inkGhost,
+    paddingTop: 12,
+    paddingHorizontal: ScreenPadding,
+    paddingBottom: 40,
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: MonikeColors.inkGhost,
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  sheetDate:   { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 18, fontWeight: '700' },
+  sheetDay:    { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 13, marginTop: 2 },
+  sheetAmount: {
+    color: MonikeColors.signalRed,
+    fontFamily: Fonts.mono,
+    fontSize: 36,
+    fontWeight: '700',
+    letterSpacing: -1.5,
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  sheetTxCard: {
+    backgroundColor: MonikeColors.bgSurface,
+    borderRadius: CardRadius,
+    borderWidth: 1,
+    borderColor: MonikeColors.inkGhost,
+    overflow: 'hidden',
+  },
 });
