@@ -152,7 +152,7 @@ async def _fetch_category_transactions(
 
 
 @router.get(
-    "/categories/{name}/transactions",
+    "/categories/{name:path}/transactions",
     response_model=CategoryTransactionsResponse,
 )
 async def get_category_transactions(

@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "49651672-2193-470a-80ce-805deac7aa11"
+      }
+    },
+    "android": {
+      "package": "com.chijex5.spendingbetter"
+    }
+  }
+}
