@@ -12,7 +12,9 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
+  AlertTriangle,
   BarChart2,
+  CheckCircle2,
   CreditCard,
   Globe,
   Phone,
@@ -29,7 +31,7 @@ import {
 
 import { BottomNavigation } from '@/components/bottom-navigation';
 import { useSWR } from '@/hooks/use-swr';
-import { apiFetch, type DashboardResponse, type LogEntry, type SummaryResponse } from '@/services/api';
+import { apiFetch, type DashboardResponse, type LogEntry, type PredictionResponse, type SummaryResponse } from '@/services/api';
 import { MonikeHeader } from '@/components/monike-header';
 import { BottomTabInset, CardRadius, Fonts, MonikeColors, ScreenPadding } from '@/constants/theme';
 
@@ -138,6 +140,18 @@ function getGreetingEmoji(): string {
 function normalizeRisk(risk: string | undefined, fallbackHigh = false): Risk {
   if (risk === 'HIGH' || risk === 'MEDIUM' || risk === 'LOW') return risk;
   return fallbackHigh ? 'HIGH' : 'LOW';
+}
+
+function riskAccentColor(risk: Risk) {
+  if (risk === 'HIGH') return MonikeColors.signalRed;
+  if (risk === 'MEDIUM') return MonikeColors.signalAmber;
+  return MonikeColors.accentPulse;
+}
+
+function daysLeftInCurrentMonth() {
+  const today = new Date();
+  const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  return Math.max(lastDay - today.getDate() + 1, 1);
 }
 
 function normalizePace(pace: string | undefined): PaceStatus {
@@ -570,6 +584,94 @@ function HeroCard({ dashboard, summary }: { dashboard: DashboardResponse; summar
   );
 }
 
+// ─── Financial Coach ──────────────────────────────────────────────────────────
+
+function FinancialCoachCard({
+  dashboard,
+  prediction,
+  summary,
+}: {
+  dashboard: DashboardResponse;
+  prediction?: PredictionResponse;
+  summary?: SummaryResponse;
+}) {
+  const risk = normalizeRisk(prediction?.risk_level ?? dashboard.prediction_risk);
+  const accent = riskAccentColor(risk);
+  const probability = Math.round(((prediction?.probability ?? dashboard.prediction_prob) || 0) * 100);
+  const daysLeft = daysLeftInCurrentMonth();
+  const budget = summary?.budget_limit ?? 0;
+  const remainingBudget = budget > 0 ? Math.max(0, budget - dashboard.total_spent_this_month) : 0;
+  const safeDailyLimit = budget > 0 ? Math.floor(remainingBudget / daysLeft) : Math.max(0, Math.floor(dashboard.avg_daily * 0.85));
+  const velocityDirection = prediction?.velocity.direction;
+  const isAccelerating = velocityDirection === 'up';
+  const Icon = risk === 'HIGH' ? AlertTriangle : risk === 'MEDIUM' || isAccelerating ? Zap : CheckCircle2;
+
+  const headline = risk === 'HIGH'
+    ? 'Do not just track today — protect your cash.'
+    : risk === 'MEDIUM'
+    ? 'Spend intentionally today before the pattern gets expensive.'
+    : 'You have room today. Use it to build savings, not impulse spend.';
+
+  const primaryAction = risk === 'HIGH'
+    ? `Keep today under ₦${formatNaira(safeDailyLimit)} and delay non-urgent transfers.`
+    : risk === 'MEDIUM'
+    ? `Make ₦${formatNaira(safeDailyLimit)} your soft cap, then stop spending when you hit it.`
+    : `Move a small win to savings first; then keep spending below ₦${formatNaira(safeDailyLimit)}.`;
+
+  const advisorTips = prediction?.advisor_tips?.filter(Boolean).slice(0, 2) ?? [];
+  const fallbackTips = [
+    primaryAction,
+    'Pick one avoidable transaction category today and pause it until tomorrow.',
+  ];
+  const tips = advisorTips.length > 0 ? advisorTips : fallbackTips;
+
+  return (
+    <View style={[styles.coachCard, { borderColor: `${accent}55` }]}>
+      <View style={styles.coachHeaderRow}>
+        <View style={[styles.coachIconCircle, { backgroundColor: `${accent}22` }]}>
+          <Icon size={18} color={accent} strokeWidth={2} />
+        </View>
+        <View style={styles.coachHeaderCopy}>
+          <Text style={styles.coachEyebrow}>ML MONEY MOVE</Text>
+          <Text style={styles.coachTitle}>{headline}</Text>
+        </View>
+        <View style={[styles.coachRiskPill, { borderColor: `${accent}66`, backgroundColor: `${accent}18` }]}>
+          <Text style={[styles.coachRiskText, { color: accent }]}>{probability}%</Text>
+          <Text style={styles.coachRiskLabel}>risk</Text>
+        </View>
+      </View>
+
+      <Text style={styles.coachPrimaryAction}>{primaryAction}</Text>
+
+      <View style={styles.coachPlanRow}>
+        <View style={styles.coachMetricBlock}>
+          <Text style={styles.coachMetricLabel}>Safe today</Text>
+          <Text style={styles.coachMetricValue}>₦{formatNaira(safeDailyLimit)}</Text>
+        </View>
+        <View style={styles.coachMetricDivider} />
+        <View style={styles.coachMetricBlock}>
+          <Text style={styles.coachMetricLabel}>Budget left</Text>
+          <Text style={styles.coachMetricValue}>₦{formatNaira(remainingBudget)}</Text>
+        </View>
+        <View style={styles.coachMetricDivider} />
+        <View style={styles.coachMetricBlock}>
+          <Text style={styles.coachMetricLabel}>Days left</Text>
+          <Text style={styles.coachMetricValue}>{daysLeft}</Text>
+        </View>
+      </View>
+
+      <View style={styles.coachTipsStack}>
+        {tips.map((tip, index) => (
+          <View key={`${tip}-${index}`} style={styles.coachTipRow}>
+            <View style={[styles.coachTipBullet, { backgroundColor: accent }]} />
+            <Text style={styles.coachTipText}>{tip}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 // ─── Quick Actions ────────────────────────────────────────────────────────────
 
 function QuickActions() {
@@ -949,7 +1051,7 @@ function DashboardScreen({
   const { data: dashboard, error: dashboardError, isLoading: dashboardLoading } =
     useSWR<DashboardResponse>('/dashboard', apiFetch);
   const { data: summary } = useSWR<SummaryResponse>(currentSummaryPath(), apiFetch);
-
+  const { data: prediction } = useSWR<PredictionResponse>('/prediction', apiFetch);
 
   const sevenDaySpend = useMemo(() => dashboard ? dashboardBarsToDays(dashboard) : [], [dashboard]);
   const recentTransactions = useMemo(() => dashboard ? dashboardTransactionsToRows(dashboard) : [], [dashboard]);
@@ -982,6 +1084,7 @@ function DashboardScreen({
           {dashboard ? (
             <>
               <HeroCard dashboard={resolvedDashboard} summary={resolvedSummary} />
+              <FinancialCoachCard dashboard={resolvedDashboard} prediction={prediction} summary={resolvedSummary} />
               <QuickActions />
               <SevenDayChart days={sevenDaySpend} averageDailySpend={resolvedDashboard.avg_daily} onSelectDay={openDay} />
               <SpendHealthStrip dashboard={resolvedDashboard} summary={resolvedSummary} />
@@ -1251,6 +1354,78 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     alignSelf: 'center',
   },
+
+  // ── Financial Coach ──────────────────────────────────────────────────────────
+  coachCard: {
+    backgroundColor: MonikeColors.bgSurface,
+    borderWidth: 1,
+    borderRadius: CardRadius,
+    padding: 16,
+    gap: 13,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.28,
+    shadowRadius: 18,
+    elevation: 6,
+  },
+  coachHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  coachIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  coachHeaderCopy: { flex: 1, minWidth: 0 },
+  coachEyebrow: {
+    color: MonikeColors.accentPulse,
+    fontFamily: Fonts.mono,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.1,
+  },
+  coachTitle: {
+    marginTop: 3,
+    color: MonikeColors.inkPrimary,
+    fontFamily: Fonts.heading,
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  coachRiskPill: {
+    minWidth: 58,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    alignItems: 'center',
+  },
+  coachRiskText: { fontFamily: Fonts.mono, fontSize: 13, fontWeight: '800' },
+  coachRiskLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 9, textTransform: 'uppercase' },
+  coachPrimaryAction: {
+    color: MonikeColors.inkSecondary,
+    fontFamily: Fonts.sans,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  coachPlanRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    backgroundColor: MonikeColors.bgElevated,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: MonikeColors.inkGhost,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+  },
+  coachMetricBlock: { flex: 1, gap: 4 },
+  coachMetricLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 9, textTransform: 'uppercase' },
+  coachMetricValue: { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 13, fontWeight: '700' },
+  coachMetricDivider: { width: 1, backgroundColor: MonikeColors.inkGhost, marginHorizontal: 8 },
+  coachTipsStack: { gap: 8 },
+  coachTipRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  coachTipBullet: { width: 5, height: 5, borderRadius: 3, marginTop: 7 },
+  coachTipText: { flex: 1, color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 12, lineHeight: 18 },
 
   // ── Quick Actions ─────────────────────────────────────────────────────────────
   quickActionsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
