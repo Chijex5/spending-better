@@ -21,6 +21,7 @@ export const MonikeColors = {
   signalRed: '#FF3D3D',
   signalRedDim: '#8B0000',
   signalBlue: '#4FC3F7',
+  accentOrange: '#FF6633',
 } as const;
 
 export const Colors = {
@@ -77,7 +78,7 @@ export const Spacing = {
   eight: 48,
 } as const;
 
-export const BottomTabInset = 72;
+export const BottomTabInset = 80;
 export const CardRadius = 16;
 export const ScreenPadding = 20;
 export const MaxContentWidth = 390;

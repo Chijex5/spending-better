@@ -1,4 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+/**
+ * Flow & Velocity
+ * UI language copied from forecast.tsx:
+ *   - sectionCard + featureRow rows with bottom borders
+ *   - tipCard (bgElevated + left colour border) for insight text
+ *   - contextRow (4-stat strips with vertical dividers)
+ *   - velocityCard (top stat | arrow | stat, then divider, then context row)
+ *   - SectionHeader: small icon + small-caps heading
+ */
+import { useCallback, useEffect, useRef } from 'react';
 import {
   Animated,
   Easing,
@@ -9,7 +18,19 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { HelpCircle } from 'lucide-react-native';
+import {
+  Activity,
+  AlertTriangle,
+  BarChart2,
+  Calendar,
+  CheckCircle2,
+  Heart,
+  RefreshCw,
+  TrendingDown,
+  TrendingUp,
+  Users,
+  Zap,
+} from 'lucide-react-native';
 
 import { MonikeHeader } from '@/components/monike-header';
 import { CardRadius, Fonts, MonikeColors, ScreenPadding } from '@/constants/theme';
@@ -25,7 +46,7 @@ type MonthFlow = {
   total_credit: number;
   total_debit: number;
   net: number;
-  mom_change_pct: number;   // NEW: % change in debit vs prior month
+  mom_change_pct: number;
 };
 
 type FlowStats = {
@@ -49,7 +70,6 @@ type RecurringTransfer = {
   total_this_month: number;
 };
 
-// NEW
 type DowProfile = {
   dow: number;
   label: string;
@@ -100,7 +120,6 @@ type FlowResponse = {
   recurring: RecurringTransfer[];
   total_recurring_weekly: number;
   total_monthly_spend: number;
-  // NEW
   dow_profile: DowProfile[];
   burn_rate: BurnRate;
   income_profile: IncomeProfile;
@@ -113,19 +132,18 @@ type FlowResponse = {
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function fmt(n: number) {
-  return new Intl.NumberFormat('en-NG', { maximumFractionDigits: 0 }).format(Math.abs(n));
-}
-function fmtShort(n: number) {
   if (n >= 1_000_000) return `₦${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000)     return `₦${(n / 1_000).toFixed(0)}k`;
-  return `₦${fmt(n)}`;
+  return `₦${Math.round(Math.abs(n)).toLocaleString('en-NG')}`;
 }
-function initials(name: string) {
-  return name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
-}
+
 function fmtDate(iso: string) {
   const d = new Date(iso + 'T00:00:00');
   return `${d.getDate()} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]}`;
+}
+
+function initials(name: string) {
+  return name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
 }
 
 const HEALTH_COLORS: Record<string, string> = {
@@ -135,65 +153,130 @@ const HEALTH_COLORS: Record<string, string> = {
   red:   MonikeColors.signalRed,
 };
 
-// ─── Skeleton Loader ──────────────────────────────────────────────────────────
+const COMPONENT_MAX: Record<string, number> = {
+  'Surplus Months':     30,
+  'Income Consistency': 25,
+  'Burn Rate':          25,
+  'Recurring Burden':   10,
+  'Spend Momentum':     10,
+};
 
-function SkeletonBlock({ width, height, style }: { width: number | string; height: number; style?: any }) {
-  const shimmer = useRef(new Animated.Value(0)).current;
+const COMPONENT_COPY: Record<string, (v: number) => string> = {
+  'Surplus Months':     (v) => v >= 24 ? 'Most months are surplus' : v >= 15 ? 'More surplus than deficit months' : 'Mostly deficit months',
+  'Income Consistency': (v) => v >= 20 ? 'Income is predictable' : v >= 13 ? 'Some month-to-month swings' : 'Highly variable income',
+  'Burn Rate':          (v) => v >= 18 ? 'On track this month' : v >= 12 ? 'Slightly over pace' : 'Over budget projection',
+  'Recurring Burden':   (v) => v >= 7  ? 'Recurring spend manageable' : 'High recurring commitments',
+  'Spend Momentum':     (v) => v >= 8  ? 'Spend is decelerating' : v >= 5 ? 'Spend is flat' : 'Spend is accelerating',
+};
+
+// ─── Shimmer ──────────────────────────────────────────────────────────────────
+
+function Shimmer({ style }: { style?: object }) {
+  const a = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(shimmer, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(shimmer, { toValue: 0, duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [shimmer]);
-  const opacity = shimmer.interpolate({ inputRange: [0, 1], outputRange: [0.3, 0.7] });
-  return (
-    <Animated.View
-      style={[{ width, height, borderRadius: 6, backgroundColor: MonikeColors.bgElevated, opacity }, style]}
-    />
-  );
+    Animated.loop(Animated.sequence([
+      Animated.timing(a, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(a, { toValue: 0, duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+    ])).start();
+  }, [a]);
+  const opacity = a.interpolate({ inputRange: [0, 1], outputRange: [0.06, 0.14] });
+  return <Animated.View style={[{ backgroundColor: MonikeColors.inkPrimary, borderRadius: 6, opacity }, style]} />;
 }
 
 function SkeletonScreen() {
   return (
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: ScreenPadding, gap: 20 }}>
-      <SkeletonBlock width="60%" height={28} />
-      <SkeletonBlock width="80%" height={16} />
-      <SkeletonBlock width="100%" height={100} />
-      <SkeletonBlock width="100%" height={180} />
-      <View style={{ flexDirection: 'row', gap: 10 }}>
-        <SkeletonBlock width="32%" height={72} />
-        <SkeletonBlock width="32%" height={72} />
-        <SkeletonBlock width="32%" height={72} />
-      </View>
-      <SkeletonBlock width="100%" height={140} />
-      <SkeletonBlock width="100%" height={140} />
-      <SkeletonBlock width="100%" height={200} />
-      <SkeletonBlock width="100%" height={120} />
-      <SkeletonBlock width="100%" height={100} />
-    </ScrollView>
-  );
-}
-
-// ─── Section Header ───────────────────────────────────────────────────────────
-
-function SectionLabel({ title, sub }: { title: string; sub?: string }) {
-  return (
-    <View style={styles.sectionLabelWrap}>
-      <Text style={styles.sectionLabelText}>{title}</Text>
-      {sub && <Text style={styles.sectionLabelSub}>{sub}</Text>}
+    <View style={{ gap: 18, paddingTop: 18 }}>
+      {/* velocity-style card */}
+      <Shimmer style={{ height: 12, width: 130, borderRadius: 4 }} />
+      <Shimmer style={{ height: 100, borderRadius: CardRadius }} />
+      <Shimmer style={{ height: 12, width: 110, borderRadius: 4, marginTop: 4 }} />
+      <Shimmer style={{ height: 88, borderRadius: CardRadius }} />
+      {/* section card */}
+      {[0, 1].map((i) => (
+        <View key={i}>
+          <Shimmer style={{ height: 12, width: 120, borderRadius: 4, marginBottom: 10 }} />
+          <View style={s.sectionCard}>
+            {[0, 1, 2, 3].map((j) => (
+              <View key={j} style={[s.featureRow, { borderBottomWidth: j < 3 ? 1 : 0 }]}>
+                <View style={{ flex: 1, gap: 6 }}>
+                  <Shimmer style={{ height: 11, width: '50%' }} />
+                  <Shimmer style={{ height: 9, width: '32%' }} />
+                </View>
+                <Shimmer style={{ height: 5, width: 70, borderRadius: 3 }} />
+              </View>
+            ))}
+          </View>
+        </View>
+      ))}
     </View>
   );
 }
 
-// ─── NEW: Cashflow Health Score ───────────────────────────────────────────────
+// ─── Shared primitives (same visual language as forecast) ─────────────────────
 
-function HealthScoreCard({ health }: { health: HealthScore }) {
-  const color = HEALTH_COLORS[health.color_key];
-  const fillAnim = useRef(new Animated.Value(0)).current;
+function SectionHeader({
+  icon, children,
+}: {
+  icon?: React.ReactNode;
+  children: string;
+}) {
+  return (
+    <View style={s.sectionHeaderRow}>
+      {icon}
+      <Text style={s.sectionHeader}>{children}</Text>
+    </View>
+  );
+}
+
+function TipCard({
+  color, icon, text,
+}: {
+  color: string;
+  icon?: React.ReactNode;
+  text: string;
+}) {
+  return (
+    <View style={[s.tipCard, { borderLeftColor: color }]}>
+      {icon ?? null}
+      <Text style={s.tipText}>{text}</Text>
+    </View>
+  );
+}
+
+// Animated horizontal fill bar (used in featureRows)
+function AnimBar({
+  pct, color, index, height = 5,
+}: {
+  pct: number;
+  color: string;
+  index: number;
+  height?: number;
+}) {
+  const widthAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.sequence([
+      Animated.delay(index * 50),
+      Animated.timing(widthAnim, {
+        toValue: Math.min(pct, 1),
+        duration: 500,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }),
+    ]).start();
+  }, [index, pct, widthAnim]);
+  const animWidth = widthAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
+  return (
+    <View style={[s.barTrack, { height }]}>
+      <Animated.View style={[s.barFill, { width: animWidth, backgroundColor: color, height }]} />
+    </View>
+  );
+}
+
+// ─── 1. Health Score ──────────────────────────────────────────────────────────
+
+function HealthSection({ health }: { health: HealthScore }) {
+  const color     = HEALTH_COLORS[health.color_key];
+  const fillAnim  = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     fillAnim.setValue(0);
@@ -203,871 +286,586 @@ function HealthScoreCard({ health }: { health: HealthScore }) {
       easing: Easing.out(Easing.cubic),
       useNativeDriver: false,
     }).start();
-  }, [health.score]);
+  }, [fillAnim, health.score]);
 
-  const barWidth = fillAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0%', '100%'],
-  });
-
-  const totalMax = Object.values(health.components).reduce((a, b) => {
-    // max for each component depends on the rubric — just show relative bars
-    return a + b;
-  }, 0);
+  const barWidth = fillAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
 
   return (
-    <View style={[styles.healthCard, { borderColor: `${color}33` }]}>
-      {/* Score header */}
-      <View style={styles.healthHeader}>
-        <View style={styles.healthScoreWrap}>
-          <Text style={[styles.healthScoreNum, { color }]}>{health.score}</Text>
-          <Text style={styles.healthScoreMax}>/100</Text>
-        </View>
-        <View style={styles.healthRight}>
-          <View style={[styles.healthBadge, { backgroundColor: `${color}18`, borderColor: `${color}44` }]}>
-            <Text style={[styles.healthBadgeText, { color }]}>{health.label.toUpperCase()}</Text>
-          </View>
-          <Text style={styles.healthInsight}>{health.insight}</Text>
-        </View>
-      </View>
+    <>
+      <SectionHeader icon={<Heart size={14} color={color} strokeWidth={2} />}>
+        CASHFLOW HEALTH
+      </SectionHeader>
 
-      {/* Progress bar */}
-      <View style={styles.healthBarTrack}>
-        <Animated.View style={[styles.healthBarFill, { width: barWidth, backgroundColor: color }]} />
-      </View>
-
-      {/* Components */}
-      <View style={styles.healthComponents}>
-        {Object.entries(health.components).map(([key, val]) => (
-          <View key={key} style={styles.healthComponentRow}>
-            <Text style={styles.healthComponentLabel}>{key}</Text>
-            <View style={styles.healthComponentBar}>
-              <View
-                style={[
-                  styles.healthComponentFill,
-                  { width: `${(val / Math.max(totalMax * 0.35, 1)) * 100}%`, backgroundColor: `${color}88` },
-                ]}
-              />
+      {/* Score card — velocityCard style */}
+      <View style={s.velocityCard}>
+        {/* Top row: big score + label badge */}
+        <View style={s.healthTopRow}>
+          <View>
+            <Text style={s.healthStatLabel}>HEALTH SCORE</Text>
+            <View style={s.healthScoreRow}>
+              <Text style={[s.healthScore, { color }]}>{health.score}</Text>
+              <Text style={s.healthScoreMax}>/100</Text>
             </View>
-            <Text style={[styles.healthComponentVal, { color }]}>{val}pt</Text>
           </View>
-        ))}
+          <View style={[s.healthBadge, { backgroundColor: color + '1A', borderColor: color + '40' }]}>
+            <Text style={[s.healthBadgeText, { color }]}>{health.label.toUpperCase()}</Text>
+          </View>
+        </View>
+
+        {/* Score bar */}
+        <View style={[s.barTrack, { height: 6 }]}>
+          <Animated.View style={[s.barFill, { width: barWidth, backgroundColor: color, height: 6 }]} />
+        </View>
+
+        <View style={s.divider} />
+
+        {/* Context row: 3 key numbers */}
+        <View style={s.contextRow}>
+          <View style={s.contextStat}>
+            <Text style={s.contextLabel}>SURPLUS MONTHS</Text>
+            <Text style={s.contextValue}>
+              {health.components['Surplus Months'] != null
+                ? `${Math.round(health.components['Surplus Months'] / 30 * 10)}/10`
+                : '—'}
+            </Text>
+          </View>
+          <View style={s.contextDividerV} />
+          <View style={s.contextStat}>
+            <Text style={s.contextLabel}>BURN RATE</Text>
+            <Text style={[s.contextValue, {
+              color: (health.components['Burn Rate'] ?? 0) >= 18
+                ? MonikeColors.accentPulse
+                : MonikeColors.signalAmber,
+            }]}>
+              {(health.components['Burn Rate'] ?? 0) >= 18 ? 'ON TRACK' : 'OVER PACE'}
+            </Text>
+          </View>
+          <View style={s.contextDividerV} />
+          <View style={s.contextStat}>
+            <Text style={s.contextLabel}>MOMENTUM</Text>
+            <Text style={[s.contextValue, {
+              color: (health.components['Spend Momentum'] ?? 0) >= 8
+                ? MonikeColors.accentPulse
+                : MonikeColors.signalAmber,
+            }]}>
+              {(health.components['Spend Momentum'] ?? 0) >= 8 ? 'GOOD' : 'WATCH'}
+            </Text>
+          </View>
+        </View>
       </View>
-    </View>
-  );
-}
 
-// ─── NEW: Day-of-week Heatmap ─────────────────────────────────────────────────
+      {/* Insight tip */}
+      <TipCard
+        color={color}
+        icon={<CheckCircle2 size={16} color={MonikeColors.inkSecondary} strokeWidth={1.8} />}
+        text={health.insight}
+      />
 
-function DowHeatmap({ profile }: { profile: DowProfile[] }) {
-  const maxVal = Math.max(...profile.map((d) => d.avg_debit), 1);
-  const animations = useRef<Animated.Value[]>(profile.map(() => new Animated.Value(0))).current;
-
-  useEffect(() => {
-    animations.forEach((a) => a.setValue(0));
-    Animated.stagger(
-      60,
-      animations.map((a) =>
-        Animated.timing(a, { toValue: 1, duration: 500, easing: Easing.out(Easing.cubic), useNativeDriver: false }),
-      ),
-    ).start();
-  }, [profile]);
-
-  return (
-    <View style={styles.dowCard}>
-      <View style={styles.dowRow}>
-        {profile.map((d, i) => {
-          const intensity = d.avg_debit / maxVal;
-          const barH = animations[i].interpolate({
-            inputRange: [0, 1],
-            outputRange: [0, Math.max(intensity * 80, 4)],
-          });
-          const barColor = d.is_peak
-            ? MonikeColors.signalRed
-            : intensity > 0.7
-            ? MonikeColors.signalAmber
-            : MonikeColors.accentPulse;
-
+      {/* Component breakdown rows */}
+      <View style={s.sectionCard}>
+        {Object.entries(health.components).map(([key, val], i, arr) => {
+          const max    = COMPONENT_MAX[key] ?? 10;
+          const pct    = val / max;
+          const dotColor = pct >= 0.7 ? MonikeColors.accentPulse
+                         : pct >= 0.4 ? MonikeColors.signalAmber
+                         : MonikeColors.signalRed;
+          const copyFn = COMPONENT_COPY[key];
+          const copy   = copyFn ? copyFn(val) : key;
           return (
-            <View key={d.dow} style={styles.dowCol}>
-              {/* Amount label */}
-              <Text style={[styles.dowAmount, d.is_peak && { color: MonikeColors.signalRed }]}>
-                {fmtShort(d.avg_debit)}
-              </Text>
-              {/* Bar */}
-              <View style={styles.dowBarSlot}>
-                <Animated.View
-                  style={[
-                    styles.dowBar,
-                    {
-                      height: barH,
-                      backgroundColor: barColor,
-                      opacity: 0.3 + intensity * 0.7,
-                    },
-                  ]}
-                />
+            <View key={key} style={[s.featureRow, i < arr.length - 1 && s.featureRowBorder]}>
+              <View style={s.featureCopy}>
+                <Text style={s.featureLabel}>{copy}</Text>
+                <Text style={s.featureValue}>{key}</Text>
               </View>
-              {/* Label */}
-              <Text style={[styles.dowLabel, d.is_peak && { color: MonikeColors.signalRed, fontWeight: '700' }]}>
-                {d.label}
-              </Text>
-              {d.is_peak && <Text style={styles.dowPeakPin}>▲</Text>}
+              <View style={s.importanceWrap}>
+                <View style={[s.statusDot, { backgroundColor: dotColor }]} />
+                <AnimBar pct={pct} color={dotColor} index={i} height={4} />
+              </View>
             </View>
           );
         })}
       </View>
-      <Text style={styles.dowCaption}>Average daily spend per weekday across all history</Text>
-    </View>
+    </>
   );
 }
 
-// ─── NEW: Burn Rate Card ──────────────────────────────────────────────────────
+// ─── 2. This Month ────────────────────────────────────────────────────────────
 
-function BurnRateCard({ burn }: { burn: BurnRate }) {
-  const pctFillAnim = useRef(new Animated.Value(0)).current;
+function ThisMonthSection({ burn }: { burn: BurnRate }) {
+  const fillAnim    = useRef(new Animated.Value(0)).current;
+  const surplusColor = burn.on_track ? MonikeColors.accentPulse : MonikeColors.signalRed;
+  const barColor    = burn.pct_income_burned > 85 ? MonikeColors.signalRed
+                    : burn.pct_income_burned > 65 ? MonikeColors.signalAmber
+                    : MonikeColors.accentPulse;
 
   useEffect(() => {
-    pctFillAnim.setValue(0);
-    Animated.timing(pctFillAnim, {
+    fillAnim.setValue(0);
+    Animated.timing(fillAnim, {
       toValue: Math.min(burn.pct_income_burned / 100, 1),
       duration: 800,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: false,
     }).start();
-  }, [burn.pct_income_burned]);
+  }, [fillAnim, burn.pct_income_burned]);
 
-  const fillWidth = pctFillAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0%', '100%'],
-  });
+  const barWidth = fillAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
 
-  const surplusColor = burn.on_track ? MonikeColors.accentPulse : MonikeColors.signalRed;
-  const barColor = burn.pct_income_burned > 85
-    ? MonikeColors.signalRed
-    : burn.pct_income_burned > 65
-    ? MonikeColors.signalAmber
-    : MonikeColors.accentPulse;
+  const TrendIcon = burn.on_track ? TrendingDown : TrendingUp;
+  const trendColor = burn.on_track ? MonikeColors.accentPulse : MonikeColors.signalRed;
+
+  const tipText = burn.monthly_income === 0
+    ? 'No income recorded this month yet — add a credit to enable projections.'
+    : burn.on_track
+      ? `At ${fmt(burn.daily_burn)}/day you're projected to save ${fmt(burn.projected_surplus)} by end of month.`
+      : `At ${fmt(burn.daily_burn)}/day you're heading for a ${fmt(Math.abs(burn.projected_surplus))} shortfall.`;
 
   return (
-    <View style={[styles.burnCard, { borderColor: `${surplusColor}33` }]}>
-      {/* Top row */}
-      <View style={styles.burnTopRow}>
-        <View>
-          <Text style={styles.burnLabel}>DAILY BURN RATE</Text>
-          <Text style={[styles.burnAmount, { color: MonikeColors.inkPrimary }]}>
-            ₦{fmt(burn.daily_burn)} / day
-          </Text>
+    <>
+      <SectionHeader icon={<Calendar size={14} color={MonikeColors.signalBlue} strokeWidth={2} />}>
+        THIS MONTH
+      </SectionHeader>
+
+      <View style={s.velocityCard}>
+        {/* Top row: daily burn | arrow | projected outcome */}
+        <View style={s.velocityTopRow}>
+          <View style={s.velocityStat}>
+            <Text style={s.velocityStatLabel}>DAILY BURN RATE</Text>
+            <Text style={[s.velocityStatValue, { color: trendColor }]}>{fmt(burn.daily_burn)}/day</Text>
+          </View>
+          <View style={s.velocityArrowWrap}>
+            <TrendIcon size={18} color={trendColor} strokeWidth={2.5} />
+            <Text style={[s.velocityPct, { color: trendColor }]}>
+              {burn.pct_income_burned.toFixed(0)}%
+            </Text>
+          </View>
+          <View style={[s.velocityStat, { alignItems: 'flex-end' }]}>
+            <Text style={s.velocityStatLabel}>{burn.on_track ? 'PROJECTED SAVE' : 'PROJECTED OVER'}</Text>
+            <Text style={[s.velocityStatValue, { color: surplusColor }]}>
+              {fmt(Math.abs(burn.projected_surplus))}
+            </Text>
+          </View>
         </View>
-        <View style={[styles.burnBadge, { backgroundColor: `${surplusColor}15`, borderColor: `${surplusColor}44` }]}>
-          <Text style={[styles.burnBadgeText, { color: surplusColor }]}>
-            {burn.on_track ? '✓ ON TRACK' : '✗ OVER BUDGET'}
-          </Text>
+
+        {/* Progress bar */}
+        <View style={[s.barTrack, { height: 7 }]}>
+          <Animated.View style={[s.barFill, { width: barWidth, backgroundColor: barColor, height: 7 }]} />
+        </View>
+
+        <View style={s.divider} />
+
+        {/* 4-stat context row */}
+        <View style={s.contextRow}>
+          <View style={s.contextStat}>
+            <Text style={s.contextLabel}>INCOME IN</Text>
+            <Text style={s.contextValue}>{fmt(burn.monthly_income)}</Text>
+          </View>
+          <View style={s.contextDividerV} />
+          <View style={s.contextStat}>
+            <Text style={s.contextLabel}>PROJECTED</Text>
+            <Text style={s.contextValue}>{fmt(burn.projected_month_spend)}</Text>
+          </View>
+          <View style={s.contextDividerV} />
+          <View style={s.contextStat}>
+            <Text style={s.contextLabel}>DAY</Text>
+            <Text style={s.contextValue}>{burn.days_elapsed} of {burn.days_elapsed + burn.days_remaining_in_month}</Text>
+          </View>
+          <View style={s.contextDividerV} />
+          <View style={s.contextStat}>
+            <Text style={s.contextLabel}>STATUS</Text>
+            <Text style={[s.contextValue, { color: surplusColor }]}>
+              {burn.on_track ? 'ON TRACK' : 'OVER'}
+            </Text>
+          </View>
         </View>
       </View>
 
-      {/* Progress bar: % of income burned this month */}
-      <View style={styles.burnProgressWrap}>
-        <View style={styles.burnProgressTrack}>
-          <Animated.View style={[styles.burnProgressFill, { width: fillWidth, backgroundColor: barColor }]} />
-        </View>
-        <Text style={[styles.burnProgressLabel, { color: barColor }]}>
-          {burn.pct_income_burned.toFixed(1)}% of income spent so far ({burn.days_elapsed}d elapsed)
-        </Text>
-      </View>
-
-      {/* Stats row */}
-      <View style={styles.burnStatsRow}>
-        <View style={styles.burnStat}>
-          <Text style={styles.burnStatValue}>₦{fmt(burn.monthly_income)}</Text>
-          <Text style={styles.burnStatLabel}>Income this month</Text>
-        </View>
-        <View style={styles.burnStatDivider} />
-        <View style={styles.burnStat}>
-          <Text style={styles.burnStatValue}>₦{fmt(burn.projected_month_spend)}</Text>
-          <Text style={styles.burnStatLabel}>Projected total spend</Text>
-        </View>
-        <View style={styles.burnStatDivider} />
-        <View style={styles.burnStat}>
-          <Text style={[styles.burnStatValue, { color: surplusColor }]}>
-            {burn.on_track ? '+' : '−'}₦{fmt(burn.projected_surplus)}
-          </Text>
-          <Text style={styles.burnStatLabel}>Projected {burn.on_track ? 'surplus' : 'deficit'}</Text>
-        </View>
-      </View>
-    </View>
+      <TipCard
+        color={surplusColor}
+        icon={<Zap size={16} color={MonikeColors.inkSecondary} strokeWidth={1.8} />}
+        text={tipText}
+      />
+    </>
   );
 }
 
-// ─── NEW: Income Consistency Card ────────────────────────────────────────────
+// ─── 3. Spend Momentum ────────────────────────────────────────────────────────
 
-function IncomeConsistencyCard({ income }: { income: IncomeProfile }) {
-  if (!income.monthly_credits.length) return null;
+function MomentumSection({
+  momentum, cur7, cur14,
+}: {
+  momentum: 'ACCELERATING' | 'STABLE' | 'DECELERATING';
+  cur7: number;
+  cur14: number;
+}) {
+  const config = {
+    ACCELERATING: {
+      color: MonikeColors.signalRed,
+      badge: 'ACCELERATING',
+      tip: `Your week avg (${fmt(cur7)}/day) is above your 14-day baseline (${fmt(cur14)}/day). Spend is climbing — watch it.`,
+      Icon: TrendingUp,
+      pct: cur14 > 0 ? Math.abs((cur7 - cur14) / cur14) : 0,
+    },
+    STABLE: {
+      color: MonikeColors.signalAmber,
+      badge: 'STABLE',
+      tip: `Your week avg (${fmt(cur7)}/day) is flat against your baseline (${fmt(cur14)}/day). No major change.`,
+      Icon: Activity,
+      pct: 0,
+    },
+    DECELERATING: {
+      color: MonikeColors.accentPulse,
+      badge: 'DECELERATING',
+      tip: `Your week avg (${fmt(cur7)}/day) is below your 14-day baseline (${fmt(cur14)}/day). Spend is easing — good sign.`,
+      Icon: TrendingDown,
+      pct: cur14 > 0 ? Math.abs((cur7 - cur14) / cur14) : 0,
+    },
+  }[momentum];
 
-  const max = Math.max(...income.monthly_credits, 1);
-  const animations = useRef<Animated.Value[]>(income.monthly_credits.map(() => new Animated.Value(0))).current;
-
-  useEffect(() => {
-    animations.forEach((a) => a.setValue(0));
-    Animated.stagger(
-      40,
-      animations.map((a) =>
-        Animated.timing(a, { toValue: 1, duration: 450, easing: Easing.out(Easing.cubic), useNativeDriver: false }),
-      ),
-    ).start();
-  }, [income.monthly_credits]);
-
-  const cvColor =
-    income.consistency_label === 'Very Consistent'
-      ? MonikeColors.accentPulse
-      : income.consistency_label === 'Moderate'
-      ? MonikeColors.signalAmber
-      : MonikeColors.signalRed;
+  const { Icon } = config;
 
   return (
-    <View style={styles.incomeCard}>
-      {/* Header */}
-      <View style={styles.incomeHeaderRow}>
-        <View>
-          <Text style={styles.incomeAvg}>₦{fmt(income.avg)}</Text>
-          <Text style={styles.incomeAvgLabel}>avg monthly income</Text>
+    <>
+      <SectionHeader icon={<Activity size={14} color={config.color} strokeWidth={2} />}>
+        SPEND MOMENTUM
+      </SectionHeader>
+
+      <View style={s.velocityCard}>
+        <View style={s.velocityTopRow}>
+          <View style={s.velocityStat}>
+            <Text style={s.velocityStatLabel}>7-DAY AVG</Text>
+            <Text style={[s.velocityStatValue, { color: config.color }]}>{fmt(cur7)}<Text style={s.velocityUnit}>/day</Text></Text>
+          </View>
+          <View style={s.velocityArrowWrap}>
+            <Icon size={20} color={config.color} strokeWidth={2.5} />
+            {config.pct > 0 && (
+              <Text style={[s.velocityPct, { color: config.color }]}>
+                {(config.pct * 100).toFixed(0)}%
+              </Text>
+            )}
+          </View>
+          <View style={[s.velocityStat, { alignItems: 'flex-end' }]}>
+            <Text style={s.velocityStatLabel}>14-DAY BASELINE</Text>
+            <Text style={s.velocityStatValue}>{fmt(cur14)}<Text style={s.velocityUnit}>/day</Text></Text>
+          </View>
         </View>
-        <View style={[styles.incomeCvBadge, { backgroundColor: `${cvColor}15`, borderColor: `${cvColor}44` }]}>
-          <Text style={[styles.incomeCvLabel, { color: cvColor }]}>{income.consistency_label.toUpperCase()}</Text>
-          <Text style={[styles.incomeCvVal, { color: cvColor }]}>CV {income.cv.toFixed(1)}%</Text>
+
+        <View style={s.divider} />
+
+        <View style={s.contextRow}>
+          <View style={s.contextStat}>
+            <Text style={s.contextLabel}>DIRECTION</Text>
+            <Text style={[s.contextValue, { color: config.color }]}>{config.badge}</Text>
+          </View>
+          <View style={s.contextDividerV} />
+          <View style={[s.contextStat, { flex: 2 }]}>
+            <Text style={s.contextLabel}>DIFFERENCE</Text>
+            <Text style={[s.contextValue, { color: config.color }]}>
+              {cur7 >= cur14 ? '+' : '−'}{fmt(Math.abs(cur7 - cur14))} vs baseline
+            </Text>
+          </View>
         </View>
       </View>
 
-      {/* Mini bar chart of monthly credits */}
-      <View style={styles.incomeBarRow}>
-        {income.monthly_credits.map((val, i) => {
-          const barH = animations[i].interpolate({
-            inputRange: [0, 1],
-            outputRange: [0, Math.max((val / max) * 48, 3)],
-          });
+      <TipCard
+        color={config.color}
+        icon={<Icon size={16} color={MonikeColors.inkSecondary} strokeWidth={1.8} />}
+        text={config.tip}
+      />
+    </>
+  );
+}
+
+// ─── 4. Monthly History ───────────────────────────────────────────────────────
+
+function HistorySection({ months, stats }: { months: MonthFlow[]; stats: FlowStats }) {
+  if (!months.length) return null;
+
+  const surplusCount = months.filter((m) => m.net >= 0).length;
+  const maxAbs       = Math.max(...months.map((m) => Math.abs(m.net)), 1);
+  const netColor     = stats.avg_net >= 0 ? MonikeColors.accentPulse : MonikeColors.signalRed;
+
+  return (
+    <>
+      <SectionHeader icon={<BarChart2 size={14} color={MonikeColors.signalBlue} strokeWidth={2} />}>
+        MONTHLY TRACK RECORD
+      </SectionHeader>
+
+      {/* Summary tip */}
+      <TipCard
+        color={netColor}
+        icon={<CheckCircle2 size={16} color={MonikeColors.inkSecondary} strokeWidth={1.8} />}
+        text={
+          `Surplus in ${surplusCount} of ${months.length} months. ` +
+          `Avg monthly net: ${stats.avg_net >= 0 ? '+' : '−'}${fmt(Math.abs(stats.avg_net))} ` +
+          `(in ${fmt(stats.avg_monthly_in)} · out ${fmt(stats.avg_monthly_out)}).`
+        }
+      />
+
+      {/* Rows — one per month */}
+      <View style={s.sectionCard}>
+        {months.map((m, i) => {
+          const isPos   = m.net >= 0;
+          const color   = isPos ? MonikeColors.accentPulse : MonikeColors.signalRed;
+          const pct     = Math.abs(m.net) / maxAbs;
+          const showMom = i > 0 && m.mom_change_pct !== 0;
+          const momGood = m.mom_change_pct < 0;
+          const momColor = momGood ? MonikeColors.accentPulse : MonikeColors.signalAmber;
           return (
-            <View key={i} style={styles.incomeBarSlot}>
-              <Animated.View
-                style={[
-                  styles.incomeBar,
-                  {
-                    height: barH,
-                    backgroundColor: MonikeColors.signalBlue,
-                    opacity: 0.4 + (val / max) * 0.6,
-                  },
-                ]}
-              />
+            <View key={`${m.year}-${m.month}`} style={[s.featureRow, i < months.length - 1 && s.featureRowBorder]}>
+              <View style={s.featureCopy}>
+                <Text style={s.featureLabel}>{m.month_label}</Text>
+                <Text style={[s.featureValue, { color }]}>
+                  {isPos ? '+' : '−'}{fmt(Math.abs(m.net))}
+                </Text>
+              </View>
+              <View style={s.importanceWrap}>
+                {showMom && (
+                  <Text style={[s.momChange, { color: momColor }]}>
+                    {momGood ? '↓' : '↑'}{Math.abs(m.mom_change_pct).toFixed(0)}%
+                  </Text>
+                )}
+                <AnimBar pct={pct} color={color + 'BB'} index={i} height={5} />
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    </>
+  );
+}
+
+// ─── 5. When You Spend ────────────────────────────────────────────────────────
+
+function PeakDaySection({
+  profile, peak,
+}: {
+  profile: DowProfile[];
+  peak: PeakDay | null;
+}) {
+  if (!profile.length) return null;
+
+  const peakDay  = profile.find((d) => d.is_peak);
+  const lightDay = [...profile].sort((a, b) => a.avg_debit - b.avg_debit)[0];
+  const maxAvg   = Math.max(...profile.map((d) => d.avg_debit), 1);
+
+  const tipText = peakDay && lightDay && peakDay.label !== lightDay.label
+    ? `${peakDay.label}s are your biggest spend day (avg ${fmt(peakDay.avg_debit)}). ${lightDay.label}s are your lightest (avg ${fmt(lightDay.avg_debit)}).`
+    : peakDay
+      ? `${peakDay.label}s are your biggest spend day on average — plan ahead.`
+      : 'Historical average spend by day of week.';
+
+  return (
+    <>
+      <SectionHeader icon={<Activity size={14} color={MonikeColors.signalAmber} strokeWidth={2} />}>
+        WHEN YOU SPEND
+      </SectionHeader>
+
+      <TipCard
+        color={MonikeColors.signalAmber}
+        icon={<AlertTriangle size={16} color={MonikeColors.inkSecondary} strokeWidth={1.8} />}
+        text={tipText}
+      />
+
+      <View style={s.sectionCard}>
+        {profile.map((item, i) => {
+          const color = item.is_peak ? MonikeColors.signalAmber
+                      : item.avg_debit / maxAvg > 0.7 ? MonikeColors.accentOrange
+                      : MonikeColors.accentPulse;
+          const pct = item.avg_debit / maxAvg;
+          return (
+            <View key={item.dow} style={[s.featureRow, i < profile.length - 1 && s.featureRowBorder]}>
+              <View style={s.featureCopy}>
+                <Text style={[s.featureLabel, item.is_peak && { color: MonikeColors.signalAmber }]}>
+                  {item.label}{item.is_peak ? '  ▲' : ''}
+                </Text>
+                <Text style={[s.featureValue, { color }]}>{fmt(item.avg_debit)}</Text>
+              </View>
+              <View style={s.importanceWrap}>
+                <Text style={[s.importancePct, { color }]}>{(pct * 100).toFixed(0)}%</Text>
+                <AnimBar pct={pct} color={color} index={i} height={5} />
+              </View>
             </View>
           );
         })}
       </View>
 
-      {/* Std dev note */}
-      <Text style={styles.incomeStdNote}>
-        ±₦{fmt(income.std_dev)} std deviation — {income.cv < 15
-          ? 'your income is highly predictable, great for budgeting.'
-          : income.cv < 30
-          ? 'some month-to-month variation, keep a small buffer.'
-          : 'high variability — build a 2–3 month expense reserve.'}
-      </Text>
-    </View>
+      {peak && (
+        <View style={[s.tipCard, { borderLeftColor: MonikeColors.signalRed }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={[s.tipText, { color: MonikeColors.signalRed, fontFamily: Fonts.mono, fontSize: 9, fontWeight: '700', letterSpacing: 1, marginBottom: 3 }]}>
+              ALL-TIME RECORD DAY
+            </Text>
+            <Text style={s.tipText}>{peak.formatted_date} — {fmt(peak.amount)} spent</Text>
+          </View>
+        </View>
+      )}
+    </>
   );
 }
 
-// ─── NEW: Peak Day Banner ─────────────────────────────────────────────────────
+// ─── 6. Income Stability ─────────────────────────────────────────────────────
 
-function PeakDayBanner({ peak }: { peak: PeakDay }) {
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+function IncomeSection({ income }: { income: IncomeProfile }) {
+  if (!income.monthly_credits.length) return null;
 
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.03, duration: 700, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1,    duration: 700, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [pulseAnim]);
+  const cvColor = income.consistency_label === 'Very Consistent' ? MonikeColors.accentPulse
+                : income.consistency_label === 'Moderate'        ? MonikeColors.signalAmber
+                : MonikeColors.signalRed;
+
+  const tip = income.cv < 15
+    ? `Avg ${fmt(income.avg)}/month (±${fmt(income.std_dev)}). Your income is highly predictable — good for budgeting.`
+    : income.cv < 30
+    ? `Avg ${fmt(income.avg)}/month (±${fmt(income.std_dev)}). Some variation — keep a 1-month buffer.`
+    : `Avg ${fmt(income.avg)}/month (±${fmt(income.std_dev)}). High variability — aim for a 2–3 month reserve.`;
 
   return (
-    <Animated.View style={[styles.peakBanner, { transform: [{ scale: pulseAnim }] }]}>
-      <Text style={styles.peakBannerEmoji}>🔥</Text>
-      <View style={styles.peakBannerContent}>
-        <Text style={styles.peakBannerTitle}>HIGHEST SINGLE-DAY SPEND</Text>
-        <Text style={styles.peakBannerAmount}>₦{fmt(peak.amount)}</Text>
-        <Text style={styles.peakBannerDate}>on {peak.formatted_date}</Text>
+    <>
+      <SectionHeader icon={<Users size={14} color={cvColor} strokeWidth={2} />}>
+        INCOME STABILITY
+      </SectionHeader>
+
+      <View style={s.velocityCard}>
+        <View style={s.contextRow}>
+          <View style={s.contextStat}>
+            <Text style={s.contextLabel}>AVG / MONTH</Text>
+            <Text style={s.contextValue}>{fmt(income.avg)}</Text>
+          </View>
+          <View style={s.contextDividerV} />
+          <View style={s.contextStat}>
+            <Text style={s.contextLabel}>STD DEVIATION</Text>
+            <Text style={s.contextValue}>±{fmt(income.std_dev)}</Text>
+          </View>
+          <View style={s.contextDividerV} />
+          <View style={s.contextStat}>
+            <Text style={s.contextLabel}>CONSISTENCY</Text>
+            <Text style={[s.contextValue, { color: cvColor }]}>{income.consistency_label.toUpperCase().split(' ')[0]}</Text>
+          </View>
+        </View>
       </View>
-    </Animated.View>
+
+      <TipCard
+        color={cvColor}
+        icon={<CheckCircle2 size={16} color={MonikeColors.inkSecondary} strokeWidth={1.8} />}
+        text={tip}
+      />
+    </>
   );
 }
 
-// ─── Grouped Bar Chart ────────────────────────────────────────────────────────
+// ─── 7. Recurring Commitments ────────────────────────────────────────────────
 
-function GroupedBarChart({ months }: { months: MonthFlow[] }) {
-  const animations = useRef<Animated.Value[]>([]).current;
-  while (animations.length < months.length * 2) animations.push(new Animated.Value(0));
-
-  const maxVal = Math.max(...months.map((m) => Math.max(m.total_credit, m.total_debit)), 1);
-  const CHART_H = 140;
-  const BAR_W   = 16;
-
-  useEffect(() => {
-    animations.forEach((a) => a.setValue(0));
-    Animated.stagger(
-      30,
-      animations.map((a) =>
-        Animated.timing(a, { toValue: 1, duration: 500, easing: Easing.out(Easing.cubic), useNativeDriver: false }),
-      ),
-    ).start();
-  }, [months]);
-
-  const creditPts = months.map((m, i) => ({
-    x: i * (BAR_W * 2 + 4 + 16) + BAR_W / 2,
-    y: CHART_H - (m.total_credit / maxVal) * CHART_H,
-  }));
-  const debitPts = months.map((m, i) => ({
-    x: i * (BAR_W * 2 + 4 + 16) + BAR_W + 4 + BAR_W / 2,
-    y: CHART_H - (m.total_debit / maxVal) * CHART_H,
-  }));
-
-  const totalWidth = months.length * (BAR_W * 2 + 4 + 16) - 16;
+function RecurringSection({
+  items, totalWeekly, totalMonthlySpend,
+}: {
+  items: RecurringTransfer[];
+  totalWeekly: number;
+  totalMonthlySpend: number;
+}) {
+  const pct     = totalMonthlySpend > 0 ? ((totalWeekly * 4.33) / totalMonthlySpend) * 100 : 0;
+  const hasItems = items.length > 0;
+  const tipColor = pct > 40 ? MonikeColors.signalAmber : MonikeColors.accentPulse;
 
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chartScroll}>
-      <View style={{ width: totalWidth + 24, paddingHorizontal: 12 }}>
-        <View style={[styles.chartArea, { height: CHART_H + 24 }]}>
-          {/* Credit trendline */}
-          {creditPts.slice(0, -1).map((pt, i) => {
-            const next = creditPts[i + 1];
-            const dx = next.x - pt.x, dy = next.y - pt.y;
-            const length = Math.sqrt(dx * dx + dy * dy);
-            const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-            return (
-              <View key={`ct-${i}`} style={{
-                position: 'absolute', left: pt.x, top: pt.y,
-                width: length, height: 1,
-                borderTopWidth: 1, borderColor: `${MonikeColors.signalBlue}55`, borderStyle: 'dashed',
-                transform: [{ rotate: `${angle}deg` }, { translateY: -0.5 }],
-                transformOrigin: '0 0',
-              }} />
-            );
-          })}
-          {/* Debit trendline */}
-          {debitPts.slice(0, -1).map((pt, i) => {
-            const next = debitPts[i + 1];
-            const dx = next.x - pt.x, dy = next.y - pt.y;
-            const length = Math.sqrt(dx * dx + dy * dy);
-            const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-            return (
-              <View key={`dt-${i}`} style={{
-                position: 'absolute', left: pt.x, top: pt.y,
-                width: length, height: 1,
-                borderTopWidth: 1, borderColor: `${MonikeColors.signalRed}44`, borderStyle: 'dashed',
-                transform: [{ rotate: `${angle}deg` }, { translateY: -0.5 }],
-                transformOrigin: '0 0',
-              }} />
-            );
-          })}
+    <>
+      <SectionHeader icon={<RefreshCw size={14} color={MonikeColors.signalAmber} strokeWidth={2} />}>
+        RECURRING COMMITMENTS
+      </SectionHeader>
 
-          {/* Bars */}
-          <View style={styles.barsRow}>
-            {months.map((m, i) => {
-              const creditH = animations[i * 2].interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, Math.max((m.total_credit / maxVal) * CHART_H, 2)],
-              });
-              const debitH = animations[i * 2 + 1].interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, Math.max((m.total_debit / maxVal) * CHART_H, 2)],
-              });
-              const debitColor = m.total_debit > m.total_credit ? MonikeColors.signalRed : MonikeColors.accentPulse;
+      {!hasItems ? (
+        <TipCard
+          color={MonikeColors.inkMuted}
+          text="No recurring patterns detected yet. Patterns appear after 3+ consecutive weeks of similar transfers."
+        />
+      ) : (
+        <>
+          <TipCard
+            color={tipColor}
+            icon={<Zap size={16} color={MonikeColors.inkSecondary} strokeWidth={1.8} />}
+            text={
+              `${fmt(totalWeekly * 4.33)}/month across ${items.length} regular recipient${items.length !== 1 ? 's' : ''} ` +
+              `(${pct.toFixed(0)}% of your monthly spend).`
+            }
+          />
+
+          <View style={s.sectionCard}>
+            {items.map((item, i) => {
+              const colors = [MonikeColors.accentPulse, MonikeColors.signalBlue, MonikeColors.signalAmber, MonikeColors.accentOrange];
+              const color  = colors[item.recipient.charCodeAt(0) % colors.length];
               return (
-                <View key={m.month_label} style={[styles.barGroup, i > 0 && { marginLeft: 16 }]}>
-                  <View style={[styles.barSlot, { height: CHART_H }]}>
-                    <Animated.View style={[styles.bar, { width: BAR_W, height: creditH, backgroundColor: MonikeColors.signalBlue }]} />
+                <View key={item.recipient} style={[s.recurRow, i < items.length - 1 && s.featureRowBorder]}>
+                  <View style={[s.recurAvatar, { backgroundColor: color + '1A', borderColor: color + '40' }]}>
+                    <Text style={[s.recurAvatarText, { color }]}>{initials(item.recipient)}</Text>
                   </View>
-                  <View style={{ width: 4 }} />
-                  <View style={[styles.barSlot, { height: CHART_H }]}>
-                    <Animated.View style={[styles.bar, { width: BAR_W, height: debitH, backgroundColor: debitColor }]} />
+                  <View style={s.recurContent}>
+                    <Text style={s.featureLabel} numberOfLines={1}>{item.recipient}</Text>
+                    <View style={s.recurMeta}>
+                      <Text style={s.featureValue}>{fmt(item.avg_weekly_amount)}/wk</Text>
+                      <Text style={s.recurDot}>·</Text>
+                      <Text style={s.featureValue}>Every {DOW[item.typical_dow]}</Text>
+                      <Text style={s.recurDot}>·</Text>
+                      {item.last_three_dates.map((d, di) => (
+                        <View key={`${d}-${di}`} style={s.dateChip}>
+                          <Text style={s.dateChipText}>{fmtDate(d)}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                  <View style={{ alignItems: 'flex-end', gap: 3 }}>
+                    <Text style={[s.recurAmount, { color }]}>{fmt(item.total_this_month)}</Text>
+                    <Text style={s.recurAmountLabel}>this month</Text>
                   </View>
                 </View>
               );
             })}
           </View>
-
-          {/* X labels */}
-          <View style={styles.xLabelsRow}>
-            {months.map((m) => (
-              <View key={m.month_label} style={[styles.xLabelWrap, { width: BAR_W * 2 + 4 }]}>
-                <Text style={styles.xLabel}>{m.month_label.split(' ')[0]}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      </View>
-    </ScrollView>
-  );
-}
-
-// ─── Net Flow Stats ───────────────────────────────────────────────────────────
-
-function NetFlowStats({ stats }: { stats: FlowStats }) {
-  const netColor = stats.avg_net >= 0 ? MonikeColors.accentPulse : MonikeColors.signalRed;
-  return (
-    <View style={styles.statsCard}>
-      <View style={styles.statCol}>
-        <Text style={styles.statCardValue}>₦{fmt(stats.avg_monthly_in)}</Text>
-        <Text style={styles.statCardLabel}>AVG MONTHLY IN</Text>
-      </View>
-      <View style={styles.statCardDivider} />
-      <View style={styles.statCol}>
-        <Text style={styles.statCardValue}>₦{fmt(stats.avg_monthly_out)}</Text>
-        <Text style={styles.statCardLabel}>AVG MONTHLY OUT</Text>
-      </View>
-      <View style={styles.statCardDivider} />
-      <View style={styles.statCol}>
-        <Text style={[styles.statCardValue, { color: netColor }]}>
-          {stats.avg_net >= 0 ? '+' : '−'}₦{fmt(stats.avg_net)}
-        </Text>
-        <Text style={styles.statCardLabel}>AVG NET</Text>
-      </View>
-    </View>
-  );
-}
-
-// ─── Monthly Net Bars (with MoM %) ───────────────────────────────────────────
-
-function MonthlyNetBars({ months }: { months: MonthFlow[] }) {
-  const maxAbs = Math.max(...months.map((m) => Math.abs(m.net)), 1);
-  const animations = useRef<Animated.Value[]>([]).current;
-  while (animations.length < months.length) animations.push(new Animated.Value(0));
-
-  useEffect(() => {
-    animations.forEach((a) => a.setValue(0));
-    Animated.stagger(
-      60,
-      animations.map((a) =>
-        Animated.timing(a, { toValue: 1, duration: 450, easing: Easing.out(Easing.cubic), useNativeDriver: false }),
-      ),
-    ).start();
-  }, [months]);
-
-  const BAR_MAX = 100;
-
-  return (
-    <View style={styles.netBarsCard}>
-      {months.map((m, i) => {
-        const isPositive = m.net >= 0;
-        const barWidth = animations[i].interpolate({
-          inputRange: [0, 1],
-          outputRange: [0, Math.max((Math.abs(m.net) / maxAbs) * BAR_MAX, 4)],
-        });
-        const barColor = isPositive ? MonikeColors.accentPulse : MonikeColors.signalRed;
-        // MoM badge: only show from second month onwards (first month has 0 sentinel)
-        const showMom = i > 0;
-        const momPositive = m.mom_change_pct <= 0; // spend went DOWN = good
-        const momColor = momPositive ? MonikeColors.accentPulse : MonikeColors.signalAmber;
-
-        return (
-          <View key={m.month_label} style={styles.netBarRow}>
-            <Text style={styles.netBarMonthLabel}>{m.month_label.split(' ')[0]}</Text>
-            <View style={styles.netBarTrack}>
-              <View style={styles.netBarHalf}>
-                {!isPositive && (
-                  <Animated.View style={[styles.netBar, { width: barWidth, backgroundColor: barColor, alignSelf: 'flex-end', borderTopLeftRadius: 3, borderBottomLeftRadius: 3 }]} />
-                )}
-              </View>
-              <View style={styles.netBarAxis} />
-              <View style={styles.netBarHalf}>
-                {isPositive && (
-                  <Animated.View style={[styles.netBar, { width: barWidth, backgroundColor: barColor, borderTopRightRadius: 3, borderBottomRightRadius: 3 }]} />
-                )}
-              </View>
-            </View>
-            <Text style={[styles.netBarAmount, { color: barColor }]}>
-              {isPositive ? '+' : '−'}₦{fmt(m.net)}
-            </Text>
-            {/* MoM change badge */}
-            {showMom ? (
-              <View style={[styles.momBadge, { backgroundColor: `${momColor}15`, borderColor: `${momColor}44` }]}>
-                <Text style={[styles.momBadgeText, { color: momColor }]}>
-                  {momPositive ? '↓' : '↑'}{Math.abs(m.mom_change_pct).toFixed(0)}%
-                </Text>
-              </View>
-            ) : (
-              <View style={[styles.netBadge, { backgroundColor: `${barColor}18`, borderColor: `${barColor}44` }]}>
-                <Text style={[styles.netBadgeText, { color: barColor }]}>
-                  {isPositive ? 'SURPLUS' : 'DEFICIT'}
-                </Text>
-              </View>
-            )}
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
-// ─── Velocity Chart ───────────────────────────────────────────────────────────
-
-function VelocityChart({ velocity }: { velocity: VelocityPoint[] }) {
-  if (!velocity.length) return null;
-
-  const CHART_H = 140;
-  const CHART_W_PER_PT = 4;
-  const points = velocity.length > 180
-    ? velocity.filter((_, i) => i % Math.ceil(velocity.length / 180) === 0)
-    : velocity;
-
-  const maxVal = Math.max(...points.map((p) => Math.max(p.rolling_7d, p.rolling_14d)), 1);
-  const CHART_W = Math.max(points.length * CHART_W_PER_PT, 300);
-
-  const getY = (val: number) => CHART_H - (val / maxVal) * CHART_H;
-  const getX = (i: number) => (i / Math.max(points.length - 1, 1)) * CHART_W;
-
-  const peaks = [...points]
-    .map((p, i) => ({ ...p, i }))
-    .sort((a, b) => b.rolling_7d - a.rolling_7d)
-    .slice(0, 3);
-
-  const clusters: { start: number; end: number }[] = [];
-  let clusterStart: number | null = null;
-  points.forEach((p, i) => {
-    if (p.is_high_spend && clusterStart === null) clusterStart = i;
-    if (!p.is_high_spend && clusterStart !== null) {
-      clusters.push({ start: clusterStart, end: i - 1 });
-      clusterStart = null;
-    }
-  });
-  if (clusterStart !== null) clusters.push({ start: clusterStart, end: points.length - 1 });
-
-  return (
-    <View style={styles.velocityCard}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <View style={{ width: CHART_W, height: CHART_H + 20, position: 'relative' }}>
-          {clusters.map((c, ci) => (
-            <View key={ci} style={{
-              position: 'absolute', left: getX(c.start), top: 0,
-              width: getX(c.end) - getX(c.start) + CHART_W_PER_PT, height: CHART_H,
-              backgroundColor: 'rgba(255,61,61,0.07)',
-            }} />
-          ))}
-          {points.slice(0, -1).map((p, i) => {
-            const next = points[i + 1];
-            const x1 = getX(i), x2 = getX(i + 1);
-            const y7a = getY(p.rolling_7d), y14a = getY(p.rolling_14d);
-            const above = p.rolling_7d > p.rolling_14d;
-            const zoneH = Math.abs(y14a - y7a);
-            const zoneTop = Math.min(y7a, y14a);
-            return (
-              <View key={i} style={{
-                position: 'absolute', left: x1, top: zoneTop,
-                width: x2 - x1 + 1, height: Math.max(zoneH, 1),
-                backgroundColor: above ? 'rgba(255,61,61,0.10)' : 'rgba(0,230,118,0.10)',
-              }} />
-            );
-          })}
-          {points.slice(0, -1).map((p, i) => {
-            if (i % 3 !== 0) return null;
-            const next = points[i + 1];
-            const x1 = getX(i), y1 = getY(p.rolling_14d);
-            const x2 = getX(i + 1), y2 = getY(next.rolling_14d);
-            const dx = x2 - x1, dy = y2 - y1;
-            const len = Math.sqrt(dx * dx + dy * dy);
-            const angle = Math.atan2(dy, dx) * 180 / Math.PI;
-            return (
-              <View key={`l14-${i}`} style={{
-                position: 'absolute', left: x1, top: y1,
-                width: len, height: 2, backgroundColor: MonikeColors.inkMuted, opacity: 0.5,
-                transform: [{ rotate: `${angle}deg` }], transformOrigin: '0 0',
-              }} />
-            );
-          })}
-          {points.slice(0, -1).map((p, i) => {
-            const next = points[i + 1];
-            const x1 = getX(i), y1 = getY(p.rolling_7d);
-            const x2 = getX(i + 1), y2 = getY(next.rolling_7d);
-            const dx = x2 - x1, dy = y2 - y1;
-            const len = Math.sqrt(dx * dx + dy * dy);
-            const angle = Math.atan2(dy, dx) * 180 / Math.PI;
-            return (
-              <View key={`l7-${i}`} style={{
-                position: 'absolute', left: x1, top: y1,
-                width: len, height: 2.5, backgroundColor: MonikeColors.accentPulse,
-                transform: [{ rotate: `${angle}deg` }], transformOrigin: '0 0',
-              }} />
-            );
-          })}
-          {points.map((p, i) => (
-            <View key={`area-${i}`} style={{
-              position: 'absolute', left: getX(i), top: getY(p.rolling_7d),
-              width: CHART_W_PER_PT, height: CHART_H - getY(p.rolling_7d),
-              backgroundColor: `${MonikeColors.accentPulse}12`,
-            }} />
-          ))}
-          {peaks.map((p) => (
-            <View key={`peak-${p.i}`} style={{
-              position: 'absolute', left: getX(p.i) - 20, top: getY(p.rolling_7d) - 22, alignItems: 'center',
-            }}>
-              <Text style={styles.peakLabel}>{fmtShort(p.rolling_7d)}</Text>
-              <Text style={styles.peakPin}>↑</Text>
-            </View>
-          ))}
-        </View>
-      </ScrollView>
-      <View style={styles.velocityLegend}>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendLine, { backgroundColor: MonikeColors.accentPulse }]} />
-          <Text style={styles.legendText}>7-day avg</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendLine, { backgroundColor: MonikeColors.inkMuted, opacity: 0.5 }]} />
-          <Text style={styles.legendText}>14-day avg (baseline)</Text>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-// ─── Velocity Header ──────────────────────────────────────────────────────────
-
-function VelocityHeader() {
-  const [show, setShow] = useState(false);
-  return (
-    <View style={styles.velocityHeaderRow}>
-      <Text style={styles.sectionLabelText}>SPEND VELOCITY</Text>
-      <Pressable onPress={() => setShow((v) => !v)} style={styles.tooltipIconWrap}>
-        <HelpCircle size={14} color={MonikeColors.inkMuted} strokeWidth={2} />
-      </Pressable>
-      {show && (
-        <View style={styles.tooltipPopover}>
-          <Text style={styles.tooltipText}>
-            Rate of change in your daily spending — positive means accelerating, negative means you're slowing down.
-          </Text>
-          <Pressable onPress={() => setShow(false)}>
-            <Text style={[styles.tooltipText, { color: MonikeColors.accentPulse, marginTop: 6 }]}>Dismiss</Text>
-          </Pressable>
-        </View>
-      )}
-    </View>
-  );
-}
-
-// ─── Acceleration Card ────────────────────────────────────────────────────────
-
-function AccelerationCard({ momentum, cur7, cur14 }: {
-  momentum: 'ACCELERATING' | 'STABLE' | 'DECELERATING';
-  cur7: number;
-  cur14: number;
-}) {
-  const floatAnim = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(floatAnim, { toValue: 1, duration: 800, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(floatAnim, { toValue: 0, duration: 800, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [floatAnim]);
-
-  const config = {
-    ACCELERATING: {
-      arrow: '↗', label: 'SPEND ACCELERATING', color: MonikeColors.signalRed,
-      sub: `Your 7-day avg (₦${fmt(cur7)}) is above your 14-day avg (₦${fmt(cur14)}).`,
-      translateRange: [0, -6] as [number, number],
-    },
-    STABLE: {
-      arrow: '→', label: 'HOLDING STEADY', color: MonikeColors.signalAmber,
-      sub: `Your spend trend is flat relative to baseline (₦${fmt(cur14)}).`,
-      translateRange: [-2, 2] as [number, number],
-    },
-    DECELERATING: {
-      arrow: '↘', label: 'SPEND DECELERATING', color: MonikeColors.accentPulse,
-      sub: `Your 7-day avg (₦${fmt(cur7)}) is below your 14-day avg (₦${fmt(cur14)}). Good trajectory.`,
-      translateRange: [0, 6] as [number, number],
-    },
-  }[momentum];
-
-  const translateY = floatAnim.interpolate({ inputRange: [0, 1], outputRange: config.translateRange });
-
-  return (
-    <View style={[styles.accelCard, { borderColor: `${config.color}33` }]}>
-      <View style={styles.accelLeft}>
-        <Animated.Text style={[styles.accelArrow, { color: config.color, transform: [{ translateY }] }]}>
-          {config.arrow}
-        </Animated.Text>
-      </View>
-      <View style={styles.accelRight}>
-        <Text style={[styles.accelLabel, { color: config.color }]}>{config.label}</Text>
-        <Text style={styles.accelSub}>{config.sub}</Text>
-      </View>
-    </View>
-  );
-}
-
-// ─── Recurring Section ────────────────────────────────────────────────────────
-
-function RecurringRow({ item }: { item: RecurringTransfer }) {
-  const avatarColor = useMemo(() => {
-    const colors = [MonikeColors.accentPulse, MonikeColors.signalBlue, MonikeColors.signalAmber];
-    return colors[item.recipient.charCodeAt(0) % colors.length];
-  }, [item.recipient]);
-
-  return (
-    <View style={styles.recurringRow}>
-      <View style={[styles.recurringAvatar, { backgroundColor: `${avatarColor}22`, borderColor: `${avatarColor}44` }]}>
-        <Text style={[styles.recurringAvatarText, { color: avatarColor }]}>{initials(item.recipient)}</Text>
-      </View>
-      <View style={styles.recurringContent}>
-        <Text style={styles.recurringName} numberOfLines={1}>{item.recipient}</Text>
-        <Text style={styles.recurringWeekly}>~₦{fmt(item.avg_weekly_amount)} / week</Text>
-        <View style={styles.recurringDates}>
-          <Text style={styles.recurringEvery}>Every {DOW[item.typical_dow]}:</Text>
-          {item.last_three_dates.map((d,i) => (
-            <View key={`${d}-${i}`} style={styles.dateChip}>
-              <Text style={styles.dateChipText}>{fmtDate(d)}</Text>
-            </View>
-          ))}
-        </View>
-        <Text style={styles.recurringMonthTotal}>₦{fmt(item.total_this_month)} this month</Text>
-      </View>
-      <View style={styles.recurringBadge}>
-        <Text style={styles.recurringBadgeText}>RECURRING</Text>
-      </View>
-    </View>
-  );
-}
-
-function RecurringSection({ items, totalWeekly, totalMonthlySpend }: {
-  items: RecurringTransfer[];
-  totalWeekly: number;
-  totalMonthlySpend: number;
-}) {
-  const pct = totalMonthlySpend > 0 ? ((totalWeekly * 4.33) / totalMonthlySpend) * 100 : 0;
-
-  return (
-    <View style={styles.recurringSection}>
-      <SectionLabel title="RECURRING COMMITMENTS" sub="Auto-detected from your transfer history." />
-      {items.length === 0 ? (
-        <View style={styles.recurringEmpty}>
-          <Text style={styles.recurringEmptyText}>No recurring patterns detected yet.</Text>
-          <Text style={styles.recurringEmptySub}>Patterns appear after 3+ consecutive weeks of similar transfers.</Text>
-        </View>
-      ) : (
-        <>
-          <View style={styles.recurringCard}>
-            {items.map((item, i) => (
-              <View key={item.recipient}>
-                <RecurringRow item={item} />
-                {i < items.length - 1 && <View style={styles.recurringDivider} />}
-              </View>
-            ))}
-          </View>
-          <View style={styles.obligationsCard}>
-            <Text style={styles.obligationsAmount}>₦{fmt(totalWeekly)}</Text>
-            <Text style={styles.obligationsLabel}>in likely recurring weekly transfers</Text>
-            <Text style={styles.obligationsPct}>{pct.toFixed(1)}% of your monthly spend</Text>
-            <View style={styles.budgetTipRow}>
-              <Text style={styles.budgetTipText}>
-                💡 If these are expected, they're fine. If unexpected, review your Top Recipients screen.
-              </Text>
-            </View>
-          </View>
         </>
       )}
-    </View>
+    </>
   );
 }
 
-// ─── Main Screen ──────────────────────────────────────────────────────────────
+// ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function FlowVelocityScreen() {
   const insets = useSafeAreaInsets();
-  const { data, isLoading, error } = useSWR<FlowResponse>('/flow', apiFetch);
+  const { data, isLoading, error, mutate } = useSWR<FlowResponse>(
+    '/flow',
+    useCallback((k: string) => apiFetch<FlowResponse>(k), []),
+  );
 
   return (
-    <View style={styles.root}>
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <View style={s.root}>
+      <SafeAreaView style={s.safeArea} edges={['top']}>
         <MonikeHeader title="Flow & Velocity" back />
 
         {isLoading ? (
-          <SkeletonScreen />
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={s.content}
+          >
+            <SkeletonScreen />
+          </ScrollView>
         ) : error ? (
-          <View style={styles.errorWrap}>
-            <Text style={styles.errorText}>Failed to load: {error.message}</Text>
+          <View style={s.errorWrap}>
+            <AlertTriangle size={28} color={MonikeColors.signalRed} strokeWidth={1.5} />
+            <Text style={s.errorTitle}>Couldn't load flow data</Text>
+            <Pressable style={s.retryBtn} onPress={mutate}>
+              <RefreshCw size={13} color={MonikeColors.inkPrimary} strokeWidth={2} />
+              <Text style={s.retryText}>Retry</Text>
+            </Pressable>
           </View>
         ) : data ? (
           <ScrollView
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}
+            contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 40 }]}
           >
-            {/* Page header */}
-            <View style={styles.pageHeader}>
-              <Text style={styles.pageTitle}>FLOW & VELOCITY</Text>
-              <Text style={styles.pageSubtitle}>Money in vs out, spend trajectory, and cashflow health.</Text>
-            </View>
-
-            {/* ── 1. Health Score (lead with the most important thing) ── */}
-            <SectionLabel title="CASHFLOW HEALTH" sub="Composite score across 5 dimensions." />
-            <HealthScoreCard health={data.health_score} />
-
-            {/* ── 2. Burn Rate ── */}
-            <SectionLabel title="BURN RATE" sub="This month's income vs projected spend." />
-            <BurnRateCard burn={data.burn_rate} />
-
-            {/* ── 3. Monthly flow chart ── */}
-            <SectionLabel title="NET FLOW BY MONTH" />
-            <GroupedBarChart months={data.months} />
-            <View style={styles.chartLegend}>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: MonikeColors.signalBlue }]} />
-                <Text style={styles.legendText}>Credits (in)</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: MonikeColors.accentPulse }]} />
-                <Text style={styles.legendText}>Debits — healthy</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: MonikeColors.signalRed }]} />
-                <Text style={styles.legendText}>Debits — overspent</Text>
-              </View>
-            </View>
-
-            {/* ── 4. Avg stats ── */}
-            <NetFlowStats stats={data.stats} />
-
-            {/* ── 5. Monthly net bars + MoM ── */}
-            <MonthlyNetBars months={data.months} />
-
-            {/* ── 6. Income Consistency ── */}
-            <SectionLabel title="INCOME CONSISTENCY" sub="How predictable is your monthly income?" />
-            <IncomeConsistencyCard income={data.income_profile} />
-
-            {/* ── 7. Day-of-week heatmap ── */}
-            <SectionLabel title="SPEND BY DAY OF WEEK" sub="Your most expensive days, historically." />
-            <DowHeatmap profile={data.dow_profile} />
-
-            {/* ── 8. Peak day ── */}
-            {data.peak_day && (
-              <>
-                <SectionLabel title="SINGLE-DAY RECORD" />
-                <PeakDayBanner peak={data.peak_day} />
-              </>
-            )}
-
-            {/* ── 9. Velocity ── */}
-            <VelocityHeader />
-            <VelocityChart velocity={data.velocity} />
-            <AccelerationCard momentum={data.momentum} cur7={data.current_7d_avg} cur14={data.current_14d_avg} />
-
-            {/* ── 10. Recurring ── */}
-            <RecurringSection
-              items={data.recurring}
-              totalWeekly={data.total_recurring_weekly}
-              totalMonthlySpend={data.total_monthly_spend}
-            />
+            <HealthSection    health={data.health_score} />
+            <ThisMonthSection burn={data.burn_rate} />
+            <MomentumSection  momentum={data.momentum} cur7={data.current_7d_avg} cur14={data.current_14d_avg} />
+            <HistorySection   months={data.months} stats={data.stats} />
+            <PeakDaySection   profile={data.dow_profile} peak={data.peak_day} />
+            <IncomeSection    income={data.income_profile} />
+            <RecurringSection items={data.recurring} totalWeekly={data.total_recurring_weekly} totalMonthlySpend={data.total_monthly_spend} />
           </ScrollView>
         ) : null}
       </SafeAreaView>
@@ -1075,260 +873,90 @@ export default function FlowVelocityScreen() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── Styles — exact forecast.tsx visual language ──────────────────────────────
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   root:     { flex: 1, backgroundColor: MonikeColors.bgVoid },
   safeArea: { flex: 1 },
-  content:  { paddingHorizontal: ScreenPadding, paddingTop: 4, gap: 14 },
-  errorWrap:{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  errorText:{ color: MonikeColors.signalRed, fontFamily: Fonts.sans, fontSize: 13, textAlign: 'center' },
+  content:  { paddingHorizontal: ScreenPadding, paddingTop: 18, gap: 18 },
 
-  pageHeader: { paddingTop: 8, paddingBottom: 4 },
-  pageTitle: { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 22, fontWeight: '700', letterSpacing: 0.4 },
-  pageSubtitle: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 12, marginTop: 4 },
+  errorWrap:  { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 24 },
+  errorTitle: { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 15, fontWeight: '700' },
+  retryBtn:   { marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20, backgroundColor: MonikeColors.bgElevated, borderWidth: 1, borderColor: '#21282F' },
+  retryText:  { color: MonikeColors.inkPrimary, fontFamily: Fonts.sans, fontSize: 13, fontWeight: '700' },
 
-  sectionLabelWrap: { gap: 2, marginTop: 6 },
-  sectionLabelText: {
-    color: MonikeColors.inkSecondary, fontFamily: Fonts.sans,
-    fontSize: 11, fontWeight: '700', letterSpacing: 1.0, textTransform: 'uppercase',
-  },
-  sectionLabelSub: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11 },
+  // Section header — copied from forecast SectionHeader
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  sectionHeader:    { color: MonikeColors.inkSecondary, fontFamily: Fonts.heading, fontSize: 12, fontWeight: '700', letterSpacing: 1 },
 
-  // ── Health Score ──
-  healthCard: {
-    backgroundColor: MonikeColors.bgSurface,
-    borderWidth: 1, borderRadius: CardRadius,
-    padding: 16, gap: 14,
+  // Tip card — copied from forecast tipCard
+  tipCard: {
+    minHeight: 54, borderRadius: 14,
+    backgroundColor: MonikeColors.bgElevated,
+    borderLeftWidth: 3,
+    flexDirection: 'row', alignItems: 'flex-start',
+    gap: 10, paddingHorizontal: 13, paddingVertical: 12,
   },
-  healthHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 14 },
-  healthScoreWrap: { flexDirection: 'row', alignItems: 'flex-end', gap: 2 },
-  healthScoreNum: { fontFamily: Fonts.mono, fontSize: 40, fontWeight: '700', lineHeight: 44 },
-  healthScoreMax: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 14, marginBottom: 6 },
-  healthRight: { flex: 1, gap: 6 },
-  healthBadge: {
-    alignSelf: 'flex-start', borderWidth: 1, borderRadius: 999,
-    paddingHorizontal: 10, paddingVertical: 3,
-  },
+  tipText: { flex: 1, color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 13, fontWeight: '600', lineHeight: 21 },
+
+  // Velocity card — copied from forecast velocityCard
+  velocityCard:      { borderRadius: CardRadius, backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: MonikeColors.inkGhost, padding: 14, gap: 12 },
+  velocityTopRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  velocityStat:      { flex: 1 },
+  velocityStatLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 9, fontWeight: '700', letterSpacing: 0.8, marginBottom: 4 },
+  velocityStatValue: { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 18, fontWeight: '700' },
+  velocityUnit:      { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 12 },
+  velocityArrowWrap: { alignItems: 'center', paddingHorizontal: 10, gap: 2 },
+  velocityPct:       { fontFamily: Fonts.mono, fontSize: 11, fontWeight: '700' },
+
+  // Divider
+  divider: { height: 1, backgroundColor: MonikeColors.inkGhost },
+
+  // Context row — copied from forecast contextRow
+  contextRow:      { flexDirection: 'row', alignItems: 'center' },
+  contextStat:     { flex: 1, alignItems: 'center', gap: 4 },
+  contextLabel:    { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 8, fontWeight: '700', letterSpacing: 0.6 },
+  contextValue:    { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  contextDividerV: { width: 1, height: 28, backgroundColor: MonikeColors.inkGhost },
+
+  // Section card + feature rows — copied from forecast sectionCard/featureRow
+  sectionCard:     { borderRadius: CardRadius, backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: '#21282F', overflow: 'hidden' },
+  featureRow:      { minHeight: 52, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14 },
+  featureRowBorder:{ borderBottomWidth: 1, borderBottomColor: '#20262C' },
+  featureCopy:     { flex: 1, paddingRight: 12, gap: 3 },
+  featureLabel:    { color: MonikeColors.inkPrimary, fontFamily: Fonts.sans, fontSize: 13, fontWeight: '700' },
+  featureValue:    { color: MonikeColors.inkSecondary, fontFamily: Fonts.mono, fontSize: 11, fontWeight: '600' },
+  importanceWrap:  { width: 80, alignItems: 'flex-end', gap: 5 },
+  importancePct:   { fontFamily: Fonts.mono, fontSize: 12, fontWeight: '600' },
+
+  // Health extras
+  healthTopRow:    { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  healthStatLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 9, fontWeight: '700', letterSpacing: 0.8, marginBottom: 4 },
+  healthScoreRow:  { flexDirection: 'row', alignItems: 'flex-end', gap: 2 },
+  healthScore:     { fontFamily: Fonts.mono, fontSize: 44, fontWeight: '700', lineHeight: 48, letterSpacing: -2 },
+  healthScoreMax:  { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 14, marginBottom: 8 },
+  healthBadge:     { borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5, alignSelf: 'flex-start' },
   healthBadgeText: { fontFamily: Fonts.mono, fontSize: 10, fontWeight: '700' },
-  healthInsight: { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 12, lineHeight: 17 },
-  healthBarTrack: {
-    height: 6, backgroundColor: MonikeColors.bgElevated,
-    borderRadius: 3, overflow: 'hidden',
-  },
-  healthBarFill: { height: 6, borderRadius: 3 },
-  healthComponents: { gap: 7 },
-  healthComponentRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  healthComponentLabel: { width: 120, color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 10 },
-  healthComponentBar: {
-    flex: 1, height: 4, backgroundColor: MonikeColors.bgElevated,
-    borderRadius: 2, overflow: 'hidden',
-  },
-  healthComponentFill: { height: 4, borderRadius: 2 },
-  healthComponentVal: { width: 30, fontFamily: Fonts.mono, fontSize: 10, textAlign: 'right' },
+  statusDot:       { width: 7, height: 7, borderRadius: 3.5 },
 
-  // ── Burn Rate ──
-  burnCard: {
-    backgroundColor: MonikeColors.bgSurface,
-    borderWidth: 1, borderRadius: CardRadius,
-    padding: 16, gap: 14,
-  },
-  burnTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
-  burnLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 10, fontWeight: '700', letterSpacing: 0.8, marginBottom: 4 },
-  burnAmount: { fontFamily: Fonts.mono, fontSize: 18, fontWeight: '700' },
-  burnBadge: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
-  burnBadgeText: { fontFamily: Fonts.mono, fontSize: 10, fontWeight: '700' },
-  burnProgressWrap: { gap: 6 },
-  burnProgressTrack: { height: 8, backgroundColor: MonikeColors.bgElevated, borderRadius: 4, overflow: 'hidden' },
-  burnProgressFill: { height: 8, borderRadius: 4 },
-  burnProgressLabel: { fontFamily: Fonts.sans, fontSize: 11 },
-  burnStatsRow: { flexDirection: 'row', alignItems: 'center' },
-  burnStat: { flex: 1, alignItems: 'center', gap: 4 },
-  burnStatDivider: { width: 1, height: 32, backgroundColor: MonikeColors.inkGhost },
-  burnStatValue: { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 13, fontWeight: '700' },
-  burnStatLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 9, textAlign: 'center' },
+  // MoM change in history rows
+  momChange: { fontFamily: Fonts.mono, fontSize: 10, fontWeight: '700' },
 
-  // ── Income Consistency ──
-  incomeCard: {
-    backgroundColor: MonikeColors.bgSurface,
-    borderWidth: 1, borderColor: MonikeColors.inkGhost,
-    borderRadius: CardRadius, padding: 14, gap: 12,
-  },
-  incomeHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
-  incomeAvg: { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 18, fontWeight: '700' },
-  incomeAvgLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 10, marginTop: 2 },
-  incomeCvBadge: { borderWidth: 1, borderRadius: 10, padding: 8, alignItems: 'center', gap: 2 },
-  incomeCvLabel: { fontFamily: Fonts.mono, fontSize: 9, fontWeight: '700' },
-  incomeCvVal: { fontFamily: Fonts.mono, fontSize: 11 },
-  incomeBarRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 52 },
-  incomeBarSlot: { flex: 1, justifyContent: 'flex-end' },
-  incomeBar: { borderTopLeftRadius: 2, borderTopRightRadius: 2 },
-  incomeStdNote: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11, lineHeight: 16 },
+  // Animated bar (shared)
+  barTrack: { width: 70, borderRadius: 3, backgroundColor: MonikeColors.bgElevated, overflow: 'hidden' },
+  barFill:  { borderRadius: 3 },
 
-  // ── DOW Heatmap ──
-  dowCard: {
-    backgroundColor: MonikeColors.bgSurface,
-    borderWidth: 1, borderColor: MonikeColors.inkGhost,
-    borderRadius: CardRadius, padding: 14, gap: 10,
-  },
-  dowRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 4 },
-  dowCol: { flex: 1, alignItems: 'center', gap: 4 },
-  dowAmount: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 8, textAlign: 'center' },
-  dowBarSlot: { width: '100%', alignItems: 'center', justifyContent: 'flex-end', height: 80 },
-  dowBar: { width: '75%', borderTopLeftRadius: 3, borderTopRightRadius: 3 },
-  dowLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 9 },
-  dowPeakPin: { color: MonikeColors.signalRed, fontSize: 8 },
-  dowCaption: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 10, textAlign: 'center' },
+  // Recurring rows
+  recurRow:        { minHeight: 60, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, gap: 11 },
+  recurAvatar:     { width: 36, height: 36, borderRadius: 18, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  recurAvatarText: { fontFamily: Fonts.heading, fontSize: 12, fontWeight: '700' },
+  recurContent:    { flex: 1, gap: 3 },
+  recurMeta:       { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 },
+  recurDot:        { color: MonikeColors.inkGhost, fontFamily: Fonts.sans, fontSize: 10 },
+  recurAmount:     { fontFamily: Fonts.mono, fontSize: 13, fontWeight: '700' },
+  recurAmountLabel:{ color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 9 },
 
-  // ── Peak Day Banner ──
-  peakBanner: {
-    backgroundColor: `${MonikeColors.signalRed}10`,
-    borderWidth: 1, borderColor: `${MonikeColors.signalRed}33`,
-    borderRadius: CardRadius, padding: 16,
-    flexDirection: 'row', alignItems: 'center', gap: 14,
-  },
-  peakBannerEmoji: { fontSize: 28 },
-  peakBannerContent: { gap: 2 },
-  peakBannerTitle: {
-    color: MonikeColors.signalRed, fontFamily: Fonts.mono,
-    fontSize: 9, fontWeight: '700', letterSpacing: 1,
-  },
-  peakBannerAmount: { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 20, fontWeight: '700' },
-  peakBannerDate: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11 },
+  dateChip:     { backgroundColor: MonikeColors.bgVoid, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1 },
+  dateChipText: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 9 },
 
-  // ── Chart (existing) ──
-  chartScroll: { marginHorizontal: -ScreenPadding },
-  chartArea:   { position: 'relative', overflow: 'visible' },
-  barsRow: {
-    position: 'absolute', bottom: 20, left: 12,
-    flexDirection: 'row', alignItems: 'flex-end',
-  },
-  barGroup: { flexDirection: 'row', alignItems: 'flex-end' },
-  barSlot:  { justifyContent: 'flex-end', alignItems: 'center' },
-  bar:      { borderTopLeftRadius: 3, borderTopRightRadius: 3 },
-  xLabelsRow: { position: 'absolute', bottom: 0, left: 12, flexDirection: 'row' },
-  xLabelWrap: { alignItems: 'center', marginRight: 16 },
-  xLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 9 },
-  chartLegend: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, paddingHorizontal: 4, marginTop: -4 },
-  legendItem:  { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  legendDot:   { width: 8, height: 8, borderRadius: 4 },
-  legendLine:  { width: 18, height: 2, borderRadius: 1 },
-  legendText:  { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 10 },
-
-  // ── Stats Card ──
-  statsCard: {
-    flexDirection: 'row', backgroundColor: MonikeColors.bgSurface,
-    borderWidth: 1, borderColor: MonikeColors.inkGhost,
-    borderRadius: CardRadius, paddingVertical: 16,
-  },
-  statCol: { flex: 1, alignItems: 'center', gap: 5 },
-  statCardDivider: { width: 1, backgroundColor: MonikeColors.inkGhost, marginVertical: 8 },
-  statCardValue: { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 14, fontWeight: '700' },
-  statCardLabel: {
-    color: MonikeColors.inkMuted, fontFamily: Fonts.sans,
-    fontSize: 9, fontWeight: '600', letterSpacing: 0.5, textAlign: 'center', paddingHorizontal: 6,
-  },
-
-  // ── Net Bars + MoM ──
-  netBarsCard: {
-    backgroundColor: MonikeColors.bgSurface,
-    borderWidth: 1, borderColor: MonikeColors.inkGhost,
-    borderRadius: CardRadius, paddingVertical: 12, paddingHorizontal: 14, gap: 10,
-  },
-  netBarRow:         { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  netBarMonthLabel:  { width: 28, color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 9 },
-  netBarTrack:       { flex: 1, flexDirection: 'row', alignItems: 'center', height: 14 },
-  netBarHalf:        { flex: 1, flexDirection: 'row' },
-  netBarAxis:        { width: 1, height: 14, backgroundColor: MonikeColors.inkGhost },
-  netBar:            { height: 10 },
-  netBarAmount:      { width: 70, fontFamily: Fonts.mono, fontSize: 10, fontWeight: '600', textAlign: 'right' },
-  netBadge: {
-    borderRadius: 999, paddingHorizontal: 6, paddingVertical: 2,
-    borderWidth: 1, alignItems: 'center', justifyContent: 'center',
-  },
-  netBadgeText: { fontFamily: Fonts.mono, fontSize: 8, fontWeight: '700' },
-  // NEW MoM badge
-  momBadge: {
-    borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2,
-    borderWidth: 1, alignItems: 'center', justifyContent: 'center',
-  },
-  momBadgeText: { fontFamily: Fonts.mono, fontSize: 9, fontWeight: '700' },
-
-  // ── Velocity ──
-  velocityHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 6, position: 'relative', marginTop: 6 },
-  tooltipIconWrap:   { padding: 2 },
-  velocityCard: {
-    backgroundColor: MonikeColors.bgSurface,
-    borderWidth: 1, borderColor: MonikeColors.inkGhost,
-    borderRadius: CardRadius, overflow: 'hidden', padding: 12, gap: 10,
-  },
-  velocityLegend: { flexDirection: 'row', gap: 14, paddingTop: 4 },
-  peakLabel: { color: MonikeColors.accentPulse, fontFamily: Fonts.mono, fontSize: 8 },
-  peakPin:   { color: MonikeColors.accentPulse, fontSize: 10 },
-  tooltipPopover: {
-    position: 'absolute', top: 22, left: 0, right: 0,
-    backgroundColor: MonikeColors.bgOverlay,
-    borderWidth: 1, borderColor: MonikeColors.inkGhost,
-    borderRadius: 10, padding: 12, zIndex: 20,
-  },
-  tooltipText: { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 12, lineHeight: 18 },
-
-  // ── Acceleration ──
-  accelCard: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: MonikeColors.bgSurface,
-    borderWidth: 1, borderRadius: CardRadius, padding: 16, gap: 14,
-  },
-  accelLeft:  { width: 44, alignItems: 'center' },
-  accelArrow: { fontSize: 32, fontFamily: Fonts.heading },
-  accelRight: { flex: 1, gap: 5 },
-  accelLabel: { fontFamily: Fonts.heading, fontSize: 16, fontWeight: '700' },
-  accelSub:   { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 13, lineHeight: 18 },
-
-  // ── Recurring ──
-  recurringSection: { gap: 10 },
-  recurringCard: {
-    backgroundColor: MonikeColors.bgSurface,
-    borderWidth: 1, borderColor: MonikeColors.inkGhost,
-    borderRadius: CardRadius, overflow: 'hidden',
-  },
-  recurringDivider: { height: 1, backgroundColor: `${MonikeColors.inkGhost}66`, marginHorizontal: 14 },
-  recurringRow: { flexDirection: 'row', alignItems: 'flex-start', padding: 14, gap: 12 },
-  recurringAvatar: {
-    width: 40, height: 40, borderRadius: 20,
-    borderWidth: 1, alignItems: 'center', justifyContent: 'center',
-  },
-  recurringAvatarText: { fontFamily: Fonts.heading, fontSize: 14, fontWeight: '700' },
-  recurringContent: { flex: 1, gap: 3 },
-  recurringName:    { color: MonikeColors.inkPrimary, fontFamily: Fonts.sans, fontSize: 13, fontWeight: '600' },
-  recurringWeekly:  { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 13 },
-  recurringDates: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 5, marginTop: 2 },
-  recurringEvery:    { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11 },
-  dateChip: { backgroundColor: MonikeColors.bgElevated, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
-  dateChipText: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 10 },
-  recurringMonthTotal: { color: MonikeColors.signalAmber, fontFamily: Fonts.mono, fontSize: 12, marginTop: 2 },
-  recurringBadge: {
-    backgroundColor: `${MonikeColors.signalAmber}18`,
-    borderWidth: 1, borderColor: `${MonikeColors.signalAmber}44`,
-    borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4,
-    alignSelf: 'flex-start', marginTop: 2,
-  },
-  recurringBadgeText: { color: MonikeColors.signalAmber, fontFamily: Fonts.mono, fontSize: 9, fontWeight: '700' },
-  obligationsCard: {
-    backgroundColor: `${MonikeColors.signalAmber}0D`,
-    borderWidth: 1, borderColor: `${MonikeColors.signalAmber}33`,
-    borderRadius: CardRadius, padding: 16, gap: 5,
-  },
-  obligationsAmount: { color: MonikeColors.signalAmber, fontFamily: Fonts.mono, fontSize: 18, fontWeight: '700' },
-  obligationsLabel:  { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 13 },
-  obligationsPct:    { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 12 },
-  budgetTipRow: { marginTop: 8, paddingTop: 10, borderTopWidth: 1, borderTopColor: `${MonikeColors.signalAmber}22` },
-  budgetTipText: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 12, lineHeight: 18 },
-  recurringEmpty: {
-    backgroundColor: MonikeColors.bgSurface,
-    borderWidth: 1, borderColor: MonikeColors.inkGhost,
-    borderRadius: CardRadius, padding: 20, alignItems: 'center', gap: 6,
-  },
-  recurringEmptyText: { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 13 },
-  recurringEmptySub:  { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11, textAlign: 'center', lineHeight: 16 },
 });

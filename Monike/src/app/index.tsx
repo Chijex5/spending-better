@@ -561,60 +561,139 @@ function ExpensesSection({
 
   return (
     <View style={styles.expensesSection}>
-      {/* Header row */}
+      {/* Section header */}
       <View style={styles.expensesHeaderRow}>
-        <View style={styles.expensesLeft}>
-          <Text style={styles.expensesSectionLabel}>My Expenses</Text>
+        <View>
+          <Text style={styles.expensesSectionLabel}>Spending by Category</Text>
           <View style={styles.expensesAmountRow}>
             <Text style={styles.expensesCurrencySymbol}>₦</Text>
             <Text style={styles.expensesAmount}>{intPart}</Text>
             <Text style={styles.expensesAmountDec}>.{decPart}</Text>
           </View>
         </View>
-        {/* Donut gauge */}
-        <DonutGauge pct={topPct > 0 ? topPct : Math.min((totalSpend / 100000) * 100, 99)} risk={risk} />
+        <View style={[styles.riskPill, { borderColor: riskAccentColor(risk) + '50', backgroundColor: riskAccentColor(risk) + '12' }]}>
+          <View style={[styles.riskPillDot, { backgroundColor: riskAccentColor(risk) }]} />
+          <Text style={[styles.riskPillText, { color: riskAccentColor(risk) }]}>{risk}</Text>
+        </View>
       </View>
 
-      {/* Category pill cards — horizontal scroll */}
+      {/* Category cards — horizontal scroll */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.categoryCardScroll}
       >
-        {/* Add card */}
-        <PressScale>
-          <View style={styles.categoryAddCard}>
-            <Text style={styles.categoryAddPlus}>+</Text>
-          </View>
-        </PressScale>
-
         {items.length > 0 ? items.map((item) => {
-          const cardStyle = CATEGORY_CARD_STYLES[item.category] ?? CATEGORY_CARD_STYLES['Other'];
+          const accentColor = CATEGORY_CARD_STYLES[item.category]?.bg ?? '#37474F';
+          const Icon = categoryIcon(item.category as Category);
           return (
             <PressScale key={item.category}>
-              <View style={[styles.categoryCard, { backgroundColor: cardStyle.bg }]}>
-                <Text style={[styles.categoryCardName, { color: cardStyle.text }]} numberOfLines={1}>
+              <View style={styles.categoryCard}>
+                <View style={styles.categoryCardTop}>
+                  <View style={[styles.categoryCardIconWrap, { backgroundColor: accentColor + '22' }]}>
+                    <Icon size={14} color={accentColor} strokeWidth={2} />
+                  </View>
+                  <Text style={[styles.categoryCardPct, { color: accentColor }]}>
+                    {item.share_pct.toFixed(0)}%
+                  </Text>
+                </View>
+                <Text style={styles.categoryCardName} numberOfLines={2}>
                   {item.category}
                 </Text>
-                <Text style={[styles.categoryCardAmount, { color: cardStyle.text }]}>
+                <Text style={[styles.categoryCardAmount, { color: accentColor }]}>
                   ₦{formatNaira(item.total)}
-                </Text>
-                <Text style={[styles.categoryCardPct, { color: cardStyle.sub }]}>
-                  {item.share_pct.toFixed(0)}%
                 </Text>
               </View>
             </PressScale>
           );
         }) : (
-          // Fallback skeleton cards when no category data
-          ['Transfers', 'POS', 'Data'].map((name, i) => (
-            <View key={name} style={[styles.categoryCard, { backgroundColor: categoryPalette[i] + '22', borderWidth: 1, borderColor: categoryPalette[i] + '40' }]}>
-              <Text style={[styles.categoryCardName, { color: MonikeColors.inkSecondary }]}>{name}</Text>
+          [
+            { name: 'Transfers', color: '#7B61FF' },
+            { name: 'POS',       color: '#4FC3F7' },
+            { name: 'Airtime',   color: '#FFB300' },
+          ].map(({ name, color }) => (
+            <View key={name} style={styles.categoryCard}>
+              <View style={styles.categoryCardTop}>
+                <View style={[styles.categoryCardIconWrap, { backgroundColor: color + '22' }]}>
+                  <CreditCard size={14} color={color} strokeWidth={2} />
+                </View>
+                <Text style={[styles.categoryCardPct, { color: MonikeColors.inkGhost }]}>—</Text>
+              </View>
+              <Text style={styles.categoryCardName}>{name}</Text>
               <Text style={[styles.categoryCardAmount, { color: MonikeColors.inkMuted }]}>—</Text>
             </View>
           ))
         )}
       </ScrollView>
+    </View>
+  );
+}
+
+// ─── Balance Hero ─────────────────────────────────────────────────────────────
+// Clean top-of-screen balance overview: month, net, income vs expense pills
+
+function BalanceHero({ dashboard }: { dashboard: DashboardResponse }) {
+  const totalSpent = dashboard.total_spent_this_month;
+  const totalCredit = dashboard.recent_transactions.reduce((s, t) => s + t.credit, 0);
+  const net = totalCredit - totalSpent;
+  const isPositive = net >= 0;
+
+  const animatedNet = useRef(new Animated.Value(0)).current;
+  const [displayNet, setDisplayNet] = useState(0);
+
+  useEffect(() => {
+    const listener = animatedNet.addListener(({ value }) => setDisplayNet(value));
+    animatedNet.setValue(0);
+    Animated.timing(animatedNet, {
+      toValue: Math.abs(net),
+      duration: 900,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+    return () => animatedNet.removeListener(listener);
+  }, [animatedNet, net]);
+
+  const [intPart, decPart = '00'] = formatNaira(displayNet, 2).split('.');
+
+  return (
+    <View style={styles.balanceHero}>
+      <Text style={styles.balanceMonth}>{dashboard.month_label}</Text>
+
+      <View style={styles.balanceAmountRow}>
+        <Text style={styles.balanceCurrencyMark}>₦</Text>
+        <Text style={[styles.balanceNet, { color: isPositive ? MonikeColors.accentPulse : MonikeColors.signalRed }]}>
+          {intPart}
+        </Text>
+        <Text style={[styles.balanceNetDec, { color: isPositive ? MonikeColors.accentGlow : MonikeColors.signalRedDim }]}>
+          .{decPart}
+        </Text>
+      </View>
+
+      <View style={styles.balanceStats}>
+        <View style={styles.balanceStat}>
+          <View style={[styles.balanceStatIcon, { backgroundColor: '#00E67618' }]}>
+            <ArrowUpRight size={13} color={MonikeColors.accentPulse} strokeWidth={2.5} />
+          </View>
+          <View>
+            <Text style={styles.balanceStatLabel}>Income</Text>
+            <Text style={[styles.balanceStatValue, { color: MonikeColors.accentPulse }]}>
+              ₦{formatNaira(totalCredit)}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.balanceStat}>
+          <View style={[styles.balanceStatIcon, { backgroundColor: '#FF3D3D18' }]}>
+            <ArrowDownLeft size={13} color={MonikeColors.signalRed} strokeWidth={2.5} />
+          </View>
+          <View>
+            <Text style={styles.balanceStatLabel}>Expenses</Text>
+            <Text style={[styles.balanceStatValue, { color: MonikeColors.signalRed }]}>
+              ₦{formatNaira(totalSpent)}
+            </Text>
+          </View>
+        </View>
+      </View>
     </View>
   );
 }
@@ -625,23 +704,6 @@ function ExpensesSection({
 function IncomeSection({ transactions }: { transactions: Transaction[] }) {
   const credits = transactions.filter((t) => t.amount > 0);
   const totalCredit = credits.reduce((s, t) => s + t.amount, 0);
-
-  const Icon = (category: Category) => {
-    const map: Record<Category, React.ComponentType<any>> = {
-      'Person-to-Person': Users,
-      'POS Purchase':     ShoppingBag,
-      'Data':             Wifi,
-      'Airtime':          Phone,
-      'Food & Dining':    Utensils,
-      'Online Payment':   Globe,
-      'Electricity':      Zap,
-      'Family Transfer':  Landmark,
-      'Savings':          Banknote,
-      'Loan Repayment':   Repeat2,
-      'Other':            CreditCard,
-    };
-    return map[category] ?? CreditCard;
-  };
 
   return (
     <View style={styles.incomeSection}>
@@ -658,47 +720,22 @@ function IncomeSection({ transactions }: { transactions: Transaction[] }) {
         contentContainerStyle={styles.incomeCardScroll}
       >
         {credits.length > 0 ? credits.map((t) => {
-          const CardIcon = Icon(t.category);
+          const CardIcon = categoryIcon(t.category);
           return (
-            <View
-        style={{
-          backgroundColor: MonikeColors.grey,
-          padding: 20,
-          borderRadius: 20,
-          marginRight: 15,
-          width: 150,
-          gap: 10,
-        }}
-      >
-        <View
-          style={{
-            flexDirection: "row",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <View
-            style={{
-              borderColor: "#666",
-              borderWidth: 1,
-              borderRadius: 50,
-              padding: 5,
-              alignSelf: "flex-start",
-            }}
-          >
-            <CardIcon style={{size: 16, color: "#fff" }} />
-
-          </View>
-          <TouchableOpacity onPress={() => {}}>
-            <MoreHorizontal size={20} color="#fff" />
-          </TouchableOpacity>
-        </View>
-        <Text style={{ color: "#fff" }}>{t.category}</Text>
-        <Text style={{ color: "#fff", fontSize: 18, fontWeight: "600" }}>
-          ${t.amount}.
-          <Text style={{ fontSize: 12, fontWeight: "400" }}>00</Text>
-        </Text>
-      </View>
+            <View key={t.id} style={styles.incomeCard}>
+              <View style={styles.incomeCardTopRow}>
+                <View style={styles.incomeCardIconCircle}>
+                  <CardIcon size={15} color={MonikeColors.signalBlue} strokeWidth={1.8} />
+                </View>
+                <TouchableOpacity hitSlop={8}>
+                  <MoreHorizontal size={16} color={MonikeColors.inkMuted} />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.incomeCardLabel} numberOfLines={1}>{t.category}</Text>
+              <Text style={styles.incomeCardAmount}>
+                ₦{formatNaira(t.amount)}
+              </Text>
+            </View>
           );
         }) : (
           <View style={styles.incomeEmptyState}>
@@ -1044,7 +1081,7 @@ function DashboardScreen({
     <View style={styles.root}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
 
-        <MonikeHeader home title='Home' />
+        <MonikeHeader home title="Home" />
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[
@@ -1052,6 +1089,9 @@ function DashboardScreen({
             { paddingBottom: insets.bottom + BottomTabInset + 28 },
           ]}
         >
+
+          {/* ── Balance Hero ──────────────────────────────────────────── */}
+          <BalanceHero dashboard={resolvedDashboard} />
 
           {/* ── Expenses + Category ─────────────────────────────────────── */}
           <ExpensesSection dashboard={resolvedDashboard} categoryData={categoryData} />
@@ -1316,8 +1356,86 @@ transactionAmount: {
     fontWeight: '700',
   },
 
+  // ── Balance Hero ─────────────────────────────────────────────────────────────
+  balanceHero: {
+    paddingTop: 8,
+    paddingBottom: 4,
+    gap: 0,
+  },
+  balanceMonth: {
+    color: MonikeColors.inkMuted,
+    fontFamily: Fonts.sans,
+    fontSize: 13,
+    fontWeight: '500',
+    marginBottom: 10,
+    letterSpacing: 0.2,
+  },
+  balanceAmountRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    marginBottom: 20,
+  },
+  balanceCurrencyMark: {
+    color: MonikeColors.inkSecondary,
+    fontFamily: Fonts.mono,
+    fontSize: 28,
+    fontWeight: '700',
+    marginBottom: 8,
+    marginRight: 3,
+  },
+  balanceNet: {
+    fontFamily: Fonts.mono,
+    fontSize: 52,
+    fontWeight: '800',
+    lineHeight: 60,
+    letterSpacing: -2,
+  },
+  balanceNetDec: {
+    fontFamily: Fonts.mono,
+    fontSize: 24,
+    fontWeight: '600',
+    marginBottom: 9,
+    letterSpacing: -0.5,
+  },
+  balanceStats: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  balanceStat: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: MonikeColors.bgSurface,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: MonikeColors.inkGhost,
+  },
+  balanceStatIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  balanceStatLabel: {
+    color: MonikeColors.inkMuted,
+    fontFamily: Fonts.sans,
+    fontSize: 11,
+    fontWeight: '400',
+    marginBottom: 2,
+  },
+  balanceStatValue: {
+    fontFamily: Fonts.mono,
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+  },
+
   // ── Expenses Section ──────────────────────────────────────────────────────────
-  expensesSection: { gap: 16, marginTop: 20, paddingBottom: 8 },
+  expensesSection: { gap: 16, marginTop: 8, paddingBottom: 8 },
   expensesHeaderRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -1360,53 +1478,76 @@ transactionAmount: {
     letterSpacing: -0.3,
   },
 
-  // Category pill scroll
+  // Risk pill (replaces old donut gauge header)
+  riskPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  riskPillDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  riskPillText: {
+    fontFamily: Fonts.mono,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+
+  // Category card scroll
   categoryCardScroll: {
     paddingLeft: 2,
     paddingRight: ScreenPadding,
     gap: 10,
     alignItems: 'flex-start',
   },
-  categoryAddCard: {
-    width: 68,
-    height: 92,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: MonikeColors.inkGhost,
-    borderStyle: 'dashed',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  categoryAddPlus: {
-    color: MonikeColors.inkMuted,
-    fontSize: 24,
-    fontFamily: Fonts.heading,
-    fontWeight: '300',
-  },
   categoryCard: {
-    width: 100,
-    height: 92,
-    borderRadius: 16,
+    width: 108,
+    height: 112,
+    backgroundColor: MonikeColors.bgSurface,
+    borderWidth: 1,
+    borderColor: MonikeColors.inkGhost,
+    borderRadius: 18,
     paddingHorizontal: 12,
     paddingVertical: 12,
     justifyContent: 'space-between',
   },
+  categoryCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  categoryCardIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   categoryCardName: {
+    color: MonikeColors.inkPrimary,
     fontFamily: Fonts.sans,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
-    lineHeight: 16,
+    lineHeight: 14,
+    flex: 1,
   },
   categoryCardAmount: {
     fontFamily: Fonts.mono,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
     letterSpacing: -0.3,
   },
   categoryCardPct: {
     fontFamily: Fonts.mono,
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: 11,
+    fontWeight: '600',
   },
 
   // ── Income Section ────────────────────────────────────────────────────────────
@@ -1433,15 +1574,13 @@ transactionAmount: {
     paddingRight: ScreenPadding,
   },
   incomeCard: {
-    width: 130,
-    height: 100,
+    width: 150,
     backgroundColor: MonikeColors.bgSurface,
     borderWidth: 1,
     borderColor: MonikeColors.inkGhost,
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    justifyContent: 'space-between',
+    borderRadius: 20,
+    padding: 16,
+    gap: 10,
   },
   incomeCardTopRow: {
     flexDirection: 'row',
@@ -1449,30 +1588,28 @@ transactionAmount: {
     justifyContent: 'space-between',
   },
   incomeCardIconCircle: {
-    width: 30,
-    height: 30,
+    width: 32,
+    height: 32,
     borderRadius: 10,
-    backgroundColor: '#4FC3F714',
+    backgroundColor: '#4FC3F718',
+    borderWidth: 1,
+    borderColor: '#4FC3F730',
     alignItems: 'center',
     justifyContent: 'center',
   },
   incomeCardLabel: {
     color: MonikeColors.inkSecondary,
     fontFamily: Fonts.sans,
-    fontSize: 11,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '500',
   },
   incomeCardAmount: {
     color: MonikeColors.inkPrimary,
     fontFamily: Fonts.mono,
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
-    letterSpacing: -0.3,
-  },
-  incomeCardAmountDec: {
-    color: MonikeColors.inkSecondary,
-    fontFamily: Fonts.mono,
-    fontSize: 11,
+    letterSpacing: -0.4,
   },
   incomeEmptyState: {
     paddingVertical: 14,

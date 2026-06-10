@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Animated,
   Easing,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,24 +20,24 @@ import {
   AlertTriangle,
   Bell,
   BrainCircuit,
+  Calendar,
   ChevronRight,
-  Database,
+  Fingerprint,
+  Key,
   RefreshCw,
-  Shield,
-  Sliders,
+  ShieldCheck,
+  Timer,
   Trash2,
   Upload,
-  User,
-  Fingerprint,
-  Timer,
-  Key,
+  Wallet,
+  X,
 } from 'lucide-react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { mutateAll } from '@/hooks/use-swr';
 import { MonikeHeader } from '@/components/monike-header';
 import { useAppLock } from '@/components/app-lock';
 import { CardRadius, Fonts, MonikeColors, ScreenPadding } from '@/constants/theme';
-import { apiPost, apiFetch } from '@/services/api';
+import { API_BASE_URL, apiPost, apiFetch } from '@/services/api';
 import { useSWR } from '@/hooks/use-swr';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -68,7 +71,7 @@ type RetrainResult = {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatNaira(value: number) {
-  return new Intl.NumberFormat('en-NG', { maximumFractionDigits: 0 }).format(value);
+  return `₦${new Intl.NumberFormat('en-NG', { maximumFractionDigits: 0 }).format(value)}`;
 }
 
 // ─── Shimmer ──────────────────────────────────────────────────────────────────
@@ -93,12 +96,21 @@ function ShimmerBlock({ style }: { style?: object }) {
 function SettingsSkeleton() {
   return (
     <View style={{ gap: 20, paddingTop: 8 }}>
-      <View style={{ gap: 12 }}>
-        <ShimmerBlock style={{ height: 110, borderRadius: CardRadius }} />
-        <ShimmerBlock style={{ height: 76, borderRadius: CardRadius }} />
-        <ShimmerBlock style={{ height: 76, borderRadius: CardRadius }} />
-        <ShimmerBlock style={{ height: 140, borderRadius: CardRadius }} />
-      </View>
+      <ShimmerBlock style={{ height: 88, borderRadius: CardRadius }} />
+      <ShimmerBlock style={{ height: 116, borderRadius: CardRadius }} />
+      <ShimmerBlock style={{ height: 154, borderRadius: CardRadius }} />
+      <ShimmerBlock style={{ height: 140, borderRadius: CardRadius }} />
+      <ShimmerBlock style={{ height: 176, borderRadius: CardRadius }} />
+    </View>
+  );
+}
+
+// ─── Icon Box ─────────────────────────────────────────────────────────────────
+
+function IconBox({ icon, color }: { icon: React.ReactNode; color: string }) {
+  return (
+    <View style={[s.iconBox, { backgroundColor: `${color}18`, borderColor: `${color}30` }]}>
+      {icon}
     </View>
   );
 }
@@ -107,26 +119,20 @@ function SettingsSkeleton() {
 
 function ProfileCard({ name, email }: { name: string; email: string }) {
   const initial = name?.[0]?.toUpperCase() ?? '?';
-
   return (
-    <View style={styles.profileCard}>
-      {/* Subtle grid texture lines */}
-      <View style={styles.profileGrid} pointerEvents="none">
+    <View style={s.profileCard}>
+      <View style={s.profileGrid} pointerEvents="none">
         {[0, 1, 2, 3, 4].map((i) => (
-          <View key={i} style={[styles.profileGridLine, { top: 18 + i * 18 }]} />
+          <View key={i} style={[s.profileGridLine, { top: 18 + i * 18 }]} />
         ))}
       </View>
-
-      <View style={styles.profileInner}>
-        <View style={styles.profileAvatarWrap}>
-          <Text style={styles.profileAvatarLetter}>{initial}</Text>
+      <View style={s.profileInner}>
+        <View style={s.profileAvatarWrap}>
+          <Text style={s.profileAvatarLetter}>{initial}</Text>
         </View>
-        <View style={styles.profileCopy}>
-          <Text style={styles.profileName}>{name}</Text>
-          <Text style={styles.profileEmail}>{email}</Text>
-        </View>
-        <View style={styles.profileBadge}>
-          <Text style={styles.profileBadgeText}>PRO</Text>
+        <View style={s.profileCopy}>
+          <Text style={s.profileName}>{name}</Text>
+          <Text style={s.profileEmail}>{email}</Text>
         </View>
       </View>
     </View>
@@ -135,81 +141,68 @@ function ProfileCard({ name, email }: { name: string; email: string }) {
 
 // ─── Section Label ────────────────────────────────────────────────────────────
 
-function SectionLabel({ icon, title }: { icon: React.ReactNode; title: string }) {
-  return (
-    <View style={styles.sectionLabel}>
-      {icon}
-      <Text style={styles.sectionLabelText}>{title}</Text>
-    </View>
-  );
+function SectionLabel({ title }: { title: string }) {
+  return <Text style={s.sectionLabel}>{title}</Text>;
 }
 
 // ─── Group Card ───────────────────────────────────────────────────────────────
-// Wraps a list of rows in a single bordered card with internal dividers
 
 function GroupCard({ children }: { children: React.ReactNode }) {
-  return <View style={styles.groupCard}>{children}</View>;
+  return <View style={s.groupCard}>{children}</View>;
 }
 
 function GroupDivider() {
-  return <View style={styles.groupDivider} />;
+  return <View style={s.groupDivider} />;
 }
 
-// ─── Row types ────────────────────────────────────────────────────────────────
+// ─── Row ──────────────────────────────────────────────────────────────────────
 
 function Row({
+  icon,
   label,
   sublabel,
+  value,
   right,
   onPress,
   danger,
-  first,
-  last,
 }: {
+  icon?: React.ReactNode;
   label: string;
   sublabel?: string;
+  value?: string;
   right?: React.ReactNode;
   onPress?: () => void;
   danger?: boolean;
-  first?: boolean;
-  last?: boolean;
 }) {
-  const bg = useRef(new Animated.Value(0)).current;
-
-  const pressIn = () => {
-    if (!onPress) return;
-    Animated.timing(bg, { toValue: 1, duration: 50, useNativeDriver: false }).start();
-  };
-  const pressOut = () => {
-    Animated.timing(bg, { toValue: 0, duration: 180, useNativeDriver: false }).start();
-  };
-
-  const bgColor = bg.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['transparent', MonikeColors.bgElevated],
-  });
-
   return (
-    <Pressable onPress={onPress} onPressIn={pressIn} onPressOut={pressOut} disabled={!onPress}>
-      <Animated.View style={[styles.row, { backgroundColor: bgColor }]}>
-        <View style={styles.rowLeft}>
-          <Text style={[styles.rowLabel, danger && { color: MonikeColors.signalRed }]}>{label}</Text>
-          {sublabel ? <Text style={styles.rowSublabel}>{sublabel}</Text> : null}
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      style={({ pressed }) => [s.row, pressed && !!onPress && s.rowPressed]}
+    >
+      {icon ? <View style={s.rowIconSlot}>{icon}</View> : null}
+      <View style={s.rowLeft}>
+        <Text style={[s.rowLabel, danger && { color: MonikeColors.signalRed }]}>{label}</Text>
+        {sublabel ? <Text style={s.rowSublabel}>{sublabel}</Text> : null}
+      </View>
+      {right !== undefined ? right : (
+        <View style={s.rowRight}>
+          {value ? <Text style={s.rowValue}>{value}</Text> : null}
+          {onPress ? <ChevronRight size={14} color={MonikeColors.inkGhost} strokeWidth={2} /> : null}
         </View>
-        {right !== undefined ? right : onPress ? (
-          <ChevronRight size={14} color={MonikeColors.inkGhost} strokeWidth={2} />
-        ) : null}
-      </Animated.View>
+      )}
     </Pressable>
   );
 }
 
 function ToggleRow({
+  icon,
   label,
   sublabel,
   value,
   onChange,
 }: {
+  icon?: React.ReactNode;
   label: string;
   sublabel?: string;
   value: boolean;
@@ -217,14 +210,15 @@ function ToggleRow({
 }) {
   return (
     <Row
+      icon={icon}
       label={label}
       sublabel={sublabel}
       right={
         <Switch
           value={value}
           onValueChange={onChange}
-          trackColor={{ false: MonikeColors.bgElevated, true: `${MonikeColors.accentPulse}55` }}
-          thumbColor={value ? MonikeColors.accentPulse : MonikeColors.inkMuted}
+          trackColor={{ false: MonikeColors.bgElevated, true: `${MonikeColors.accentOrange}55` }}
+          thumbColor={value ? MonikeColors.accentOrange : MonikeColors.inkMuted}
           ios_backgroundColor={MonikeColors.bgElevated}
         />
       }
@@ -232,53 +226,132 @@ function ToggleRow({
   );
 }
 
-function NairaRow({
-  label,
+// ─── Budget Edit Sheet ────────────────────────────────────────────────────────
+
+function BudgetSheet({
+  visible,
+  title,
   sublabel,
+  initialValue,
+  saving,
+  onClose,
+  onSave,
+}: {
+  visible: boolean;
+  title: string;
+  sublabel?: string;
+  initialValue: number;
+  saving: boolean;
+  onClose: () => void;
+  onSave: (v: number) => void;
+}) {
+  const [raw, setRaw] = useState('');
+
+  useEffect(() => {
+    if (visible) setRaw(String(initialValue));
+  }, [visible, initialValue]);
+
+  const handleSave = () => {
+    const parsed = parseInt(raw.replace(/[^0-9]/g, ''), 10);
+    if (!isNaN(parsed) && parsed > 0) onSave(parsed);
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={bs.backdrop} onPress={onClose} />
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={bs.kav}>
+        <View style={bs.sheet}>
+          <View style={bs.handle} />
+          <View style={bs.header}>
+            <View style={bs.headerText}>
+              <Text style={bs.title}>{title}</Text>
+              {sublabel ? <Text style={bs.subtitle}>{sublabel}</Text> : null}
+            </View>
+            <Pressable onPress={onClose} style={bs.closeBtn} hitSlop={8}>
+              <X size={18} color={MonikeColors.inkSecondary} />
+            </Pressable>
+          </View>
+          <View style={bs.inputRow}>
+            <Text style={bs.currencyLabel}>₦</Text>
+            <TextInput
+              style={bs.input}
+              value={raw}
+              keyboardType="numeric"
+              autoFocus
+              onChangeText={setRaw}
+              selectionColor={MonikeColors.accentOrange}
+              placeholderTextColor={MonikeColors.inkMuted}
+              placeholder="0"
+            />
+          </View>
+          <View style={bs.actions}>
+            <Pressable style={bs.cancelBtn} onPress={onClose} disabled={saving}>
+              <Text style={bs.cancelText}>Cancel</Text>
+            </Pressable>
+            <Pressable style={[bs.saveBtn, saving && { opacity: 0.6 }]} onPress={handleSave} disabled={saving}>
+              {saving
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={bs.saveText}>Save</Text>
+              }
+            </Pressable>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+// ─── Auto-lock Selector ────────────────────────────────────────────────────────
+
+function AutoLockSelector({
   value,
   onChange,
 }: {
-  label: string;
-  sublabel?: string;
-  value: number;
-  onChange: (v: number) => void;
+  value: 5 | 30;
+  onChange: (v: 5 | 30) => void;
 }) {
-  const [raw, setRaw] = useState(String(value));
-  const [focused, setFocused] = useState(false);
-
-  useEffect(() => {
-    if (!focused) setRaw(String(value));
-  }, [value, focused]);
-
+  const OPTIONS: { label: string; value: 5 | 30 }[] = [
+    { label: '5 min', value: 5 },
+    { label: '30 min', value: 30 },
+  ];
   return (
     <Row
-      label={label}
-      sublabel={sublabel}
+      icon={<IconBox icon={<Timer size={16} color={MonikeColors.accentOrange} strokeWidth={1.8} />} color={MonikeColors.accentOrange} />}
+      label="Auto-lock"
+      sublabel="Lock when app is backgrounded"
       right={
-        <View style={[styles.nairaWrap, focused && styles.nairaWrapFocused]}>
-          <Text style={styles.nairaSymbol}>₦</Text>
-          <TextInput
-            style={styles.nairaInput}
-            value={raw}
-            keyboardType="numeric"
-            onFocus={() => setFocused(true)}
-            onBlur={() => {
-              setFocused(false);
-              const parsed = parseInt(raw.replace(/[^0-9]/g, ''), 10);
-              if (!isNaN(parsed) && parsed > 0) {
-                onChange(parsed);
-                setRaw(String(parsed));
-              } else {
-                setRaw(String(value));
-              }
-            }}
-            onChangeText={setRaw}
-            placeholderTextColor={MonikeColors.inkMuted}
-            selectionColor={MonikeColors.accentPulse}
-          />
+        <View style={s.segmentControl}>
+          {OPTIONS.map((opt) => (
+            <Pressable
+              key={opt.value}
+              style={[s.segmentOption, value === opt.value && s.segmentOptionActive]}
+              onPress={() => void onChange(opt.value)}
+            >
+              <Text style={[s.segmentOptionText, value === opt.value && s.segmentOptionTextActive]}>
+                {opt.label}
+              </Text>
+            </Pressable>
+          ))}
         </View>
       }
     />
+  );
+}
+
+// ─── Security Status Header ────────────────────────────────────────────────────
+
+function SecurityStatusHeader({ biometricEnabled }: { biometricEnabled: boolean }) {
+  const activeCount = 2 + (biometricEnabled ? 1 : 0);
+  return (
+    <View style={s.securityHeader}>
+      <View style={s.securityShieldBox}>
+        <ShieldCheck size={20} color={MonikeColors.accentOrange} strokeWidth={1.6} />
+      </View>
+      <View style={s.securityHeaderCopy}>
+        <Text style={s.securityTitle}>Protected</Text>
+        <Text style={s.securitySub}>{activeCount} / 3 features enabled</Text>
+      </View>
+    </View>
   );
 }
 
@@ -326,54 +399,53 @@ function ModelStatusCard({
   const trained = status?.trained ?? false;
 
   return (
-    <View style={styles.modelCard}>
-      {/* Status badge row */}
-      <View style={styles.modelHeader}>
-        <View style={styles.modelStatusPill}>
-          <Animated.View style={[styles.modelPulseDot, { opacity: pulseOpacity, backgroundColor: trained ? MonikeColors.accentPulse : MonikeColors.signalAmber }]} />
-          <View style={[styles.modelCoreDot, { backgroundColor: trained ? MonikeColors.accentPulse : MonikeColors.signalAmber }]} />
-          <Text style={[styles.modelStatusText, { color: trained ? MonikeColors.accentPulse : MonikeColors.signalAmber }]}>
+    <View style={s.modelCard}>
+      <View style={s.modelHeader}>
+        <View style={s.modelStatusPill}>
+          <Animated.View style={[s.modelPulseDot, { opacity: pulseOpacity, backgroundColor: trained ? MonikeColors.accentPulse : MonikeColors.signalAmber }]} />
+          <View style={[s.modelCoreDot, { backgroundColor: trained ? MonikeColors.accentPulse : MonikeColors.signalAmber }]} />
+          <Text style={[s.modelStatusText, { color: trained ? MonikeColors.accentPulse : MonikeColors.signalAmber }]}>
             {trained ? 'Active' : 'Untrained'}
           </Text>
         </View>
-        <Text style={styles.modelVersionText}>{status?.model_version ?? 'v0'}</Text>
+        <Text style={s.modelVersionText}>{status?.model_version ?? 'v0'}</Text>
       </View>
 
-      {/* Stats */}
-      <View style={styles.modelStats}>
-        <View style={styles.modelStat}>
-          <Text style={styles.modelStatVal}>{status?.training_rows ?? 0}</Text>
-          <Text style={styles.modelStatKey}>rows</Text>
+      <View style={s.modelStats}>
+        <View style={s.modelStat}>
+          <Text style={s.modelStatVal}>{(status?.training_rows ?? 0).toLocaleString()}</Text>
+          <Text style={s.modelStatKey}>rows</Text>
         </View>
-        <View style={styles.modelStatDivider} />
-        <View style={styles.modelStat}>
-          <Text style={[styles.modelStatVal, trained && { color: MonikeColors.accentPulse }]}>{accuracy}</Text>
-          <Text style={styles.modelStatKey}>accuracy</Text>
+        <View style={s.modelStatDivider} />
+        <View style={s.modelStat}>
+          <Text style={[s.modelStatVal, trained && { color: MonikeColors.accentPulse }]}>{accuracy}</Text>
+          <Text style={s.modelStatKey}>accuracy</Text>
         </View>
-        <View style={styles.modelStatDivider} />
-        <View style={styles.modelStat}>
-          <Text style={styles.modelStatVal}>{lastTrained}</Text>
-          <Text style={styles.modelStatKey}>last trained</Text>
+        <View style={s.modelStatDivider} />
+        <View style={s.modelStat}>
+          <Text style={s.modelStatVal} numberOfLines={1} adjustsFontSizeToFit>{lastTrained}</Text>
+          <Text style={s.modelStatKey}>last trained</Text>
         </View>
       </View>
 
-      {/* Retrain button */}
       <Pressable
-        style={[styles.retrainBtn, retraining && styles.retrainBtnDisabled]}
+        style={[s.retrainBtn, retraining && s.retrainBtnActive]}
         onPress={onRetrain}
         disabled={retraining}
       >
         {retraining ? (
           <>
             <Animated.View style={{ transform: [{ rotate }] }}>
-              <RefreshCw size={14} color={MonikeColors.bgVoid} strokeWidth={2} />
+              <RefreshCw size={14} color={MonikeColors.inkSecondary} strokeWidth={2} />
             </Animated.View>
-            <Text style={styles.retrainBtnText}>{retrainProgress || 'Training…'}</Text>
+            <Text style={[s.retrainBtnText, { color: MonikeColors.inkSecondary }]}>
+              {retrainProgress || 'Training…'}
+            </Text>
           </>
         ) : (
           <>
-            <BrainCircuit size={14} color={MonikeColors.bgVoid} strokeWidth={2} />
-            <Text style={styles.retrainBtnText}>Retrain model</Text>
+            <BrainCircuit size={14} color="#fff" strokeWidth={2} />
+            <Text style={s.retrainBtnText}>Retrain model</Text>
           </>
         )}
       </Pressable>
@@ -424,7 +496,7 @@ function UploadCard() {
         type: asset.mimeType ?? 'application/octet-stream',
       } as any);
 
-      const uploadResp = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/log/upload`, {
+      const uploadResp = await fetch(`${API_BASE_URL}/log/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -435,7 +507,7 @@ function UploadCard() {
       const { job_id } = await uploadResp.json();
       setUploadStatus('Processing…');
 
-      const wsUrl = `${(process.env.EXPO_PUBLIC_API_URL ?? '').replace('http', 'ws')}/ws/upload/${job_id}`;
+      const wsUrl = `${API_BASE_URL.replace('http', 'ws')}/ws/upload/${job_id}`;
       const ws = new WebSocket(wsUrl);
 
       ws.onmessage = (event) => {
@@ -468,82 +540,41 @@ function UploadCard() {
   };
 
   return (
-    <View style={styles.uploadCard}>
-      <View style={styles.uploadTop}>
-        <View style={styles.uploadIconBox}>
-          <Upload size={18} color={MonikeColors.accentPulse} strokeWidth={1.8} />
+    <View style={s.uploadCard}>
+      <View style={s.uploadTop}>
+        <View style={s.uploadIconBox}>
+          <Upload size={18} color={MonikeColors.accentOrange} strokeWidth={1.8} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.uploadTitle}>Import statement</Text>
-          <Text style={styles.uploadSubtitle}>OPay · .xlsx  ·  .xls  ·  .csv</Text>
+          <Text style={s.uploadTitle}>Import statement</Text>
+          <Text style={s.uploadSubtitle}>OPay · .xlsx  ·  .xls  ·  .csv</Text>
         </View>
         <Pressable
-          style={[styles.uploadChooseBtn, uploading && { opacity: 0.45 }]}
+          style={[s.uploadChooseBtn, uploading && { opacity: 0.45 }]}
           onPress={pickAndUpload}
           disabled={uploading}
         >
           {uploading
             ? <ActivityIndicator size="small" color={MonikeColors.inkMuted} style={{ width: 40 }} />
-            : <Text style={styles.uploadChooseBtnText}>Browse</Text>
+            : <Text style={s.uploadChooseBtnText}>Browse</Text>
           }
         </Pressable>
       </View>
-
-      {/* Progress track — only shown while uploading */}
       {uploading && (
-        <View style={styles.uploadProgressTrack}>
-          <Animated.View style={[styles.uploadProgressFill, { width: progressWidth }]} />
+        <View style={s.uploadProgressTrack}>
+          <Animated.View style={[s.uploadProgressFill, { width: progressWidth }]} />
         </View>
       )}
-
-      {/* Status / error */}
       {uploadStatus && !uploadError ? (
-        <Text style={styles.uploadStatusText}>{uploadStatus}</Text>
+        <Text style={s.uploadStatusText}>{uploadStatus}</Text>
       ) : null}
       {uploadError ? (
-        <View style={styles.uploadErrorRow}>
+        <View style={s.uploadErrorRow}>
           <AlertTriangle size={11} color={MonikeColors.signalRed} />
-          <Text style={styles.uploadErrorText}>{uploadError}</Text>
+          <Text style={s.uploadErrorText}>{uploadError}</Text>
         </View>
       ) : null}
     </View>
-  );
-}
-
-// ─── Auto-lock Selector ────────────────────────────────────────────────────────
-
-function AutoLockSelector({
-  value,
-  onChange,
-}: {
-  value: 5 | 30;
-  onChange: (v: 5 | 30) => void;
-}) {
-  const OPTIONS: { label: string; value: 5 | 30 }[] = [
-    { label: '5 min', value: 5 },
-    { label: '30 min', value: 30 },
-  ];
-
-  return (
-    <Row
-      label="Auto-lock"
-      sublabel="Lock when app is backgrounded"
-      right={
-        <View style={styles.segmentControl}>
-          {OPTIONS.map((opt) => (
-            <Pressable
-              key={opt.value}
-              style={[styles.segmentOption, value === opt.value && styles.segmentOptionActive]}
-              onPress={() => void onChange(opt.value)}
-            >
-              <Text style={[styles.segmentOptionText, value === opt.value && styles.segmentOptionTextActive]}>
-                {opt.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      }
-    />
   );
 }
 
@@ -551,10 +582,14 @@ function AutoLockSelector({
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [retraining, setRetraining] = useState(false);
   const [retrainProgress, setRetrainProgress] = useState('');
+  const [budgetSheet, setBudgetSheet] = useState<null | {
+    field: 'monthly_budget' | 'high_spend_threshold';
+    title: string;
+    sublabel: string;
+  }>(null);
+  const [sheetSaving, setSheetSaving] = useState(false);
 
   const { data: settingsData, isLoading: settingsLoading, mutate: mutateSettings } = useSWR<SettingsData>('/settings', apiFetch);
   const { data: modelStatus, isLoading: modelLoading, mutate: mutateModel } = useSWR<ModelStatus>('/model/status', apiFetch);
@@ -577,25 +612,41 @@ export default function SettingsScreen() {
     notify_model_updates: false,
   });
 
+  const formRef = useRef(form);
+  useEffect(() => { formRef.current = form; }, [form]);
+
   useEffect(() => {
     if (settingsData) setForm(settingsData);
   }, [settingsData]);
 
-  const patch = <K extends keyof SettingsData>(key: K, value: SettingsData[K]) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const saveSettings = async () => {
-    setSaving(true);
+  const saveField = useCallback(async <K extends keyof SettingsData>(key: K, value: SettingsData[K]) => {
+    const prev = formRef.current;
+    const next = { ...prev, [key]: value };
+    setForm(next);
     try {
-      await apiPost('/settings', form);
+      await apiPost('/settings', next);
       mutateSettings();
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2200);
     } catch (e: any) {
+      setForm(prev);
+      Alert.alert('Save failed', e.message ?? 'Unknown error');
+    }
+  }, [mutateSettings]);
+
+  const handleSheetSave = async (value: number) => {
+    if (!budgetSheet) return;
+    const prev = formRef.current;
+    const next = { ...prev, [budgetSheet.field]: value };
+    setSheetSaving(true);
+    try {
+      setForm(next);
+      await apiPost('/settings', next);
+      mutateSettings();
+      setBudgetSheet(null);
+    } catch (e: any) {
+      setForm(prev);
       Alert.alert('Save failed', e.message ?? 'Unknown error');
     } finally {
-      setSaving(false);
+      setSheetSaving(false);
     }
   };
 
@@ -605,9 +656,10 @@ export default function SettingsScreen() {
     setRetrainProgress('Loading data…');
     try {
       const result: RetrainResult = await apiPost('/retrain', {});
-      setRetrainProgress(`Done — ${(result.accuracy * 100).toFixed(1)}%`);
+      const secs = (result.duration_ms / 1000).toFixed(1);
+      setRetrainProgress(`Done — ${(result.accuracy * 100).toFixed(1)}% · ${result.training_rows.toLocaleString()} rows · ${secs}s`);
       mutateModel();
-      setTimeout(() => setRetrainProgress(''), 3000);
+      setTimeout(() => setRetrainProgress(''), 5000);
     } catch (e: any) {
       setRetrainProgress('');
       Alert.alert('Retrain failed', e.message ?? 'Unknown error');
@@ -640,12 +692,13 @@ export default function SettingsScreen() {
   };
 
   return (
-    <View style={styles.root}>
-      <SafeAreaView style={styles.safe} edges={['top']}>
+    <View style={s.root}>
+      <SafeAreaView style={s.safe} edges={['top']}>
         <MonikeHeader title="Settings" back />
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 40 }]}
+          contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 40 }]}
+          keyboardShouldPersistTaps="handled"
         >
           {settingsLoading ? (
             <SettingsSkeleton />
@@ -654,66 +707,70 @@ export default function SettingsScreen() {
               {/* ── Profile ──────────────────────────────────────── */}
               <ProfileCard name={form.display_name} email={form.email} />
 
-              {/* ── Spending limits ───────────────────────────────── */}
-              <View style={styles.section}>
-                <SectionLabel
-                  icon={<Sliders size={13} color={MonikeColors.accentPulse} strokeWidth={2} />}
-                  title="Spending limits"
-                />
+              {/* ── Spending Limits ───────────────────────────────── */}
+              <View style={s.section}>
+                <SectionLabel title="SPENDING LIMITS" />
                 <GroupCard>
-                  <NairaRow
+                  <Row
+                    icon={<IconBox icon={<Wallet size={16} color={MonikeColors.accentOrange} strokeWidth={1.8} />} color={MonikeColors.accentOrange} />}
                     label="Monthly budget"
-                    sublabel="Budget bar target on the dashboard"
-                    value={form.monthly_budget}
-                    onChange={(v) => patch('monthly_budget', v)}
+                    sublabel="Dashboard spend bar target"
+                    value={form.monthly_budget > 0 ? formatNaira(form.monthly_budget) : 'Not set'}
+                    onPress={() => setBudgetSheet({
+                      field: 'monthly_budget',
+                      title: 'Monthly Budget',
+                      sublabel: 'Dashboard spend bar target',
+                    })}
                   />
                   <GroupDivider />
-                  <NairaRow
+                  <Row
+                    icon={<IconBox icon={<AlertTriangle size={16} color={MonikeColors.accentOrange} strokeWidth={1.8} />} color={MonikeColors.accentOrange} />}
                     label="High-spend threshold"
-                    sublabel="Flags a day as HIGH risk in charts"
-                    value={form.high_spend_threshold}
-                    onChange={(v) => patch('high_spend_threshold', v)}
+                    sublabel="Flags a day as high risk"
+                    value={formatNaira(form.high_spend_threshold)}
+                    onPress={() => setBudgetSheet({
+                      field: 'high_spend_threshold',
+                      title: 'High-Spend Threshold',
+                      sublabel: 'Flags a day as high risk in charts',
+                    })}
                   />
                 </GroupCard>
-                <Text style={styles.footNote}>Changes apply on next model retrain.</Text>
+                <Text style={s.footNote}>Changes apply live — caches clear automatically.</Text>
               </View>
 
               {/* ── Notifications ─────────────────────────────────── */}
-              <View style={styles.section}>
-                <SectionLabel
-                  icon={<Bell size={13} color={MonikeColors.accentPulse} strokeWidth={2} />}
-                  title="Notifications"
-                />
+              <View style={s.section}>
+                <SectionLabel title="NOTIFICATIONS" />
                 <GroupCard>
                   <ToggleRow
+                    icon={<IconBox icon={<Bell size={16} color={MonikeColors.accentOrange} strokeWidth={1.8} />} color={MonikeColors.accentOrange} />}
                     label="High-spend alerts"
                     sublabel="When daily spend exceeds threshold"
                     value={form.notify_high_spend}
-                    onChange={(v) => patch('notify_high_spend', v)}
+                    onChange={(v) => void saveField('notify_high_spend', v)}
                   />
                   <GroupDivider />
                   <ToggleRow
+                    icon={<IconBox icon={<Calendar size={16} color={MonikeColors.accentOrange} strokeWidth={1.8} />} color={MonikeColors.accentOrange} />}
                     label="Weekly summary"
                     sublabel="Every Monday morning"
                     value={form.notify_weekly_summary}
-                    onChange={(v) => patch('notify_weekly_summary', v)}
+                    onChange={(v) => void saveField('notify_weekly_summary', v)}
                   />
                   <GroupDivider />
                   <ToggleRow
+                    icon={<IconBox icon={<BrainCircuit size={16} color={MonikeColors.accentOrange} strokeWidth={1.8} />} color={MonikeColors.accentOrange} />}
                     label="Model update alerts"
                     sublabel="When retraining completes"
                     value={form.notify_model_updates}
-                    onChange={(v) => patch('notify_model_updates', v)}
+                    onChange={(v) => void saveField('notify_model_updates', v)}
                   />
                 </GroupCard>
               </View>
 
-              {/* ── ML model ──────────────────────────────────────── */}
-              <View style={styles.section}>
-                <SectionLabel
-                  icon={<BrainCircuit size={13} color={MonikeColors.accentPulse} strokeWidth={2} />}
-                  title="ML model"
-                />
+              {/* ── ML Model ──────────────────────────────────────── */}
+              <View style={s.section}>
+                <SectionLabel title="ML MODEL" />
                 {modelLoading ? (
                   <ShimmerBlock style={{ height: 140, borderRadius: CardRadius }} />
                 ) : (
@@ -724,43 +781,42 @@ export default function SettingsScreen() {
                     onRetrain={handleRetrain}
                   />
                 )}
-                <Text style={styles.footNote}>
-                  Retrain after importing new statement data to improve tomorrow's risk prediction.
+                <Text style={s.footNote}>
+                  Retrain after importing new data to improve tomorrow's risk prediction.
                 </Text>
               </View>
 
               {/* ── Data ──────────────────────────────────────────── */}
-              <View style={styles.section}>
-                <SectionLabel
-                  icon={<Database size={13} color={MonikeColors.accentPulse} strokeWidth={2} />}
-                  title="Data"
-                />
+              <View style={s.section}>
+                <SectionLabel title="DATA" />
                 <UploadCard />
+                <View style={{ height: 10 }} />
                 <GroupCard>
                   <Row
+                    icon={<IconBox icon={<Trash2 size={16} color={MonikeColors.signalRed} strokeWidth={1.8} />} color={MonikeColors.signalRed} />}
                     label="Clear app cache"
                     sublabel="Force reload of dashboard, explore & predictions"
                     onPress={handleClearCache}
-                    right={<Trash2 size={15} color={MonikeColors.inkMuted} strokeWidth={1.8} />}
+                    danger
                   />
                 </GroupCard>
               </View>
 
               {/* ── Security ──────────────────────────────────────── */}
-              <View style={styles.section}>
-                <SectionLabel
-                  icon={<Shield size={13} color={MonikeColors.accentPulse} strokeWidth={2} />}
-                  title="Security"
-                />
+              <View style={s.section}>
+                <SectionLabel title="SECURITY" />
                 <GroupCard>
+                  <SecurityStatusHeader biometricEnabled={biometricEnabled} />
+                  <View style={s.securityDivider} />
                   <Row
+                    icon={<IconBox icon={<Key size={16} color={MonikeColors.accentOrange} strokeWidth={1.8} />} color={MonikeColors.accentOrange} />}
                     label="Change PIN"
                     sublabel="Update the 4-digit startup PIN"
                     onPress={beginPinChange}
-                    right={<Key size={15} color={MonikeColors.inkMuted} strokeWidth={1.8} />}
                   />
                   <GroupDivider />
                   <ToggleRow
+                    icon={<IconBox icon={<Fingerprint size={16} color={MonikeColors.accentOrange} strokeWidth={1.8} />} color={MonikeColors.accentOrange} />}
                     label="Biometric unlock"
                     sublabel={
                       biometricAvailable
@@ -768,49 +824,47 @@ export default function SettingsScreen() {
                         : 'No enrolled biometrics on this device'
                     }
                     value={biometricEnabled}
-                    onChange={(value) => void setBiometricEnabled(value)}
+                    onChange={(v) => void setBiometricEnabled(v)}
                   />
                   <GroupDivider />
                   <AutoLockSelector value={autoLockMinutes} onChange={(v) => void setAutoLockMinutes(v)} />
                 </GroupCard>
               </View>
 
-              {/* ── Save ──────────────────────────────────────────── */}
-              <Pressable
-                style={[styles.saveBtn, saving && { opacity: 0.6 }, saved && styles.saveBtnSaved]}
-                onPress={saveSettings}
-                disabled={saving}
-              >
-                {saving ? (
-                  <ActivityIndicator size="small" color={MonikeColors.bgVoid} />
-                ) : (
-                  <Text style={styles.saveBtnText}>{saved ? '✓  Saved' : 'Save settings'}</Text>
-                )}
-              </Pressable>
-
-              <Text style={styles.versionText}>MONIKE v1.0.0  ·  PostgreSQL monike</Text>
+              <Text style={s.versionText}>MONIKE v1.0.0  ·  PostgreSQL monike</Text>
             </>
           )}
         </ScrollView>
       </SafeAreaView>
+
+      {/* Budget / Threshold Edit Sheet */}
+      <BudgetSheet
+        visible={budgetSheet !== null}
+        title={budgetSheet?.title ?? ''}
+        sublabel={budgetSheet?.sublabel}
+        initialValue={budgetSheet ? form[budgetSheet.field] : 0}
+        saving={sheetSaving}
+        onClose={() => !sheetSaving && setBudgetSheet(null)}
+        onSave={handleSheetSave}
+      />
     </View>
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── Main Styles ──────────────────────────────────────────────────────────────
 
-const ACCENT = MonikeColors.accentPulse;
+const ORANGE = MonikeColors.accentOrange;
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: MonikeColors.bgVoid },
   safe: { flex: 1 },
-  scroll: { paddingHorizontal: ScreenPadding, paddingTop: 12, gap: 0 },
+  scroll: { paddingHorizontal: ScreenPadding, paddingTop: 12 },
 
-  // ── Profile card ────────────────────────────────────────
+  // Profile card
   profileCard: {
     borderRadius: CardRadius + 2,
     borderWidth: 1,
-    borderColor: MonikeColors.inkGhost,
+    borderColor: '#21282F',
     backgroundColor: MonikeColors.bgSurface,
     overflow: 'hidden',
     marginBottom: 24,
@@ -821,7 +875,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 1,
-    backgroundColor: `${MonikeColors.inkGhost}40`,
+    backgroundColor: `${MonikeColors.inkGhost}30`,
   },
   profileInner: {
     flexDirection: 'row',
@@ -833,12 +887,14 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 16,
-    backgroundColor: ACCENT,
+    backgroundColor: `${ORANGE}1A`,
+    borderWidth: 1.5,
+    borderColor: `${ORANGE}45`,
     alignItems: 'center',
     justifyContent: 'center',
   },
   profileAvatarLetter: {
-    color: MonikeColors.bgVoid,
+    color: ORANGE,
     fontFamily: Fonts.heading,
     fontSize: 22,
     fontWeight: '800',
@@ -856,62 +912,43 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.mono,
     fontSize: 11,
   },
-  profileBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-    backgroundColor: `${ACCENT}18`,
-    borderWidth: 1,
-    borderColor: `${ACCENT}35`,
-  },
-  profileBadgeText: {
-    color: ACCENT,
-    fontFamily: Fonts.mono,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-  },
 
-  // ── Section ──────────────────────────────────────────────
+  // Section
   section: { gap: 8, marginBottom: 22 },
   sectionLabel: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    paddingHorizontal: 2,
+    color: MonikeColors.inkMuted,
+    fontFamily: Fonts.mono,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1.4,
+    paddingHorizontal: 4,
     marginBottom: 2,
   },
-  sectionLabelText: {
-    color: MonikeColors.inkSecondary,
-    fontFamily: Fonts.sans,
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 0.2,
-  },
 
-  // ── Group card ───────────────────────────────────────────
+  // Group card — matches sectionCard in forecast/categories
   groupCard: {
     backgroundColor: MonikeColors.bgSurface,
     borderWidth: 1,
-    borderColor: MonikeColors.inkGhost,
+    borderColor: '#21282F',
     borderRadius: CardRadius,
     overflow: 'hidden',
   },
   groupDivider: {
     height: 1,
-    backgroundColor: `${MonikeColors.inkGhost}60`,
-    marginLeft: 16,
+    backgroundColor: '#20262C',
   },
 
-  // ── Row ──────────────────────────────────────────────────
+  // Row — matches featureRow in forecast
   row: {
-    minHeight: 54,
+    minHeight: 56,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 10,
     gap: 12,
   },
+  rowPressed: { backgroundColor: MonikeColors.bgElevated },
+  rowIconSlot: { flexShrink: 0 },
   rowLeft: { flex: 1, gap: 2 },
   rowLabel: {
     color: MonikeColors.inkPrimary,
@@ -925,49 +962,104 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 15,
   },
-
-  // ── Naira input ──────────────────────────────────────────
-  nairaWrap: {
+  rowRight: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
+  },
+  rowValue: {
+    color: MonikeColors.inkSecondary,
+    fontFamily: Fonts.mono,
+    fontSize: 12,
+  },
+
+  // Icon box
+  iconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Security header inside GroupCard
+  securityHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    backgroundColor: `${ORANGE}08`,
+  },
+  securityShieldBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    backgroundColor: `${ORANGE}18`,
+    borderColor: `${ORANGE}30`,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  securityHeaderCopy: { flex: 1, gap: 2 },
+  securityTitle: {
+    color: MonikeColors.inkPrimary,
+    fontFamily: Fonts.sans,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  securitySub: {
+    color: MonikeColors.inkSecondary,
+    fontFamily: Fonts.mono,
+    fontSize: 11,
+  },
+  securityDivider: {
+    height: 1,
+    backgroundColor: '#20262C',
+  },
+
+  // Segment control (auto-lock)
+  segmentControl: {
+    flexDirection: 'row',
     backgroundColor: MonikeColors.bgElevated,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: MonikeColors.inkGhost,
-    paddingHorizontal: 10,
-    height: 34,
-    minWidth: 110,
+    borderColor: '#21282F',
+    overflow: 'hidden',
   },
-  nairaWrapFocused: { borderColor: ACCENT },
-  nairaSymbol: {
-    color: MonikeColors.inkSecondary,
-    fontFamily: Fonts.mono,
-    fontSize: 13,
-    marginRight: 3,
+  segmentOption: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  nairaInput: {
-    color: MonikeColors.inkPrimary,
+  segmentOptionActive: { backgroundColor: ORANGE },
+  segmentOptionText: {
+    color: MonikeColors.inkMuted,
     fontFamily: Fonts.mono,
-    fontSize: 13,
-    flex: 1,
-    padding: 0,
+    fontSize: 12,
+  },
+  segmentOptionTextActive: {
+    color: '#fff',
+    fontWeight: '700',
   },
 
-  // ── Foot note ────────────────────────────────────────────
+  // Foot note
   footNote: {
     color: MonikeColors.inkGhost,
     fontFamily: Fonts.sans,
     fontSize: 11,
     lineHeight: 16,
-    paddingHorizontal: 2,
+    paddingHorizontal: 4,
     marginTop: 2,
   },
 
-  // ── Model card ───────────────────────────────────────────
+  // Model card
   modelCard: {
     backgroundColor: MonikeColors.bgSurface,
     borderWidth: 1,
-    borderColor: MonikeColors.inkGhost,
+    borderColor: '#21282F',
     borderRadius: CardRadius,
     padding: 16,
     gap: 14,
@@ -986,7 +1078,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: MonikeColors.bgElevated,
     borderWidth: 1,
-    borderColor: MonikeColors.inkGhost,
+    borderColor: '#21282F',
   },
   modelPulseDot: {
     position: 'absolute',
@@ -995,11 +1087,7 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
   },
-  modelCoreDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
+  modelCoreDot: { width: 6, height: 6, borderRadius: 3 },
   modelStatusText: {
     fontFamily: Fonts.sans,
     fontSize: 12,
@@ -1016,7 +1104,7 @@ const styles = StyleSheet.create({
     backgroundColor: MonikeColors.bgElevated,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: MonikeColors.inkGhost,
+    borderColor: '#21282F',
     paddingVertical: 12,
   },
   modelStat: { flex: 1, alignItems: 'center', gap: 3 },
@@ -1035,30 +1123,30 @@ const styles = StyleSheet.create({
   modelStatDivider: {
     width: 1,
     height: 28,
-    backgroundColor: MonikeColors.inkGhost,
+    backgroundColor: '#21282F',
   },
   retrainBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: ACCENT,
+    backgroundColor: ORANGE,
     borderRadius: 10,
     height: 42,
   },
-  retrainBtnDisabled: { backgroundColor: MonikeColors.bgElevated },
+  retrainBtnActive: { backgroundColor: MonikeColors.bgElevated },
   retrainBtnText: {
-    color: MonikeColors.bgVoid,
+    color: '#fff',
     fontFamily: Fonts.sans,
     fontSize: 13,
     fontWeight: '600',
   },
 
-  // ── Upload card ──────────────────────────────────────────
+  // Upload card
   uploadCard: {
     backgroundColor: MonikeColors.bgSurface,
     borderWidth: 1,
-    borderColor: MonikeColors.inkGhost,
+    borderColor: '#21282F',
     borderRadius: CardRadius,
     padding: 14,
     gap: 10,
@@ -1072,9 +1160,9 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 10,
-    backgroundColor: `${ACCENT}12`,
+    backgroundColor: `${ORANGE}12`,
     borderWidth: 1,
-    borderColor: `${ACCENT}28`,
+    borderColor: `${ORANGE}28`,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1096,7 +1184,7 @@ const styles = StyleSheet.create({
     height: 32,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: MonikeColors.inkGhost,
+    borderColor: '#21282F',
     backgroundColor: MonikeColors.bgElevated,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1115,11 +1203,11 @@ const styles = StyleSheet.create({
   },
   uploadProgressFill: {
     height: 2,
-    backgroundColor: ACCENT,
+    backgroundColor: ORANGE,
     borderRadius: 1,
   },
   uploadStatusText: {
-    color: ACCENT,
+    color: ORANGE,
     fontFamily: Fonts.mono,
     fontSize: 11,
     paddingHorizontal: 2,
@@ -1136,57 +1224,129 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // ── Segment control (auto-lock) ──────────────────────────
-  segmentControl: {
-    flexDirection: 'row',
-    backgroundColor: MonikeColors.bgElevated,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: MonikeColors.inkGhost,
-    overflow: 'hidden',
-  },
-  segmentOption: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  segmentOptionActive: {
-    backgroundColor: ACCENT,
-  },
-  segmentOptionText: {
-    color: MonikeColors.inkMuted,
-    fontFamily: Fonts.mono,
-    fontSize: 12,
-  },
-  segmentOptionTextActive: {
-    color: MonikeColors.bgVoid,
-    fontWeight: '700',
-  },
-
-  // ── Save button ──────────────────────────────────────────
-  saveBtn: {
-    backgroundColor: ACCENT,
-    borderRadius: 12,
-    height: 50,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 4,
-    marginBottom: 12,
-  },
-  saveBtnSaved: { backgroundColor: '#00C766' },
-  saveBtnText: {
-    color: MonikeColors.bgVoid,
-    fontFamily: Fonts.sans,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-
   versionText: {
     textAlign: 'center',
     color: MonikeColors.inkGhost,
     fontFamily: Fonts.mono,
     fontSize: 10,
     opacity: 0.7,
+    marginBottom: 8,
+  },
+});
+
+// ─── Budget Sheet Styles ──────────────────────────────────────────────────────
+
+const bs = StyleSheet.create({
+  backdrop: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+  },
+  kav: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: MonikeColors.bgSurface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    borderColor: '#21282F',
+    paddingHorizontal: 20,
+    paddingBottom: 34,
+    gap: 20,
+  },
+  handle: {
+    alignSelf: 'center',
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: MonikeColors.inkGhost,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  headerText: { flex: 1, gap: 3 },
+  title: {
+    color: MonikeColors.inkPrimary,
+    fontFamily: Fonts.heading,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  subtitle: {
+    color: MonikeColors.inkMuted,
+    fontFamily: Fonts.sans,
+    fontSize: 12,
+  },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: MonikeColors.bgElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: MonikeColors.bgElevated,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#21282F',
+    paddingHorizontal: 16,
+    height: 60,
+    gap: 8,
+  },
+  currencyLabel: {
+    color: MonikeColors.inkSecondary,
+    fontFamily: Fonts.mono,
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  input: {
+    flex: 1,
+    color: MonikeColors.inkPrimary,
+    fontFamily: Fonts.mono,
+    fontSize: 24,
+    fontWeight: '700',
+    padding: 0,
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  cancelBtn: {
+    flex: 1,
+    height: 50,
+    borderRadius: 13,
+    backgroundColor: MonikeColors.bgElevated,
+    borderWidth: 1,
+    borderColor: '#21282F',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelText: {
+    color: MonikeColors.inkSecondary,
+    fontFamily: Fonts.sans,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  saveBtn: {
+    flex: 1,
+    height: 50,
+    borderRadius: 13,
+    backgroundColor: MonikeColors.accentOrange,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveText: {
+    color: '#fff',
+    fontFamily: Fonts.sans,
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

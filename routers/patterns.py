@@ -6,7 +6,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from cache import TTL_HISTORICAL, get_cached
-from models import DowBar, HeatmapCell, MonthlyPoint, PatternsResponse
+from models import DowBar, HeatmapCell, MonthlyPoint, PatternsResponse, SpendCategory
 from routers.utils import COMBINED_CTE, DAY_NAMES, as_float, as_int, fetch_rows
 
 router = APIRouter()
@@ -96,6 +96,58 @@ async def _fetch_heatmap() -> list[HeatmapCell]:
     ]
 
 
+async def _fetch_spend_composition() -> tuple[list[SpendCategory], int, int]:
+    row = await fetch_rows(
+        f"""
+        {COMBINED_CTE}
+        SELECT
+            COALESCE(AVG(total_debit),  0) AS avg_total,
+            COALESCE(AVG(p2p_spend),    0) AS avg_p2p,
+            COALESCE(AVG(pos_spend),    0) AS avg_pos,
+            COALESCE(AVG(data_spend),   0) AS avg_data,
+            COALESCE(AVG(airtime_spend),0) AS avg_airtime,
+            COALESCE(AVG(online_spend), 0) AS avg_online,
+            COALESCE(AVG(family_spend), 0) AS avg_family,
+            COUNT(*) AS total_days,
+            SUM(CASE WHEN high_spend THEN 1 ELSE 0 END) AS high_spend_days
+        FROM combined
+        """
+    )
+    if not row:
+        return [], 0, 0
+    r = row[0]
+    avg_total      = as_float(r["avg_total"]) or 1.0
+    avg_p2p        = as_float(r["avg_p2p"])
+    avg_pos        = as_float(r["avg_pos"])
+    avg_data       = as_float(r["avg_data"])
+    avg_airtime    = as_float(r["avg_airtime"])
+    avg_online     = as_float(r["avg_online"])
+    avg_family     = as_float(r["avg_family"])
+    avg_other      = max(0.0, avg_total - avg_p2p - avg_pos - avg_data - avg_airtime - avg_online - avg_family)
+
+    CATS = [
+        ("p2p",     "Person-to-Person", avg_p2p),
+        ("pos",     "POS / Shop",       avg_pos),
+        ("data",    "Data Bundles",     avg_data),
+        ("airtime", "Airtime",          avg_airtime),
+        ("online",  "Online Payments",  avg_online),
+        ("family",  "Family",           avg_family),
+        ("other",   "Other",            avg_other),
+    ]
+    composition = [
+        SpendCategory(
+            key=key,
+            label=label,
+            avg_daily=round(avg, 2),
+            share_pct=round(avg / avg_total * 100, 1),
+        )
+        for key, label, avg in CATS
+        if avg > 0
+    ]
+    composition.sort(key=lambda c: c.avg_daily, reverse=True)
+    return composition, as_int(r["high_spend_days"]), as_int(r["total_days"])
+
+
 async def _fetch_weekday_weekend_avgs() -> tuple[float, float]:
     rows = await fetch_rows(
         f"""
@@ -120,12 +172,16 @@ async def _fetch_patterns() -> PatternsResponse:
     monthly_points = await _fetch_monthly_points()
     heatmap = await _fetch_heatmap()
     weekend_avg, weekday_avg = await _fetch_weekday_weekend_avgs()
+    composition, high_spend_days, total_days = await _fetch_spend_composition()
     return PatternsResponse(
         dow_bars=dow_bars,
         monthly_points=monthly_points,
         heatmap=heatmap,
         weekend_avg=weekend_avg,
         weekday_avg=weekday_avg,
+        spend_composition=composition,
+        total_high_spend_days=high_spend_days,
+        total_days_recorded=total_days,
     )
 
 

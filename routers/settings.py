@@ -4,6 +4,7 @@ routers/settings.py
 GET  /settings        — fetch persisted user settings
 POST /settings        — upsert user settings, propagates threshold to config
 GET  /model/status    — RandomForest metadata (trained?, accuracy, training rows)
+GET  /stats           — lightweight drawer stats (txn this month, days tracked, high days)
 POST /cache/clear     — manually blow away all in-process caches
 """
 from __future__ import annotations
@@ -139,3 +140,51 @@ async def get_model_status() -> ModelStatusResponse:
 async def clear_cache() -> CacheClearResponse:
     invalidate_all()
     return CacheClearResponse(cleared=True)
+
+
+class DrawerStats(BaseModel):
+    txn_this_month: int
+    days_tracked: int
+    high_days_this_month: int
+
+
+@router.get("/stats", response_model=DrawerStats)
+async def get_drawer_stats() -> DrawerStats:
+    row = await fetch_row(
+        """
+        SELECT
+            (
+                SELECT COUNT(*)
+                FROM (
+                    SELECT trans_date::date AS d
+                    FROM statement_transactions
+                    WHERE debit > 0
+                      AND trans_date >= date_trunc('month', CURRENT_DATE)
+                    UNION ALL
+                    SELECT trans_date::date AS d
+                    FROM transactions
+                    WHERE debit > 0
+                      AND trans_date >= date_trunc('month', CURRENT_DATE)
+                ) t
+            )::int AS txn_this_month,
+
+            (
+                SELECT COUNT(DISTINCT date)
+                FROM daily_log
+            )::int AS days_tracked,
+
+            (
+                SELECT COUNT(*)
+                FROM daily_log
+                WHERE high_spend = true
+                  AND date >= date_trunc('month', CURRENT_DATE)
+            )::int AS high_days_this_month
+        """
+    )
+    if row is None:
+        return DrawerStats(txn_this_month=0, days_tracked=0, high_days_this_month=0)
+    return DrawerStats(
+        txn_this_month=int(row["txn_this_month"] or 0),
+        days_tracked=int(row["days_tracked"] or 0),
+        high_days_this_month=int(row["high_days_this_month"] or 0),
+    )

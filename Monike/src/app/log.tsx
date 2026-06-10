@@ -12,12 +12,10 @@ import {
   Animated,
   Easing,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -25,12 +23,14 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   AlertCircle,
   AlertTriangle,
+  Banknote,
   Check,
   CheckCircle,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   CreditCard,
+  Delete,
   FileSpreadsheet,
   Globe,
   PenLine,
@@ -47,6 +47,8 @@ import {
 } from 'lucide-react-native';
 
 import { BottomNavigation } from '@/components/bottom-navigation';
+import { MonikeHeader } from '@/components/monike-header';
+import { useRouter } from 'expo-router';
 import { BottomTabInset, CardRadius, Fonts, MonikeColors, ScreenPadding } from '@/constants/theme';
 import { useUploadStatement, type UploadProgress, type UploadDedup } from '@/hooks/use-upload-statement';
 import { type UploadResult, postLog } from '@/services/api';
@@ -62,6 +64,7 @@ type CategoryInput = {
   label: string;
   average: number;
   Icon: ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
+  color: string;
 };
 
 type EntryMode = 'manual' | 'upload';
@@ -69,25 +72,28 @@ type EntryMode = 'manual' | 'upload';
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DAILY_THRESHOLD = 5145.25;
-const DEMO_TODAY      = new Date(2026, 5, 5);
+
+function getToday() { return new Date(); }
 
 const commonCategories: CategoryInput[] = [
-  { key: 'person',  label: 'Person-to-Person', average: 2100, Icon: Users       },
-  { key: 'pos',     label: 'POS Purchase',      average: 3400, Icon: ShoppingBag },
-  { key: 'data',    label: 'Data',              average: 1200, Icon: Wifi        },
-  { key: 'airtime', label: 'Airtime',           average: 850,  Icon: Phone       },
-  { key: 'food',    label: 'Food & Dining',     average: 2850, Icon: Utensils    },
-  { key: 'online',  label: 'Online Payment',    average: 4250, Icon: Globe       },
+  { key: 'person',  label: 'Person-to-Person', average: 2100, Icon: Users,       color: '#7B61FF' },
+  { key: 'pos',     label: 'POS Purchase',      average: 3400, Icon: ShoppingBag, color: '#4FC3F7' },
+  { key: 'data',    label: 'Data',              average: 1200, Icon: Wifi,        color: '#00E676' },
+  { key: 'airtime', label: 'Airtime',           average: 850,  Icon: Phone,       color: '#FFB300' },
+  { key: 'food',    label: 'Food & Dining',     average: 2850, Icon: Utensils,    color: '#EF5350' },
+  { key: 'online',  label: 'Online Payment',    average: 4250, Icon: Globe,       color: '#FF7043' },
+  { key: 'electricity', label: 'Electricity',   average: 5100, Icon: Zap,         color: '#FFD54F' },
+  { key: 'other',   label: 'Other',             average: 1500, Icon: CreditCard,  color: '#78909C' },
 ];
 
-const otherCategories: CategoryInput[] = [
-  { key: 'electricity', label: 'Electricity', average: 5100, Icon: Zap        },
-  { key: 'other',       label: 'Other',       average: 1500, Icon: CreditCard },
-];
+const SAVINGS_CAT: CategoryInput = {
+  key: 'savings', label: 'Savings', average: 0, Icon: TrendingUp, color: '#4FC3F7',
+};
+const INCOME_CAT: CategoryInput = {
+  key: 'income', label: 'Money Received', average: 0, Icon: Banknote, color: '#00E676',
+};
 
-const allSpendKeys: EntryKey[] = [
-  ...commonCategories, ...otherCategories,
-].map((c) => c.key).concat('savings');
+const allSpendKeys: EntryKey[] = commonCategories.map((c) => c.key).concat('savings');
 
 const fmtWeekday  = new Intl.DateTimeFormat('en-US', { weekday: 'short' });
 const fmtDayMonth = new Intl.DateTimeFormat('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -112,7 +118,7 @@ function addDays(date: Date, n: number) {
 }
 
 function formatDateLabel(date: Date) {
-  const prefix = dateKey(date) === dateKey(DEMO_TODAY) ? 'Today · ' : '';
+  const prefix = dateKey(date) === dateKey(getToday()) ? 'Today · ' : '';
   return `${prefix}${fmtWeekday.format(date)}, ${fmtDayMonth.format(date)}`;
 }
 
@@ -128,34 +134,9 @@ function spendPalette(total: number) {
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function LogScreen() {
-  const insets    = useSafeAreaInsets();
-  const scrollRef = useRef<ScrollView>(null);
-  
-  // ── FIX: one stable Map for all refs — never recreated, never causes re-renders ──
-  // Using a Map instead of a plain object + useCallback factories means each
-  // TextInput gets the same ref-setter function object across every render.
-  // React Native calls the ref callback only when the node mounts/unmounts, not
-  // on every render, so this stops the cascade that was jumping focus.
-  const inputRefs = useRef<Map<string, TextInput | null>>(new Map());
-
-  // Stable setter factory — returns the same function for a given key because
-  // the Map reference never changes. Individual setters are cached in a separate
-  // ref so the object identity is stable across renders.
-  const refSetterCache = useRef<Map<string, (node: TextInput | null) => void>>(new Map());
-  const getRefSetter = useCallback((key: string) => {
-    if (!refSetterCache.current.has(key)) {
-      refSetterCache.current.set(key, (node: TextInput | null) => {
-        inputRefs.current.set(key, node);
-      });
-    }
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    return refSetterCache.current.get(key)!;
-  }, []); // empty deps — this never changes
-
-  // ── FIX: focusInput reads from the stable Map ──────────────────────────────
-  const focusInput = useCallback((key: EntryKey) => {
-    inputRefs.current.get(key)?.focus();
-  }, []);
+  const insets      = useSafeAreaInsets();
+  const scrollRef   = useRef<ScrollView>(null);
+  const router = useRouter();
 
   const totalPulse     = useRef(new Animated.Value(1)).current;
   const dangerPulse    = useRef(new Animated.Value(1)).current;
@@ -164,13 +145,13 @@ export default function LogScreen() {
   const warningShake   = useRef(new Animated.Value(0)).current;
   const modeSwitchAnim = useRef(new Animated.Value(0)).current;
 
-  const [selectedDate,   setSelectedDate]   = useState(DEMO_TODAY);
-  const [datePickerOpen, setDatePickerOpen] = useState(false);
-  const [otherOpen,      setOtherOpen]      = useState(false);
-  const [focusedKey,     setFocusedKey]     = useState<EntryKey | null>(null);
-  const [saving,         setSaving]         = useState(false);
-  const [successVisible, setSuccessVisible] = useState(false);
-  const [entryMode,      setEntryMode]      = useState<EntryMode>('manual');
+  const [selectedDate,    setSelectedDate]    = useState(() => getToday());
+  const [datePickerOpen,  setDatePickerOpen]  = useState(false);
+  const [saving,          setSaving]          = useState(false);
+  const [successVisible,  setSuccessVisible]  = useState(false);
+  const [entryMode,       setEntryMode]       = useState<EntryMode>('manual');
+  const [activeCategory,  setActiveCategory]  = useState<CategoryInput | null>(null);
+  const [sheetVisible,    setSheetVisible]    = useState(false);
 
   const { uploadState, pickAndUpload, reset: resetUpload } = useUploadStatement();
 
@@ -234,21 +215,17 @@ export default function LogScreen() {
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
-  // ── FIX: updateValue uses functional setState so it never needs `values`
-  // in its dependency array, meaning it's truly stable across renders.
-  // Previously it closed over `values` which changed on every keystroke,
-  // invalidating the function reference and causing re-renders in children.
   const updateValue = useCallback((key: EntryKey, value: string) => {
     setValues((prev) => ({
       ...prev,
       [key]: value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1'),
     }));
-  }, []); // stable — no deps needed with functional update
+  }, []);
 
   const moveDay = useCallback((n: number) => {
     setSelectedDate((prev) => {
       const next = addDays(prev, n);
-      return next > DEMO_TODAY ? prev : next;
+      return dateKey(next) > dateKey(getToday()) ? prev : next;
     });
   }, []);
 
@@ -262,10 +239,14 @@ export default function LogScreen() {
     }).start();
   }, [modeSwitchAnim]);
 
+  const openSheet = useCallback((cat: CategoryInput) => {
+    setActiveCategory(cat);
+    setSheetVisible(true);
+  }, []);
+
   const saveEntry = useCallback(async () => {
     if (!hasData || saving) return;
     setSaving(true);
-
     try {
       await postLog({
         date: dateKey(selectedDate),
@@ -275,17 +256,16 @@ export default function LogScreen() {
         airtime_spend:       parseAmount(values.airtime),
         food_spend:          parseAmount(values.food),
         online_spend:        parseAmount(values.online),
-        family_spend:        0,           // no UI field yet
+        family_spend:        0,
         electricity_spend:   parseAmount(values.electricity),
-        subscription_spend:  0,           // no UI field yet
-        loan_spend:          0,           // no UI field yet
+        subscription_spend:  0,
+        loan_spend:          0,
         other_spend:         parseAmount(values.other),
         savings_out:         parseAmount(values.savings),
         total_credit:        parseAmount(values.income),
       });
       setSuccessVisible(true);
     } catch (e) {
-      // surface the error — you can swap this for a toast later
       console.error('[saveEntry]', e);
       Alert.alert('Save failed', e instanceof Error ? e.message : 'Unknown error');
     } finally {
@@ -295,8 +275,6 @@ export default function LogScreen() {
 
   const clearForm = useCallback(() => {
     setValues({ person: '', pos: '', data: '', airtime: '', food: '', online: '', electricity: '', other: '', savings: '', income: '' });
-    setFocusedKey(null);
-    setOtherOpen(false);
     resetUpload();
     scrollRef.current?.scrollTo({ y: 0, animated: true });
   }, [resetUpload]);
@@ -308,52 +286,32 @@ export default function LogScreen() {
 
   const pillLeft = modeSwitchAnim.interpolate({ inputRange: [0, 1], outputRange: ['2%', '50%'] });
 
-  // ── Stable focus/blur handlers per key ────────────────────────────────────
-  // These are defined once outside render (via useCallback with [] deps)
-  // so child components that receive them never re-render just because
-  // the parent rendered. Previously these were inline arrow functions.
-  const handleFocus = useCallback((key: EntryKey) => setFocusedKey(key), []);
-  const handleBlur  = useCallback(() => setFocusedKey(null), []);
-  // ── Debug: track what triggers LogScreen re-renders ─────────────────────────
-const logScreenRenderCount = useRef(0);
-logScreenRenderCount.current += 1;
-
-const prevLogScreenState = useRef<any>({});
-const logScreenState = { focusedKey, values, spendTotal, entryMode, otherOpen, saving };
-const changedLogScreenState: string[] = [];
-for (const [k, v] of Object.entries(logScreenState)) {
-  if (prevLogScreenState.current[k] !== v) changedLogScreenState.push(k);
-}
-prevLogScreenState.current = logScreenState;
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <View style={s.root}>
       <SafeAreaView style={s.safeArea} edges={['top']}>
 
-        {/* Header */}
-        <View style={s.headerBlock}>
-          <Text style={s.screenTitle}>LOG SPEND</Text>
-          <View style={s.dateRow}>
+        <MonikeHeader title="Log Spend" subtitle="Daily spend tracker" />
+        <View style={s.dateRow}>
             <Pressable style={s.dateArrow} onPress={() => moveDay(-1)}>
-              <ChevronLeft size={20} color={MonikeColors.inkSecondary} strokeWidth={2.2} />
+              <ChevronLeft size={18} color={MonikeColors.inkSecondary} strokeWidth={2.2} />
             </Pressable>
             <Pressable style={s.datePill} onPress={() => setDatePickerOpen(true)}>
               <Text style={s.dateText}>{formatDateLabel(selectedDate)}</Text>
-              <ChevronDown size={13} color={MonikeColors.inkMuted} style={{ marginLeft: 4 }} />
+              <ChevronDown size={12} color={MonikeColors.inkMuted} style={{ marginLeft: 4 }} />
             </Pressable>
             <Pressable
               style={s.dateArrow}
-              disabled={dateKey(selectedDate) === dateKey(DEMO_TODAY)}
+              disabled={dateKey(selectedDate) === dateKey(getToday())}
               onPress={() => moveDay(1)}
             >
               <ChevronRight
-                size={20}
-                color={dateKey(selectedDate) === dateKey(DEMO_TODAY) ? MonikeColors.inkGhost : MonikeColors.inkSecondary}
+                size={18}
+                color={dateKey(selectedDate) === dateKey(getToday()) ? MonikeColors.inkGhost : MonikeColors.inkSecondary}
                 strokeWidth={2.2}
               />
             </Pressable>
-          </View>
         </View>
 
         {/* Spend summary card */}
@@ -381,11 +339,11 @@ prevLogScreenState.current = logScreenState;
           <View style={s.modeToggle}>
             <Animated.View style={[s.modePill, { left: pillLeft }]} />
             <TouchableOpacity activeOpacity={0.8} style={s.modeTab} onPress={() => switchMode('manual')}>
-              <PenLine size={14} color={entryMode === 'manual' ? MonikeColors.bgVoid : MonikeColors.inkMuted} strokeWidth={2} />
+              <PenLine size={14} color={entryMode === 'manual' ? '#FFFFFF' : MonikeColors.inkMuted} strokeWidth={2} />
               <Text style={[s.modeTabText, entryMode === 'manual' && s.modeTabTextActive]}>Manual Entry</Text>
             </TouchableOpacity>
             <TouchableOpacity activeOpacity={0.8} style={s.modeTab} onPress={() => switchMode('upload')}>
-              <FileSpreadsheet size={14} color={entryMode === 'upload' ? MonikeColors.bgVoid : MonikeColors.inkMuted} strokeWidth={2} />
+              <FileSpreadsheet size={14} color={entryMode === 'upload' ? '#FFFFFF' : MonikeColors.inkMuted} strokeWidth={2} />
               <Text style={[s.modeTabText, entryMode === 'upload' && s.modeTabTextActive]}>Upload XLSX</Text>
             </TouchableOpacity>
           </View>
@@ -400,67 +358,30 @@ prevLogScreenState.current = logScreenState;
         >
           {entryMode === 'manual' ? (
             <>
-              <SectionLabel icon="●" label="COMMON SPEND" />
-              {commonCategories.map((cat) => (
-                <CategoryRow
-                  key={cat.key}
-                  category={cat}
-                  focused={focusedKey === cat.key}
-                  value={values[cat.key]}
-                  onChange={updateValue}
-                  onFocus={handleFocus}
-                  onBlur={handleBlur}
-                  onPress={focusInput}
-                  refSetter={getRefSetter(cat.key)}
+              {/* Category grid */}
+              <Text style={s.gridLabel}>Spending</Text>
+              <CategoryGrid
+                categories={commonCategories}
+                values={values}
+                onSelect={openSheet}
+              />
+
+              {/* Savings + Income tiles */}
+              <Text style={s.gridLabel}>Savings & Income</Text>
+              <View style={s.specialRow}>
+                <CategoryTile
+                  category={SAVINGS_CAT}
+                  value={values.savings}
+                  onPress={() => openSheet(SAVINGS_CAT)}
+                  flex
                 />
-              ))}
-
-              <Pressable style={s.showMoreRow} onPress={() => setOtherOpen((o) => !o)}>
-                <Text style={s.showMoreText}>{otherOpen ? 'Hide categories' : 'More categories'}</Text>
-                <ChevronDown size={15} color={MonikeColors.inkMuted} style={{ transform: [{ rotate: otherOpen ? '180deg' : '0deg' }] }} />
-              </Pressable>
-
-              {otherOpen && (
-                <>
-                  <SectionLabel icon="◆" label="OTHER" />
-                  {otherCategories.map((cat) => (
-                    <CategoryRow
-                      key={cat.key}
-                      category={cat}
-                      focused={focusedKey === cat.key}
-                      value={values[cat.key]}
-                      onChange={updateValue}
-                      onFocus={handleFocus}
-                      onBlur={handleBlur}
-                      onPress={focusInput}
-                      refSetter={getRefSetter(cat.key)}
-                    />
-                  ))}
-                </>
-              )}
-
-              <View style={s.dividerRow}>
-                <View style={s.dividerLine} />
-                <Text style={s.dividerLabel}>SAVINGS</Text>
-                <View style={s.dividerLine} />
+                <CategoryTile
+                  category={INCOME_CAT}
+                  value={values.income}
+                  onPress={() => openSheet(INCOME_CAT)}
+                  flex
+                />
               </View>
-              <SavingsRow
-                focused={focusedKey === 'savings'}
-                value={values.savings}
-                onChange={updateValue}
-                onFocus={handleFocus}
-                onBlur={handleBlur}
-                onPress={focusInput}
-                refSetter={getRefSetter('savings')}
-              />
-
-              <IncomeRow
-                value={values.income}
-                onChange={updateValue}
-                onFocus={handleFocus}
-                onBlur={handleBlur}
-                refSetter={getRefSetter('income')}
-              />
             </>
           ) : (
             <UploadPanel
@@ -480,10 +401,10 @@ prevLogScreenState.current = logScreenState;
           onPress={saveEntry}
         >
           {saving ? (
-            <ActivityIndicator size="small" color={MonikeColors.bgVoid} />
+            <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
             <View style={s.saveButtonInner}>
-              <Text style={[s.saveText, !hasData && s.saveTextMuted]}>SAVE ENTRY</Text>
+              <Text style={[s.saveText, !hasData && s.saveTextMuted]}>Save Entry</Text>
               {hasData && spendTotal > 0 && (
                 <View style={s.saveBadge}>
                   <Text style={s.saveBadgeText}>₦{formatNaira(spendTotal, spendTotal % 1 ? 2 : 0)}</Text>
@@ -503,6 +424,14 @@ prevLogScreenState.current = logScreenState;
         onSelect={(d) => { setSelectedDate(d); setDatePickerOpen(false); }}
       />
 
+      <AmountBottomSheet
+        category={activeCategory}
+        visible={sheetVisible}
+        initialValue={activeCategory ? (values[activeCategory.key] ?? '') : ''}
+        onClose={() => setSheetVisible(false)}
+        onConfirm={(key, value) => { updateValue(key, value); setSheetVisible(false); }}
+      />
+
       <SuccessSheet
         high={palette.high}
         total={spendTotal}
@@ -516,225 +445,214 @@ prevLogScreenState.current = logScreenState;
   );
 }
 
-// ─── SectionLabel ─────────────────────────────────────────────────────────────
+// ─── CategoryGrid ─────────────────────────────────────────────────────────────
 
-function SectionLabel({ icon, label }: { icon: string; label: string }) {
+function CategoryGrid({
+  categories,
+  values,
+  onSelect,
+}: {
+  categories: CategoryInput[];
+  values: Record<EntryKey, string>;
+  onSelect: (cat: CategoryInput) => void;
+}) {
+  const rows: CategoryInput[][] = [];
+  for (let i = 0; i < categories.length; i += 2) {
+    rows.push(categories.slice(i, i + 2));
+  }
   return (
-    <View style={s.sectionLabelRow}>
-      <Text style={s.sectionLabelIcon}>{icon}</Text>
-      <Text style={s.sectionLabel}>{label}</Text>
+    <View style={s.grid}>
+      {rows.map((pair, i) => (
+        <View key={i} style={s.gridRow}>
+          {pair.map((cat) => (
+            <CategoryTile
+              key={cat.key}
+              category={cat}
+              value={values[cat.key]}
+              onPress={() => onSelect(cat)}
+              flex
+            />
+          ))}
+          {pair.length < 2 && <View style={{ flex: 1 }} />}
+        </View>
+      ))}
     </View>
   );
 }
 
-// ─── CategoryRow ──────────────────────────────────────────────────────────────
-// FIX: onFocus and onBlur now accept (key) and () signatures matching the
-// stable handlers above. onPress accepts the key directly.
-// The row's Pressable only covers the non-input area so it doesn't
-// fight with the TextInput for touch events.
+// ─── CategoryTile ─────────────────────────────────────────────────────────────
 
-// ─── CategoryRow ──────────────────────────────────────────────────────────────
-
-// ─── CategoryRow ──────────────────────────────────────────────────────────────
-
-function CategoryRow({
+function CategoryTile({
   category,
-  focused,
-  onChange,
-  onFocus,
-  onBlur,
-  onPress,
-  refSetter,
   value,
+  onPress,
+  flex,
 }: {
   category: CategoryInput;
-  focused: boolean;
-  onChange: (key: EntryKey, value: string) => void;
-  onFocus: (key: EntryKey) => void;
-  onBlur: () => void;
-  onPress: (key: EntryKey) => void;
-  refSetter: (node: TextInput | null) => void;
   value: string;
+  onPress: () => void;
+  flex?: boolean;
 }) {
   const entered = parseAmount(value) > 0;
-  const Icon    = category.Icon;
+  const Icon = category.Icon;
+  const scale = useRef(new Animated.Value(1)).current;
 
-  const renderCount = useRef(0);
-  renderCount.current += 1;
-
-  // Track which props changed between renders
-  const prevProps = useRef<any>({});
-  const changedProps: string[] = [];
-  const cur = { focused, onChange, onFocus, onBlur, onPress, refSetter, value, 'category.key': category.key };
-  for (const [k, v] of Object.entries(cur)) {
-    if (prevProps.current[k] !== v) changedProps.push(k);
-  }
-  prevProps.current = cur;
+  const pressIn  = () => Animated.timing(scale, { toValue: 0.95, duration: 60, useNativeDriver: true }).start();
+  const pressOut = () => Animated.spring(scale,  { toValue: 1, speed: 22, bounciness: 6, useNativeDriver: true }).start();
 
   return (
-    <View style={[s.categoryRow, entered && s.categoryRowEntered, focused && s.categoryRowFocused]}>
-      <Pressable
-        style={s.categoryPressArea}
-        onPress={() => onPress(category.key)}
-      >
-        <View style={[s.categoryIconShell, entered && s.categoryIconShellActive]}>
-          <Icon size={18} color={entered ? MonikeColors.accentPulse : MonikeColors.inkSecondary} strokeWidth={1.9} />
-        </View>
-        <View style={s.categoryCopy}>
-          <Text style={[s.categoryName, entered && s.categoryNameActive]}>{category.label}</Text>
-          <Text style={s.categoryAverage}>avg ₦{formatNaira(category.average)}</Text>
-        </View>
-      </Pressable>
-      <CurrencyInput
-        focused={focused}
-        value={value}
-        onChange={(v) => onChange(category.key, v)}
-        onFocus={() => {
-          onFocus(category.key);
-        }}
-        onBlur={() => {
-          onBlur();
-        }}
-        refSetter={refSetter}
-        tint={MonikeColors.accentPulse}
-      />
-    </View>
-  );
-}
-
-// ─── SavingsRow ───────────────────────────────────────────────────────────────
-
-function SavingsRow({
-  focused,
-  onChange,
-  onFocus,
-  onBlur,
-  onPress,
-  refSetter,
-  value,
-}: {
-  focused: boolean;
-  onChange: (key: EntryKey, value: string) => void;
-  onFocus: (key: EntryKey) => void;
-  onBlur: () => void;
-  onPress: (key: EntryKey) => void;
-  refSetter: (node: TextInput | null) => void;
-  value: string;
-}) {
-  // ── FIX: same as CategoryRow — memoize the 'savings' key closures
-  const handleFocus  = useCallback(() => onFocus('savings'),  [onFocus]);
-  const handlePress  = useCallback(() => onPress('savings'),  [onPress]);
-  const handleChange = useCallback((v: string) => onChange('savings', v), [onChange]);
-
-  return (
-    <View style={[s.categoryRow, s.savingsRow, parseAmount(value) > 0 && s.savingsRowEntered, focused && s.savingsRowFocused]}>
-      <Pressable style={s.categoryPressArea} onPress={handlePress}>
-        <View style={[s.categoryIconShell, s.savingsIconShell]}>
-          <TrendingUp size={18} color={MonikeColors.signalBlue} strokeWidth={2} />
-        </View>
-        <View style={s.categoryCopy}>
-          <Text style={s.savingsLabel}>Moved to Savings</Text>
-          <Text style={s.categoryAverage}>future you says thanks</Text>
-        </View>
-      </Pressable>
-      <CurrencyInput
-        focused={focused}
-        value={value}
-        onChange={handleChange}
-        onFocus={handleFocus}
-        onBlur={onBlur}
-        refSetter={refSetter}
-        tint={MonikeColors.signalBlue}
-      />
-    </View>
-  );
-}
-
-function CurrencyInput({
-  focused,
-  onBlur,
-  onChange,
-  onFocus,
-  refSetter,
-  tint,
-  value,
-}: {
-  focused: boolean;
-  onBlur: () => void;
-  onChange: (v: string) => void;
-  onFocus: () => void;
-  refSetter: (n: TextInput | null) => void;
-  tint: string;
-  value: string;
-}) {
-  const entered = parseAmount(value) > 0;
-  return (
-    <View
-      style={[
-        s.inputShell,
-        focused && { borderColor: tint },
-        entered && s.inputShellEntered,
-      ]}
-      // ── FIX: box-none lets touch events pass through to the TextInput child
-      pointerEvents="box-none"
+    <Pressable
+      onPress={onPress}
+      onPressIn={pressIn}
+      onPressOut={pressOut}
+      style={flex ? { flex: 1 } : undefined}
     >
-      <Text style={[s.currencyPrefix, entered && { color: tint }]}>₦</Text>
-      <TextInput
-        ref={refSetter}
-        value={value}
-        onChangeText={onChange}
-        onFocus={onFocus}
-        onBlur={onBlur}
-        keyboardType="decimal-pad"
-        placeholder="0"
-        placeholderTextColor={MonikeColors.inkGhost}
-        style={[s.amountInput, entered && { color: tint }]}
-      />
-    </View>
+      <Animated.View
+        style={[
+          s.tile,
+          flex && s.tileFlex,
+          entered && { borderColor: category.color + '55', backgroundColor: category.color + '0C' },
+          { transform: [{ scale }] },
+        ]}
+      >
+        <View style={[s.tileIcon, { backgroundColor: entered ? category.color + '25' : MonikeColors.bgElevated }]}>
+          <Icon size={20} color={entered ? category.color : MonikeColors.inkMuted} strokeWidth={1.9} />
+        </View>
+        <Text style={[s.tileName, entered && { color: MonikeColors.inkPrimary }]} numberOfLines={2}>
+          {category.label}
+        </Text>
+        {entered ? (
+          <Text style={[s.tileAmount, { color: category.color }]}>
+            ₦{formatNaira(parseAmount(value))}
+          </Text>
+        ) : (
+          <Text style={s.tilePlaceholder}>Tap to add</Text>
+        )}
+      </Animated.View>
+    </Pressable>
   );
 }
 
-// ─── IncomeRow ────────────────────────────────────────────────────────────────
+// ─── AmountBottomSheet ────────────────────────────────────────────────────────
 
-function IncomeRow({
-  onChange,
-  onFocus,
-  onBlur,
-  refSetter,
-  value,
+const PAD_KEYS = [['7','8','9'],['4','5','6'],['1','2','3'],['.','0','⌫']];
+
+function AmountBottomSheet({
+  category,
+  visible,
+  initialValue,
+  onClose,
+  onConfirm,
 }: {
-  onChange: (key: EntryKey, value: string) => void;
-  onFocus: (key: EntryKey) => void;
-  onBlur: () => void;
-  refSetter: (n: TextInput | null) => void;
-  value: string;
+  category: CategoryInput | null;
+  visible: boolean;
+  initialValue: string;
+  onClose: () => void;
+  onConfirm: (key: EntryKey, value: string) => void;
 }) {
-  const [isFocused, setIsFocused] = useState(false);
-  const amount = parseAmount(value);
+  const [display, setDisplay] = useState('');
+  const sheetY  = useRef(new Animated.Value(600)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+  const insets  = useSafeAreaInsets();
+
+  useEffect(() => {
+    if (visible) {
+      setDisplay(initialValue || '');
+      sheetY.setValue(600);
+      opacity.setValue(0);
+      Animated.parallel([
+        Animated.spring(sheetY,  { toValue: 0, speed: 16, bounciness: 3, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 1, duration: 180, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(sheetY,  { toValue: 600, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0,   duration: 160, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      ]).start();
+    }
+  }, [visible]);
+
+  const handleKey = useCallback((key: string) => {
+    setDisplay((prev) => {
+      if (key === '⌫') return prev.slice(0, -1);
+      if (key === '.' && prev.includes('.')) return prev;
+      if (key === '.' && prev === '') return '0.';
+      if (prev.includes('.') && (prev.split('.')[1]?.length ?? 0) >= 2) return prev;
+      if (prev === '0' && key !== '.') return key;
+      return prev + key;
+    });
+  }, []);
+
+  if (!category) return null;
+
+  const Icon   = category.Icon;
+  const amount = parseAmount(display);
+
   return (
-    <View style={[s.incomeCard, isFocused && s.incomeCardFocused]}>
-      <View style={s.incomeHeaderRow}>
-        <View style={s.incomeIconDot} />
-        <Text style={s.incomeHeader}>MONEY RECEIVED TODAY</Text>
-      </View>
-      <View style={[s.incomeField, isFocused && s.incomeFieldFocused]} pointerEvents="box-none">
-        <Text style={s.incomePrefix}>₦</Text>
-        <TextInput
-          ref={refSetter}
-          value={value}
-          onChangeText={(v) => onChange('income', v.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1'))}
-          onFocus={() => { setIsFocused(true); onFocus('income'); }}
-          onBlur={() =>  { setIsFocused(false); onBlur(); }}
-          keyboardType="decimal-pad"
-          placeholder="0"
-          placeholderTextColor={MonikeColors.inkMuted}
-          style={s.incomeInput}
-          caretHidden={false}
-          contextMenuHidden={false}
-        />
-      </View>
-      {amount > 0 && <Text style={s.incomeHint}>Received ₦{formatNaira(amount)} today</Text>}
-    </View>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+      <Pressable style={s.sheetScrim} onPress={onClose}>
+        <Animated.View style={[StyleSheet.absoluteFill, s.sheetBackdrop, { opacity }]} />
+      </Pressable>
+
+      <Animated.View style={[s.amountSheet, { paddingBottom: insets.bottom + 16, transform: [{ translateY: sheetY }] }]}>
+        <View style={s.sheetHandle} />
+
+        {/* Category header */}
+        <View style={s.sheetCatRow}>
+          <View style={[s.sheetCatIcon, { backgroundColor: category.color + '25' }]}>
+            <Icon size={20} color={category.color} strokeWidth={1.9} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={s.sheetCatName}>{category.label}</Text>
+            {category.average > 0 && (
+              <Text style={s.sheetCatAvg}>avg ₦{formatNaira(category.average)} / day</Text>
+            )}
+          </View>
+          <Pressable style={s.sheetCloseBtn} onPress={onClose} hitSlop={12}>
+            <X size={15} color={MonikeColors.inkMuted} strokeWidth={2} />
+          </Pressable>
+        </View>
+
+        {/* Amount display */}
+        <View style={s.sheetAmountRow}>
+          <Text style={s.sheetCurrency}>₦</Text>
+          <Text style={[s.sheetAmount, { color: amount > 0 ? category.color : MonikeColors.inkGhost }]}>
+            {display || '0'}
+          </Text>
+        </View>
+
+        {/* Numpad */}
+        <View style={s.numpad}>
+          {PAD_KEYS.map((row, ri) => (
+            <View key={ri} style={s.numpadRow}>
+              {row.map((key) => (
+                <Pressable
+                  key={key}
+                  style={({ pressed }) => [s.numKey, pressed && s.numKeyPressed]}
+                  onPress={() => handleKey(key)}
+                >
+                  {key === '⌫' ? (
+                    <Delete size={20} color={MonikeColors.inkSecondary} strokeWidth={1.8} />
+                  ) : (
+                    <Text style={s.numKeyText}>{key}</Text>
+                  )}
+                </Pressable>
+              ))}
+            </View>
+          ))}
+        </View>
+
+        {/* Confirm */}
+        <Pressable
+          style={[s.sheetConfirm, { backgroundColor: amount > 0 ? category.color : MonikeColors.bgElevated }]}
+          onPress={() => onConfirm(category.key, display)}
+        >
+          <Text style={[s.sheetConfirmText, amount === 0 && { color: MonikeColors.inkMuted }]}>
+            {amount > 0 ? `Confirm  ₦${formatNaira(amount)}` : 'Skip'}
+          </Text>
+        </Pressable>
+      </Animated.View>
+    </Modal>
   );
 }
 
@@ -755,14 +673,14 @@ function UploadPanel({
 
       {uploadState.status === 'picking' && (
         <View style={s.statusCard}>
-          <ActivityIndicator color={MonikeColors.accentPulse} size="small" />
+          <ActivityIndicator color={MonikeColors.accentOrange} size="small" />
           <Text style={s.statusText}>Opening file picker…</Text>
         </View>
       )}
 
       {uploadState.status === 'uploading' && (
         <View style={s.statusCard}>
-          <ActivityIndicator color={MonikeColors.accentPulse} />
+          <ActivityIndicator color={MonikeColors.accentOrange} />
           <View style={s.statusCopy}>
             <Text style={s.statusText}>Uploading</Text>
             <Text style={s.statusSub}>{uploadState.filename}</Text>
@@ -811,7 +729,7 @@ function DropZone({ onPress }: { onPress: () => void }) {
   return (
     <Pressable style={s.dropZone} onPress={onPress}>
       <View style={s.uploadIconRing}>
-        <Upload size={28} color={MonikeColors.accentPulse} strokeWidth={1.8} />
+        <Upload size={28} color={MonikeColors.accentOrange} strokeWidth={1.8} />
       </View>
       <Text style={s.dropZoneTitle}>Drop your statement here</Text>
       <Text style={s.dropZoneSub}>or tap to browse files</Text>
@@ -825,23 +743,14 @@ function DropZone({ onPress }: { onPress: () => void }) {
 
 // ─── ProcessingCard ───────────────────────────────────────────────────────────
 
-function ProcessingCard({
-  filename,
-  total,
-  dedup,
-  progress,
-}: {
-  filename: string;
-  total: number;
-  dedup: UploadDedup | null;
-  progress: UploadProgress | null;
+function ProcessingCard({ filename, total, dedup, progress }: {
+  filename: string; total: number; dedup: UploadDedup | null; progress: UploadProgress | null;
 }) {
   const barAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    const pct = progress?.pct ?? 0;
     Animated.timing(barAnim, {
-      toValue: pct,
+      toValue: progress?.pct ?? 0,
       duration: 280,
       easing: Easing.out(Easing.quad),
       useNativeDriver: false,
@@ -849,7 +758,6 @@ function ProcessingCard({
   }, [barAnim, progress?.pct]);
 
   const barWidth = barAnim.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] });
-
   const phaseLabel =
     !progress              ? 'Analyzing file…'
     : progress.phase === 'transactions' ? `Importing transactions (${progress.done} / ${progress.total})`
@@ -858,7 +766,7 @@ function ProcessingCard({
   return (
     <View style={s.processingCard}>
       <View style={s.processingHeader}>
-        <ActivityIndicator size="small" color={MonikeColors.accentPulse} />
+        <ActivityIndicator size="small" color={MonikeColors.accentOrange} />
         <View style={s.processingHeaderCopy}>
           <Text style={s.processingTitle}>Processing statement</Text>
           <Text style={s.processingFilename} numberOfLines={1}>{filename}</Text>
@@ -892,9 +800,7 @@ function ProcessingCard({
 
 // ─── UploadSuccessCard ────────────────────────────────────────────────────────
 
-function UploadSuccessCard({
-  filename, onReset, result,
-}: {
+function UploadSuccessCard({ filename, onReset, result }: {
   filename: string; onReset: () => void; result: UploadResult;
 }) {
   const stats: Array<{ label: string; value: string; accent?: boolean }> = [
@@ -902,7 +808,7 @@ function UploadSuccessCard({
     { label: 'New days added',        value: String(result.new_days_inserted),               accent: true },
     { label: 'Days updated',          value: String(result.days_updated) },
     { label: 'Duplicates skipped',    value: String(result.duplicate_transactions_skipped) },
-    { label: 'High-spend days found', value: String(result.high_spend_days_detected),       accent: result.high_spend_days_detected > 0 },
+    { label: 'High-spend days found', value: String(result.high_spend_days_detected), accent: result.high_spend_days_detected > 0 },
   ];
   return (
     <View style={s.uploadSuccessCard}>
@@ -964,21 +870,24 @@ function DatePickerModal({ onClose, onSelect, selectedDate, visible }: {
   onClose: () => void; onSelect: (d: Date) => void;
   selectedDate: Date; visible: boolean;
 }) {
-  const dates = Array.from({ length: 7 }, (_, i) => addDays(DEMO_TODAY, i - 6)).reverse();
+  const today = useMemo(() => getToday(), []);
+  const dates = Array.from({ length: 14 }, (_, i) => addDays(today, i - 13)).reverse();
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={s.modalScrim} onPress={onClose}>
         <View style={s.calendarCard}>
           <Text style={s.calendarTitle}>SELECT DATE</Text>
-          {dates.map((date) => {
-            const selected = dateKey(date) === dateKey(selectedDate);
-            return (
-              <Pressable key={dateKey(date)} style={[s.dateOption, selected && s.dateOptionSelected]} onPress={() => onSelect(date)}>
-                {selected && <View style={s.dateOptionDot} />}
-                <Text style={[s.dateOptionText, selected && s.dateOptionTextSelected]}>{formatDateLabel(date)}</Text>
-              </Pressable>
-            );
-          })}
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {dates.map((date) => {
+              const selected = dateKey(date) === dateKey(selectedDate);
+              return (
+                <Pressable key={dateKey(date)} style={[s.dateOption, selected && s.dateOptionSelected]} onPress={() => onSelect(date)}>
+                  {selected && <View style={s.dateOptionDot} />}
+                  <Text style={[s.dateOptionText, selected && s.dateOptionTextSelected]}>{formatDateLabel(date)}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
         </View>
       </Pressable>
     </Modal>
@@ -1025,96 +934,129 @@ const s = StyleSheet.create({
   root:     { flex: 1, backgroundColor: MonikeColors.bgVoid },
   safeArea: { flex: 1, backgroundColor: MonikeColors.bgVoid },
 
-  headerBlock: { paddingHorizontal: ScreenPadding, paddingTop: 10, paddingBottom: 6 },
-  screenTitle: { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 20, fontWeight: '800', letterSpacing: 1.2 },
-  dateRow:  { marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  dateArrow:{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  datePill: { flex: 1, height: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
-  dateText: { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 14, fontWeight: '600' },
+  // ── Date row ──────────────────────────────────────────────────────────────
+  dateRow:       { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: ScreenPadding, paddingVertical: 10, backgroundColor: MonikeColors.bgElevated, borderBottomWidth: 1, borderBottomColor: MonikeColors.inkGhost },
+  dateArrow:     { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: MonikeColors.inkGhost },
+  datePill:      { flex: 1, height: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: MonikeColors.inkGhost },
+  dateText:      { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 13, fontWeight: '600' },
 
-  totalCard: { marginHorizontal: ScreenPadding, borderRadius: CardRadius, backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: MonikeColors.inkGhost, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
-  totalCardDanger: { backgroundColor: '#1E0E0F', borderColor: '#FF3D3D44' },
-  totalLeft: { flex: 1 },
-  totalLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 9, letterSpacing: 1.2, marginBottom: 4 },
-  totalValue: { fontFamily: Fonts.mono, fontSize: 34, fontWeight: '700', letterSpacing: -0.5 },
-  progressTrack: { height: 5, borderRadius: 999, backgroundColor: MonikeColors.bgElevated, overflow: 'hidden', marginTop: 10 },
-  progressFill:  { height: '100%', borderRadius: 999 },
-  totalRight:    { alignItems: 'flex-end', gap: 4 },
-  limitBadge:    { borderWidth: 1.5, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
-  limitBadgeText:{ fontFamily: Fonts.mono, fontSize: 14, fontWeight: '700' },
-  limitText:     { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 10 },
-  categoryCount: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 10 },
+  // ── Total card ────────────────────────────────────────────────────────────
+  totalCard:      { marginHorizontal: ScreenPadding, borderRadius: CardRadius, backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: MonikeColors.inkGhost, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  totalCardDanger:{ backgroundColor: '#1E0E0F', borderColor: '#FF3D3D44' },
+  totalLeft:      { flex: 1 },
+  totalLabel:     { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 9, letterSpacing: 1.2, marginBottom: 4 },
+  totalValue:     { fontFamily: Fonts.mono, fontSize: 34, fontWeight: '700', letterSpacing: -0.5 },
+  progressTrack:  { height: 5, borderRadius: 999, backgroundColor: MonikeColors.bgElevated, overflow: 'hidden', marginTop: 10 },
+  progressFill:   { height: '100%', borderRadius: 999 },
+  totalRight:     { alignItems: 'flex-end', gap: 4 },
+  limitBadge:     { borderWidth: 1.5, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
+  limitBadgeText: { fontFamily: Fonts.mono, fontSize: 14, fontWeight: '700' },
+  limitText:      { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 10 },
+  categoryCount:  { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 10 },
 
+  // ── Mode toggle ───────────────────────────────────────────────────────────
   modeToggleWrap: { paddingHorizontal: ScreenPadding, marginBottom: 4 },
-  modeToggle: { height: 44, borderRadius: 14, backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: MonikeColors.inkGhost, flexDirection: 'row', position: 'relative', overflow: 'hidden' },
-  modePill:   { position: 'absolute', top: 4, bottom: 4, width: '48%', borderRadius: 10, backgroundColor: MonikeColors.accentPulse },
-  modeTab:    { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, zIndex: 1 },
-  modeTabText:       { color: MonikeColors.inkMuted, fontFamily: Fonts.heading, fontSize: 12, fontWeight: '600' },
-  modeTabTextActive: { color: MonikeColors.bgVoid },
+  modeToggle:     { height: 46, borderRadius: 14, backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: MonikeColors.inkGhost, flexDirection: 'row', position: 'relative', overflow: 'hidden' },
+  modePill:       { position: 'absolute', top: 4, bottom: 4, width: '48%', borderRadius: 10, backgroundColor: MonikeColors.accentOrange },
+  modeTab:        { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, zIndex: 1 },
+  modeTabText:        { color: MonikeColors.inkMuted, fontFamily: Fonts.heading, fontSize: 12, fontWeight: '600' },
+  modeTabTextActive:  { color: '#FFFFFF' },
 
-  content: { paddingHorizontal: ScreenPadding, paddingTop: 12 },
+  // ── Scroll content ────────────────────────────────────────────────────────
+  content: { paddingHorizontal: ScreenPadding, paddingTop: 12, gap: 8 },
 
-  sectionLabelRow:  { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12, marginBottom: 8 },
-  sectionLabelIcon: { color: MonikeColors.accentPulse, fontSize: 7 },
-  sectionLabel:     { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 9, fontWeight: '700', letterSpacing: 1.4 },
+  // ── Category grid ─────────────────────────────────────────────────────────
+  gridLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 10, fontWeight: '700', letterSpacing: 1.2, marginTop: 8, marginBottom: 4 },
+  grid:      { gap: 10 },
+  gridRow:   { flexDirection: 'row', gap: 10 },
+  specialRow:{ flexDirection: 'row', gap: 10, marginBottom: 8 },
 
-  // FIX: categoryRow is now a plain View; only categoryPressArea is a Pressable
-  categoryRow:         { minHeight: 62, borderRadius: 14, flexDirection: 'row', alignItems: 'center', paddingRight: 12, marginBottom: 6, backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: MonikeColors.inkGhost },
-  categoryRowEntered:  { borderColor: MonikeColors.accentPulse + '55', backgroundColor: MonikeColors.bgStripe },
-  categoryRowFocused:  { borderColor: MonikeColors.accentPulse + '88' },
-  // pressable covers just the icon+label, not the input side
-  categoryPressArea:   { flex: 1, flexDirection: 'row', alignItems: 'center', paddingLeft: 12, paddingVertical: 10 },
-  categoryIconShell:   { width: 38, height: 38, borderRadius: 11, backgroundColor: MonikeColors.bgElevated, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  categoryIconShellActive: { backgroundColor: MonikeColors.accentPulse + '18' },
-  categoryCopy:        { flex: 1, minWidth: 0 },
-  categoryName:        { color: MonikeColors.inkSecondary, fontFamily: Fonts.heading, fontSize: 13, fontWeight: '600' },
-  categoryNameActive:  { color: MonikeColors.inkPrimary },
-  categoryAverage:     { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 10, marginTop: 3 },
+  tile: {
+    backgroundColor: MonikeColors.bgSurface,
+    borderWidth: 1,
+    borderColor: MonikeColors.inkGhost,
+    borderRadius: 20,
+    padding: 16,
+    gap: 10,
+    minHeight: 120,
+    justifyContent: 'space-between',
+  },
+  tileFlex: { flex: 1 },
+  tileIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tileName: {
+    color: MonikeColors.inkSecondary,
+    fontFamily: Fonts.heading,
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 17,
+  },
+  tileAmount: {
+    fontFamily: Fonts.mono,
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: -0.4,
+  },
+  tilePlaceholder: {
+    color: MonikeColors.inkGhost,
+    fontFamily: Fonts.sans,
+    fontSize: 11,
+  },
 
-  inputShell:        { width: 116, height: 42, borderRadius: 10, backgroundColor: MonikeColors.bgElevated, borderWidth: 1, borderColor: MonikeColors.inkGhost, flexDirection: 'row', alignItems: 'center', paddingLeft: 10, paddingRight: 6 },
-  inputShellFocused: { shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.25, shadowRadius: 6},
-  inputShellEntered: { backgroundColor: 'transparent' },
-  currencyPrefix:    { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 15 },
-  amountInput:       { flex: 1, color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 15, fontWeight: '700', textAlign: 'right', paddingVertical: 0 },
+  // ── Amount bottom sheet ───────────────────────────────────────────────────
+  sheetScrim:   { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  sheetBackdrop:{ backgroundColor: 'rgba(0,0,0,0.72)' },
+  amountSheet:  {
+    position: 'absolute',
+    left: 0, right: 0, bottom: 0,
+    backgroundColor: MonikeColors.bgElevated,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderTopWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+    paddingHorizontal: ScreenPadding,
+    paddingTop: 10,
+  },
+  sheetHandle:  { width: 40, height: 4, borderRadius: 2, backgroundColor: MonikeColors.inkGhost, alignSelf: 'center', marginBottom: 20 },
+  sheetCatRow:  { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
+  sheetCatIcon: { width: 46, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  sheetCatName: { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 16, fontWeight: '700' },
+  sheetCatAvg:  { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11, marginTop: 2 },
+  sheetCloseBtn:{ width: 34, height: 34, borderRadius: 10, backgroundColor: MonikeColors.bgSurface, alignItems: 'center', justifyContent: 'center' },
 
-  showMoreRow:  { height: 42, borderRadius: 11, borderWidth: 1, borderColor: MonikeColors.inkGhost, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, marginTop: 2, marginBottom: 4 },
-  showMoreText: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 12, fontWeight: '600' },
+  sheetAmountRow:{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', paddingVertical: 12, gap: 3 },
+  sheetCurrency: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 28, fontWeight: '700', marginBottom: 10 },
+  sheetAmount:   { fontFamily: Fonts.mono, fontSize: 52, fontWeight: '800', letterSpacing: -2, lineHeight: 62 },
 
-  dividerRow:   { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 16 },
-  dividerLine:  { flex: 1, height: 1, backgroundColor: MonikeColors.inkGhost },
-  dividerLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 9, letterSpacing: 1.4 },
+  numpad:      { gap: 8, marginVertical: 12 },
+  numpadRow:   { flexDirection: 'row', gap: 8 },
+  numKey:      { flex: 1, height: 58, borderRadius: 14, backgroundColor: MonikeColors.bgSurface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: MonikeColors.inkGhost },
+  numKeyPressed:{ backgroundColor: MonikeColors.bgOverlay },
+  numKeyText:  { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 22, fontWeight: '600' },
 
-  savingsRow:        { borderColor: MonikeColors.signalBlue + '33', backgroundColor: '#0A1929', marginBottom: 10 },
-  savingsRowEntered: { borderColor: MonikeColors.signalBlue + '77' },
-  savingsRowFocused: { borderColor: MonikeColors.signalBlue },
-  savingsIconShell:  { backgroundColor: MonikeColors.signalBlue + '18' },
-  savingsLabel:      { color: MonikeColors.signalBlue, fontFamily: Fonts.heading, fontSize: 13, fontWeight: '600' },
+  sheetConfirm:     { height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+  sheetConfirmText: { color: '#FFFFFF', fontFamily: Fonts.heading, fontSize: 16, fontWeight: '700' },
 
-  incomeCard:       { marginTop: 4, borderRadius: CardRadius, backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: MonikeColors.inkGhost, padding: 16 },
-  incomeCardFocused:{ borderColor: MonikeColors.signalBlue + '88' },
-  incomeHeaderRow:  { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 12 },
-  incomeIconDot:    { width: 7, height: 7, borderRadius: 999, backgroundColor: MonikeColors.signalBlue },
-  incomeHeader:     { color: MonikeColors.signalBlue, fontFamily: Fonts.mono, fontSize: 10, fontWeight: '700', letterSpacing: 1.2 },
-  incomeField:      { height: 54, borderRadius: 12, backgroundColor: MonikeColors.bgElevated, borderWidth: 1, borderColor: MonikeColors.inkGhost, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14 },
-  incomeFieldFocused: { borderColor: MonikeColors.signalBlue, backgroundColor: MonikeColors.signalBlue + '0D' },
-  incomePrefix:     { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 18 },
-  incomeInput:      { flex: 1, color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 20, fontWeight: '700', textAlign: 'right', paddingVertical: 0, ...Platform.select({ android: { includeFontPadding: false } }) },
-  incomeHint:       { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11, marginTop: 8, textAlign: 'right' },
-
+  // ── Save dock ─────────────────────────────────────────────────────────────
   saveDock:        { position: 'absolute', left: ScreenPadding, right: ScreenPadding, zIndex: 20 },
-  saveButton:      { height: 54, borderRadius: 14, backgroundColor: MonikeColors.accentPulse, alignItems: 'center', justifyContent: 'center' },
+  saveButton:      { height: 56, borderRadius: 16, backgroundColor: MonikeColors.accentOrange, alignItems: 'center', justifyContent: 'center' },
   saveButtonHigh:  { backgroundColor: MonikeColors.signalRed },
   saveButtonEmpty: { backgroundColor: MonikeColors.bgElevated },
   saveButtonInner: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  saveText:        { color: MonikeColors.bgVoid, fontFamily: Fonts.heading, fontSize: 14, fontWeight: '800', letterSpacing: 0.6 },
+  saveText:        { color: '#FFFFFF', fontFamily: Fonts.heading, fontSize: 15, fontWeight: '800', letterSpacing: 0.3 },
   saveTextMuted:   { color: MonikeColors.inkMuted },
-  saveBadge:       { backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: 7, paddingHorizontal: 9, paddingVertical: 3 },
-  saveBadgeText:   { color: 'rgba(255,255,255,0.85)', fontFamily: Fonts.mono, fontSize: 12, fontWeight: '700' },
+  saveBadge:       { backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 3 },
+  saveBadgeText:   { color: 'rgba(255,255,255,0.9)', fontFamily: Fonts.mono, fontSize: 12, fontWeight: '700' },
 
-  uploadWrap: { gap: 14, paddingTop: 6 },
-
-  dropZone: { borderRadius: 18, borderWidth: 1.5, borderColor: MonikeColors.accentPulse + '55', borderStyle: 'dashed', backgroundColor: MonikeColors.accentPulse + '07', padding: 36, alignItems: 'center', gap: 8 },
-  uploadIconRing: { width: 68, height: 68, borderRadius: 34, backgroundColor: MonikeColors.accentPulse + '18', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  // ── Upload ────────────────────────────────────────────────────────────────
+  uploadWrap:     { gap: 14, paddingTop: 6 },
+  dropZone:       { borderRadius: 18, borderWidth: 1.5, borderColor: MonikeColors.accentOrange + '55', borderStyle: 'dashed', backgroundColor: MonikeColors.accentOrange + '07', padding: 36, alignItems: 'center', gap: 8 },
+  uploadIconRing: { width: 68, height: 68, borderRadius: 34, backgroundColor: MonikeColors.accentOrange + '18', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   dropZoneTitle:  { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 16, fontWeight: '700' },
   dropZoneSub:    { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 13 },
   formatBadge:    { marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: MonikeColors.signalBlue + '18', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 7 },
@@ -1127,7 +1069,7 @@ const s = StyleSheet.create({
   statusSub:       { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 12 },
   retryButton:     { width: 34, height: 34, borderRadius: 9, backgroundColor: MonikeColors.bgElevated, alignItems: 'center', justifyContent: 'center' },
 
-  processingCard:       { borderRadius: CardRadius, borderWidth: 1, borderColor: MonikeColors.accentPulse + '44', backgroundColor: MonikeColors.bgSurface, padding: 16, gap: 12 },
+  processingCard:       { borderRadius: CardRadius, borderWidth: 1, borderColor: MonikeColors.accentOrange + '44', backgroundColor: MonikeColors.bgSurface, padding: 16, gap: 12 },
   processingHeader:     { flexDirection: 'row', alignItems: 'center', gap: 10 },
   processingHeaderCopy: { flex: 1 },
   processingTitle:      { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 14, fontWeight: '700' },
@@ -1135,7 +1077,7 @@ const s = StyleSheet.create({
   processingBadge:      { backgroundColor: MonikeColors.bgElevated, borderRadius: 7, paddingHorizontal: 8, paddingVertical: 3 },
   processingBadgeText:  { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 10 },
   processingTrack:      { height: 6, borderRadius: 999, backgroundColor: MonikeColors.bgElevated, overflow: 'hidden' },
-  processingFill:       { height: '100%', borderRadius: 999, backgroundColor: MonikeColors.accentPulse },
+  processingFill:       { height: '100%', borderRadius: 999, backgroundColor: MonikeColors.accentOrange },
   processingPhase:      { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 12 },
   dedupRow:             { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   dedupChip:            { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: MonikeColors.accentPulse + '18', borderRadius: 7, paddingHorizontal: 9, paddingVertical: 4 },
@@ -1156,30 +1098,31 @@ const s = StyleSheet.create({
   uploadStatValue:         { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 20, fontWeight: '700' },
   uploadStatValueAccent:   { color: MonikeColors.accentPulse },
   uploadStatLabel:         { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 10, lineHeight: 14 },
+  uploadHintCard:          { borderRadius: 14, borderWidth: 1, borderColor: MonikeColors.inkGhost, backgroundColor: MonikeColors.bgSurface, padding: 14, gap: 10 },
+  uploadHintTitle:         { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 9, letterSpacing: 1.3 },
+  uploadHintRow:           { flexDirection: 'row', gap: 12 },
+  uploadHintCol:           { gap: 6 },
+  uploadHintCell:          { color: MonikeColors.inkSecondary, fontFamily: Fonts.mono, fontSize: 11, fontWeight: '600' },
+  uploadHintVal:           { color: MonikeColors.accentOrange, fontFamily: Fonts.mono, fontSize: 11 },
+  uploadHintNote:          { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11, lineHeight: 16, marginTop: 4 },
 
-  uploadHintCard:  { borderRadius: 14, borderWidth: 1, borderColor: MonikeColors.inkGhost, backgroundColor: MonikeColors.bgSurface, padding: 14, gap: 10 },
-  uploadHintTitle: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 9, letterSpacing: 1.3 },
-  uploadHintRow:   { flexDirection: 'row', gap: 12 },
-  uploadHintCol:   { gap: 6 },
-  uploadHintCell:  { color: MonikeColors.inkSecondary, fontFamily: Fonts.mono, fontSize: 11, fontWeight: '600' },
-  uploadHintVal:   { color: MonikeColors.accentPulse, fontFamily: Fonts.mono, fontSize: 11 },
-  uploadHintNote:  { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11, lineHeight: 16, marginTop: 4 },
-
-  modalScrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', alignItems: 'center', justifyContent: 'center', padding: 20 },
-  calendarCard:  { width: '100%', maxWidth: 360, borderRadius: 20, backgroundColor: MonikeColors.bgOverlay, borderWidth: 1, borderColor: MonikeColors.inkGhost, padding: 16 },
-  calendarTitle: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 1.4, marginBottom: 12 },
-  dateOption:         { minHeight: 44, borderRadius: 12, justifyContent: 'center', paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  dateOptionSelected: { backgroundColor: MonikeColors.accentPulse + '18' },
-  dateOptionDot:      { width: 6, height: 6, borderRadius: 3, backgroundColor: MonikeColors.accentPulse },
+  // ── Date picker ───────────────────────────────────────────────────────────
+  modalScrim:             { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  calendarCard:           { width: '100%', maxWidth: 360, maxHeight: 460, borderRadius: 20, backgroundColor: MonikeColors.bgOverlay, borderWidth: 1, borderColor: MonikeColors.inkGhost, padding: 16 },
+  calendarTitle:          { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 1.4, marginBottom: 12 },
+  dateOption:             { minHeight: 46, borderRadius: 12, justifyContent: 'center', paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  dateOptionSelected:     { backgroundColor: MonikeColors.accentOrange + '18' },
+  dateOptionDot:          { width: 6, height: 6, borderRadius: 3, backgroundColor: MonikeColors.accentOrange },
   dateOptionText:         { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 13 },
-  dateOptionTextSelected: { color: MonikeColors.accentPulse, fontWeight: '700' },
+  dateOptionTextSelected: { color: MonikeColors.accentOrange, fontWeight: '700' },
 
-  successScrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', justifyContent: 'flex-end' },
-  successSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: MonikeColors.bgOverlay, alignItems: 'center', paddingHorizontal: 26, paddingTop: 14, paddingBottom: 40, borderTopWidth: 1, borderColor: MonikeColors.inkGhost },
-  handle:       { width: 40, height: 4, borderRadius: 999, backgroundColor: MonikeColors.inkGhost, marginBottom: 28 },
-  successTitle: { fontFamily: Fonts.heading, fontSize: 18, fontWeight: '800', marginTop: 16, letterSpacing: 0.8 },
-  successBody:  { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 14, textAlign: 'center', marginTop: 8, lineHeight: 22 },
-  tipCard:      { marginTop: 18, borderRadius: 14, backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: MonikeColors.signalAmber + '44', padding: 14, width: '100%' },
-  tipLabel:     { color: MonikeColors.signalAmber, fontFamily: Fonts.mono, fontSize: 9, fontWeight: '700', letterSpacing: 1, marginBottom: 6 },
-  tipText:      { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 13, lineHeight: 19 },
+  // ── Success sheet ─────────────────────────────────────────────────────────
+  successScrim:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', justifyContent: 'flex-end' },
+  successSheet:  { borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: MonikeColors.bgOverlay, alignItems: 'center', paddingHorizontal: 26, paddingTop: 14, paddingBottom: 40, borderTopWidth: 1, borderColor: MonikeColors.inkGhost },
+  handle:        { width: 40, height: 4, borderRadius: 999, backgroundColor: MonikeColors.inkGhost, marginBottom: 28 },
+  successTitle:  { fontFamily: Fonts.heading, fontSize: 18, fontWeight: '800', marginTop: 16, letterSpacing: 0.8 },
+  successBody:   { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 14, textAlign: 'center', marginTop: 8, lineHeight: 22 },
+  tipCard:       { marginTop: 18, borderRadius: 14, backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: MonikeColors.signalAmber + '44', padding: 14, width: '100%' },
+  tipLabel:      { color: MonikeColors.signalAmber, fontFamily: Fonts.mono, fontSize: 9, fontWeight: '700', letterSpacing: 1, marginBottom: 6 },
+  tipText:       { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 13, lineHeight: 19 },
 });

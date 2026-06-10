@@ -118,12 +118,22 @@ class HeatmapCell(BaseModel):
     transaction_count: int
 
 
+class SpendCategory(BaseModel):
+    key: str          # "p2p" | "pos" | "data" | "airtime" | "online" | "family" | "other"
+    label: str        # human label
+    avg_daily: float  # average daily amount for this category
+    share_pct: float  # % of avg total debit
+
+
 class PatternsResponse(BaseModel):
     dow_bars: list[DowBar]
     monthly_points: list[MonthlyPoint]
     heatmap: list[HeatmapCell]
     weekend_avg: float
     weekday_avg: float
+    spend_composition: list[SpendCategory]
+    total_high_spend_days: int
+    total_days_recorded: int
 
 
 class MonthlyTransferBar(BaseModel):
