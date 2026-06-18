@@ -1,5 +1,6 @@
-import { useEffect, useState, type ComponentType } from 'react';
+import { useCallback, useEffect, useState, type ComponentType } from 'react';
 import {
+  ActivityIndicator,
   Modal,
   Pressable,
   ScrollView,
@@ -17,6 +18,8 @@ import {
   Globe,
   Landmark,
   ShoppingBag,
+  TriangleAlert,
+  Upload,
   Users,
   Utensils,
   Wifi,
@@ -25,8 +28,9 @@ import {
 
 import { BottomNavigation } from '@/components/bottom-navigation';
 import { useAccent } from '@/contexts/accent-context';
-import { apiFetch, postLog, type LogEntry, type LogWriteRequest } from '@/services/api';
+import { apiFetch, postLog, type LogEntry, type LogWriteRequest, type UploadResult } from '@/services/api';
 import { mutateAll } from '@/hooks/use-swr';
+import { useUploadStatement } from '@/hooks/use-upload-statement';
 import { BottomTabInset, CardRadius, Fonts, MonikeColors, ScreenPadding } from '@/constants/theme';
 
 // ─── Categories ───────────────────────────────────────────────────────────────
@@ -108,6 +112,11 @@ export default function LogScreen() {
   const [saving, setSaving] = useState(false);
   const [savedModal, setSavedModal] = useState<{ visible: boolean; highSpend: boolean }>({ visible: false, highSpend: false });
 
+  const handleUploadSuccess = useCallback((_result: UploadResult) => {
+    mutateAll();
+  }, []);
+  const { uploadState, pickAndUpload, reset: resetUpload } = useUploadStatement(handleUploadSuccess);
+
   const key = dateKey(selectedDate);
 
   useEffect(() => {
@@ -161,7 +170,29 @@ export default function LogScreen() {
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Log a spend</Text>
+          <Pressable
+            style={[styles.uploadButton, { borderColor: accent }]}
+            onPress={pickAndUpload}
+            disabled={uploadState.status !== 'idle' && uploadState.status !== 'error'}
+            hitSlop={8}
+          >
+            <Upload size={16} color={accent} strokeWidth={2} />
+          </Pressable>
         </View>
+
+        {uploadState.status === 'picking' || uploadState.status === 'uploading' || uploadState.status === 'processing' ? (
+          <View style={styles.uploadStrip}>
+            <ActivityIndicator size="small" color={accent} />
+            <Text style={styles.uploadStripText} numberOfLines={1}>
+              {uploadState.status === 'picking' && 'Opening file picker…'}
+              {uploadState.status === 'uploading' && `Uploading ${uploadState.filename}…`}
+              {uploadState.status === 'processing' &&
+                (uploadState.progress
+                  ? `Processing ${uploadState.progress.phase === 'transactions' ? 'transactions' : 'daily totals'} ${uploadState.progress.done}/${uploadState.progress.total}`
+                  : 'Processing statement…')}
+            </Text>
+          </View>
+        ) : null}
 
         <ScrollView
           showsVerticalScrollIndicator={false}
@@ -279,6 +310,43 @@ export default function LogScreen() {
         </View>
       </Modal>
 
+      <Modal
+        visible={uploadState.status === 'success' || uploadState.status === 'error'}
+        transparent
+        animationType="fade"
+        onRequestClose={resetUpload}
+      >
+        <View style={modalStyles.backdrop}>
+          <View style={modalStyles.sheet}>
+            {uploadState.status === 'success' ? (
+              <>
+                <View style={[modalStyles.checkCircle, { backgroundColor: accent + '20', borderColor: accent }]}>
+                  <Check size={24} color={accent} strokeWidth={2.5} />
+                </View>
+                <Text style={modalStyles.title}>Statement imported</Text>
+                <Text style={modalStyles.summary}>
+                  {uploadState.result.new_days_inserted} new days · {uploadState.result.days_updated} updated · {uploadState.result.duplicate_transactions_skipped} duplicates skipped
+                </Text>
+                <Text style={modalStyles.summaryMuted}>
+                  {uploadState.result.date_range_start} → {uploadState.result.date_range_end}
+                </Text>
+              </>
+            ) : uploadState.status === 'error' ? (
+              <>
+                <View style={[modalStyles.checkCircle, { backgroundColor: MonikeColors.signalAmber + '20', borderColor: MonikeColors.signalAmber }]}>
+                  <TriangleAlert size={24} color={MonikeColors.signalAmber} strokeWidth={2.5} />
+                </View>
+                <Text style={modalStyles.title}>Upload failed</Text>
+                <Text style={modalStyles.summaryMuted}>{uploadState.message}</Text>
+              </>
+            ) : null}
+            <Pressable style={[modalStyles.doneButton, { backgroundColor: accent }]} onPress={resetUpload}>
+              <Text style={modalStyles.doneText}>Done</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
       <BottomNavigation activeRoute="log" />
     </View>
   );
@@ -290,8 +358,22 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: MonikeColors.bgVoid },
   safeArea: { flex: 1 },
 
-  header: { paddingHorizontal: ScreenPadding, paddingTop: 8, paddingBottom: 4 },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: ScreenPadding, paddingTop: 8, paddingBottom: 4,
+  },
   headerTitle: { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 22, fontWeight: '700' },
+  uploadButton: {
+    width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: MonikeColors.bgSurface, borderWidth: 1,
+  },
+
+  uploadStrip: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginHorizontal: ScreenPadding, marginTop: 10, paddingHorizontal: 12, paddingVertical: 8,
+    borderRadius: 10, backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: MonikeColors.inkGhost,
+  },
+  uploadStripText: { flex: 1, color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 12 },
 
   content: { paddingHorizontal: ScreenPadding, paddingTop: 16, gap: 18 },
 
@@ -346,6 +428,8 @@ const modalStyles = StyleSheet.create({
   checkCircle: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, marginBottom: 4 },
   title: { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 17, fontWeight: '700' },
   warning: { color: MonikeColors.signalAmber, fontFamily: Fonts.sans, fontSize: 12, textAlign: 'center' },
+  summary: { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 12, textAlign: 'center' },
+  summaryMuted: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 11, textAlign: 'center' },
   doneButton: { borderRadius: 12, paddingHorizontal: 28, paddingVertical: 10, marginTop: 8 },
   doneText: { color: '#fff', fontFamily: Fonts.sans, fontSize: 13, fontWeight: '700' },
 });
