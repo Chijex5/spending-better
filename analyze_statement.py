@@ -115,6 +115,36 @@ def _parse_clean_sheet(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _merge_by_reference(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    A statement can have multiple tabs for different sub-accounts (e.g.
+    Wallet + Savings). An internal transfer between them shows up as two
+    rows sharing the same Transaction Reference — a credit on one side and
+    a debit on the other. Collapse each matching pair into a single row
+    (summing Debit/Credit) instead of double-counting one real-world
+    transfer as two transactions. Rows with a reference that only appears
+    once are left untouched.
+    """
+    if "Ref" not in df.columns or df.empty:
+        return df
+
+    has_ref     = df["Ref"].notna() & (df["Ref"].astype(str).str.strip() != "")
+    with_ref    = df[has_ref]
+    without_ref = df[~has_ref]
+
+    merged = with_ref.groupby("Ref", as_index=False, sort=False).agg({
+        "Trans_Date":  "first",
+        "Value_Date":  "first",
+        "Description": "first",
+        "Debit":       "sum",
+        "Credit":      "sum",
+        "Balance":     "last",
+        "Channel":     "first",
+    })
+
+    return pd.concat([merged, without_ref], ignore_index=True)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  SECTION 2 — CATEGORISATION
 #  Rule-based keyword matching on the Description field.
@@ -407,17 +437,21 @@ def _build_summary(transactions: pd.DataFrame, daily: pd.DataFrame) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def analyze(
-    df_raw: pd.DataFrame,
+    df_raw: pd.DataFrame | list[pd.DataFrame],
     has_headers: bool = False,
     include_summary: bool = False,
 ):
     """
-    Analyse a raw account-statement DataFrame.
+    Analyse a raw account-statement DataFrame (or several, one per sheet).
 
     Parameters
     ----------
-    df_raw : pd.DataFrame
-        The DataFrame as loaded from Excel.
+    df_raw : pd.DataFrame or list[pd.DataFrame]
+        The DataFrame(s) as loaded from Excel. Pass a list when a statement
+        has multiple sheets (e.g. one per sub-account) — each is parsed
+        separately, then transactions sharing a Transaction Reference across
+        sheets (an internal transfer recorded on both ledgers) are merged
+        into one row.
         - If has_headers=False (default): expects OPay's raw format where the
           first 7 rows are metadata and row 8 onwards is data with no headers.
         - If has_headers=True: expects a DataFrame that already has the correct
@@ -469,11 +503,14 @@ def analyze(
         X = daily[ML_FEATURES].fillna(0)
         y = daily["high_spend"]
     """
-    # 1. Parse
-    if has_headers:
-        df = _parse_clean_sheet(df_raw)
-    else:
-        df = _parse_raw_sheet(df_raw)
+    # 1. Parse — one or more sheets, each cleaned independently
+    sheets = df_raw if isinstance(df_raw, (list, tuple)) else [df_raw]
+    parse_sheet = _parse_clean_sheet if has_headers else _parse_raw_sheet
+    df = pd.concat([parse_sheet(sheet) for sheet in sheets], ignore_index=True)
+
+    # 1b. Merge transactions that appear on more than one sheet (same Ref)
+    df = _merge_by_reference(df)
+    df = df.sort_values("Trans_Date").reset_index(drop=True)
 
     # 2. Categorise
     df = _add_categories(df)
@@ -498,17 +535,24 @@ def analyze(
 #  CONVENIENCE HELPERS (importable)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def from_excel(path: str, sheet_name: str = "Wallet Account Transactions"):
+def from_excel(path: str, sheet_name: str | None = None):
     """
     Load directly from an Excel file path and return (transactions, daily).
+    By default reads every sheet in the workbook (e.g. Wallet + Savings
+    tabs) and merges them; pass sheet_name to read just one.
 
     Example
     -------
         from analyze_statement import from_excel
         transactions, daily = from_excel("statement.xlsx")
     """
-    raw = pd.read_excel(path, sheet_name=sheet_name, header=None)
-    return analyze(raw, has_headers=False)
+    if sheet_name is not None:
+        raw = pd.read_excel(path, sheet_name=sheet_name, header=None)
+        return analyze(raw, has_headers=False)
+
+    xls = pd.ExcelFile(path)
+    raws = [pd.read_excel(path, sheet_name=name, header=None) for name in xls.sheet_names]
+    return analyze(raws, has_headers=False)
 
 
 def add_new_transactions(daily_existing: pd.DataFrame, new_transactions: pd.DataFrame):
