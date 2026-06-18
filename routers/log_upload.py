@@ -60,16 +60,19 @@ class UploadResult(BaseModel):
 
 # ─── File reading ─────────────────────────────────────────────────────────────
 
-def _read_file(content: bytes, fname: str) -> pd.DataFrame:
+def _read_file(content: bytes, fname: str) -> list[pd.DataFrame]:
+    """
+    Returns one raw DataFrame per sheet. A statement can have multiple tabs
+    (e.g. "Wallet Account Transactions" + "Savings Account Transactions") —
+    all of them are real transactions and get parsed and merged together.
+    """
     if fname.endswith(".csv"):
-        return pd.read_csv(io.BytesIO(content), header=None)
-    xls   = pd.ExcelFile(io.BytesIO(content))
-    sheet = (
-        "Wallet Account Transactions"
-        if "Wallet Account Transactions" in xls.sheet_names
-        else xls.sheet_names[0]
-    )
-    return pd.read_excel(io.BytesIO(content), sheet_name=sheet, header=None)
+        return [pd.read_csv(io.BytesIO(content), header=None)]
+    xls = pd.ExcelFile(io.BytesIO(content))
+    return [
+        pd.read_excel(io.BytesIO(content), sheet_name=name, header=None)
+        for name in xls.sheet_names
+    ]
 
 
 # ─── Deduplication helpers ────────────────────────────────────────────────────

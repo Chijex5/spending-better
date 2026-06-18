@@ -36,13 +36,6 @@
           }
         }
       ],
-      "expo-secure-store",
-      [
-        "expo-local-authentication",
-        {
-          "faceIDPermission": "Allow Monike to use Face ID to protect your spending and cashflow data."
-        }
-      ]
     ],
     "experiments": {
       "typedRoutes": true,

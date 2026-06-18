@@ -7,12 +7,20 @@ import config
 from database import get_pool, close_pool
 from ml import train_model
 from routers import categories, dashboard, flow, log, log_upload, patterns, prediction, recipients, retrain, summary, explore, settings
-from routers.utils import combined_dataframe
+from routers.utils import combined_dataframe, execute
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # --- STARTUP ---
     await get_pool()
+    # Idempotent column add for the accent theme picker — keeps Monike.session.sql
+    # as the source of truth for fresh installs while patching existing DBs.
+    await execute(
+        "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS accent_theme TEXT NOT NULL DEFAULT 'Emerald'"
+    )
+    await execute(
+        "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS dark_mode BOOLEAN NOT NULL DEFAULT TRUE"
+    )
     await config.load_from_db()
     try:
         df = await combined_dataframe()

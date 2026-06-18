@@ -1,28 +1,32 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 
-import { AppLockProvider } from '@/components/app-lock';
-import { MonikeShellProvider } from '@/components/shell-context';
+import { AccentProvider, useAccent } from '@/contexts/accent-context';
 import { useSWR } from '@/hooks/use-swr';
 import { apiFetch } from '@/services/api';
-import { MonikeColors } from '@/constants/theme';
 
 function StartupPrefetch() {
-  useSWR('/settings', apiFetch);
   useSWR('/model/status', apiFetch);
   return null;
 }
 
-export default function RootLayout() {
+function AppShell() {
+  const { dark, colors } = useAccent();
   return (
     <>
-      <StatusBar style="light" />
-      <AppLockProvider>
-        <MonikeShellProvider>
-          <StartupPrefetch />
-          <Stack screenOptions={{ headerShown: false, animation: 'fade', contentStyle: { backgroundColor: MonikeColors.bgVoid } }} />
-        </MonikeShellProvider>
-      </AppLockProvider>
+      <StatusBar style={dark ? 'light' : 'dark'} />
+      <StartupPrefetch />
+      <Stack screenOptions={{ headerShown: false, animation: 'fade', contentStyle: { backgroundColor: colors.bg } }}>
+        <Stack.Screen name="log" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+      </Stack>
     </>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <AccentProvider>
+      <AppShell />
+    </AccentProvider>
   );
 }

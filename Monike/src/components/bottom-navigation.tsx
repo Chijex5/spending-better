@@ -6,26 +6,27 @@ import {
   type StyleProp, type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BarChart2, House, Menu, Plus, TelescopeIcon } from 'lucide-react-native';
-import { Fonts, MonikeColors } from '@/constants/theme';
+import { Activity, BarChart2, House, Plus, User } from 'lucide-react-native';
+import { Fonts } from '@/constants/theme';
+import { useAccent } from '@/contexts/accent-context';
 
-type RouteName = 'home' | 'explore' | 'categories' | 'log' | 'more';
-type Route = '/' | '/explore' | '/categories' | '/log' | '/more';
+// Add is presented as a modal (see app/_layout.tsx) — it has no "active" tab
+// state of its own, it's just the floating action button.
+type RouteName = 'home' | 'insights' | 'patterns' | 'profile';
+type TabRoute = '/' | '/insights' | '/patterns' | '/profile';
 
 type NavigationTab = {
   key: RouteName;
-  route: Route;
+  route: TabRoute;
   Icon: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
   label: string;
-  fab?: boolean;
 };
 
 const tabs: NavigationTab[] = [
-  { key: 'home',       route: '/',           Icon: House,         label: 'Home' },
-  { key: 'categories', route: '/categories', Icon: BarChart2,     label: 'Spend' },
-  { key: 'log',        route: '/log',        Icon: Plus,          label: 'Add', fab: true },
-  { key: 'explore',    route: '/explore',    Icon: TelescopeIcon, label: 'Explore' },
-  { key: 'more',       route: '/more',       Icon: Menu,          label: 'More' },
+  { key: 'home',     route: '/',          Icon: House,     label: 'Home' },
+  { key: 'insights', route: '/insights',  Icon: BarChart2, label: 'Insights' },
+  { key: 'patterns', route: '/patterns',  Icon: Activity,  label: 'Patterns' },
+  { key: 'profile',  route: '/profile',   Icon: User,      label: 'Profile' },
 ];
 
 // ─── PressScale ───────────────────────────────────────────────────────────────
@@ -83,50 +84,53 @@ function PressScale({
 export function BottomNavigation({ activeRoute }: { activeRoute: RouteName }) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { accent, colors } = useAccent();
+
+  const leftTabs = tabs.slice(0, 2);
+  const rightTabs = tabs.slice(2);
+
+  function renderTab({ key, route, Icon, label }: NavigationTab) {
+    const active = key === activeRoute;
+    return (
+      <PressScale
+        key={key}
+        disabled={active}
+        pressableStyle={styles.tabPressable}
+        innerStyle={styles.tabInner}
+        onPress={() => router.navigate(route as any)}
+      >
+        <Icon
+          size={23}
+          color={active ? accent : colors.ink3}
+          strokeWidth={active ? 2.2 : 1.7}
+        />
+        <Text style={[styles.tabLabel, { color: colors.ink3 }, active && { color: accent, fontWeight: '700' }]}>
+          {label}
+        </Text>
+      </PressScale>
+    );
+  }
 
   return (
-    <View style={[styles.container, { paddingBottom: insets.bottom > 0 ? insets.bottom : 8 }]}>
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: colors.card, borderTopColor: colors.line },
+        { paddingBottom: insets.bottom > 0 ? insets.bottom : 8 },
+      ]}
+    >
       <View style={styles.bar}>
-        {tabs.map(({ key, route, Icon, label, fab }) => {
-          const active = key === activeRoute;
-
-          if (fab) {
-            return (
-              <PressScale
-                key={key}
-                pressableStyle={styles.fabPressable}
-                innerStyle={styles.fabInner}
-                onPress={() => router.navigate(route as any)}
-              >
-                <View style={[styles.fab, active && styles.fabActive]}>
-                  <Icon size={20} color="#fff" strokeWidth={2.5} />
-                </View>
-                <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>
-                  {label}
-                </Text>
-              </PressScale>
-            );
-          }
-
-          return (
-            <PressScale
-              key={key}
-              disabled={active}
-              pressableStyle={styles.tabPressable}
-              innerStyle={styles.tabInner}
-              onPress={() => router.navigate(route as any)}
-            >
-              <Icon
-                size={21}
-                color={active ? MonikeColors.accentOrange : MonikeColors.inkMuted}
-                strokeWidth={active ? 2.2 : 1.7}
-              />
-              <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>
-                {label}
-              </Text>
-            </PressScale>
-          );
-        })}
+        {leftTabs.map(renderTab)}
+        <PressScale
+          pressableStyle={styles.fabPressable}
+          innerStyle={styles.fabInner}
+          onPress={() => router.navigate('/log' as any)}
+        >
+          <View style={[styles.fab, { backgroundColor: accent, shadowColor: accent }]}>
+            <Plus size={20} color="#fff" strokeWidth={2.5} />
+          </View>
+        </PressScale>
+        {rightTabs.map(renderTab)}
       </View>
     </View>
   );
@@ -139,9 +143,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#0A0C12',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.07)',
     pointerEvents: 'box-none',
   },
 
@@ -164,15 +166,10 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   tabLabel: {
-    color: MonikeColors.inkMuted,
     fontFamily: Fonts.sans,
     fontSize: 10,
     fontWeight: '500',
     letterSpacing: 0.1,
-  },
-  tabLabelActive: {
-    color: MonikeColors.accentOrange,
-    fontWeight: '700',
   },
 
   fabPressable: {
@@ -183,23 +180,17 @@ const styles = StyleSheet.create({
   fabInner: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
-    paddingBottom: 4,
+    marginTop: -4,
   },
   fab: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: MonikeColors.accentOrange,
+    width: 48,
+    height: 48,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: MonikeColors.accentOrange,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.45,
     shadowRadius: 10,
     elevation: 8,
-  },
-  fabActive: {
-    backgroundColor: MonikeColors.accentOrange,
   },
 });
