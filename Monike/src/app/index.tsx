@@ -1,4 +1,4 @@
-import { useMemo, type ComponentType } from 'react';
+import { useMemo } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -7,34 +7,20 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle } from 'react-native-svg';
-import {
-  Settings,
-  Users,
-  ShoppingBag,
-  Wifi,
-  Phone,
-  Utensils,
-  Globe,
-  Zap,
-  Landmark,
-  Banknote,
-  Repeat2,
-  CreditCard,
-  ChevronRight,
-} from 'lucide-react-native';
+import { Settings } from 'lucide-react-native';
 
 import { BottomNavigation } from '@/components/bottom-navigation';
 import { useSWR } from '@/hooks/use-swr';
-import { useAccent } from '@/contexts/accent-context';
 import {
   apiFetch,
   type DashboardResponse,
   type PredictionResponse,
   type RecentTransaction,
 } from '@/services/api';
-import { BottomTabInset, CardRadius, Fonts, MonikeColors, ScreenPadding } from '@/constants/theme';
+import { BottomTabInset, Fonts, LightColors, ScreenPadding } from '@/constants/theme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -61,44 +47,52 @@ function normalizeRisk(risk: string | undefined): Risk {
   return 'LOW';
 }
 
+function riskLabel(risk: Risk) {
+  if (risk === 'HIGH') return 'High';
+  if (risk === 'MEDIUM') return 'Medium';
+  return 'Low';
+}
+
 function riskColor(risk: Risk) {
-  if (risk === 'HIGH') return MonikeColors.signalRed;
-  if (risk === 'MEDIUM') return MonikeColors.signalAmber;
-  return MonikeColors.accentPulse;
+  if (risk === 'HIGH') return LightColors.red;
+  if (risk === 'MEDIUM') return LightColors.amber;
+  return LightColors.green;
 }
 
 function todayKey() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function formatDayDate(value: string) {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString('en-NG', { day: 'numeric', month: 'short' });
+function formatTxnSubtitle(category: string, isoDate: string) {
+  const parsed = new Date(isoDate);
+  if (Number.isNaN(parsed.getTime())) return category;
+  const dateLabel = parsed.toLocaleDateString('en-NG', { day: 'numeric', month: 'short' });
+  const timeLabel = parsed.toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' });
+  return `${category} · ${dateLabel}, ${timeLabel}`;
 }
 
-const CATEGORY_ICON: Record<string, ComponentType<{ size?: number; color?: string; strokeWidth?: number }>> = {
-  'Person-to-Person': Users,
-  'POS Purchase': ShoppingBag,
-  Data: Wifi,
-  Airtime: Phone,
-  'Food & Dining': Utensils,
-  'Online Payment': Globe,
-  Electricity: Zap,
-  'Family Transfer': Landmark,
-  Savings: Banknote,
-  'Loan Repayment': Repeat2,
+const CATEGORY_DOT: Record<string, string> = {
+  'Person-to-Person': '#5B7CFA',
+  'POS Purchase': LightColors.amber,
+  Data: '#2FA98E',
+  Airtime: '#A368E0',
+  'Food & Dining': LightColors.amber,
+  'Online Payment': '#5B7CFA',
+  Electricity: '#D99A2B',
+  'Family Transfer': LightColors.red,
+  Savings: LightColors.green,
+  'Loan Repayment': '#9B9D9F',
 };
 
-function categoryIcon(category: string) {
-  return CATEGORY_ICON[category] ?? CreditCard;
+function categoryDotColor(category: string) {
+  return CATEGORY_DOT[category] ?? LightColors.textMuted;
 }
 
-// ─── Risk Ring ────────────────────────────────────────────────────────────────
+// ─── Outlook Ring ─────────────────────────────────────────────────────────────
 
-function RiskRing({ probability, risk }: { probability: number; risk: Risk }) {
-  const size = 96;
-  const stroke = 9;
+function OutlookRing({ probability, risk }: { probability: number; risk: Risk }) {
+  const size = 72;
+  const stroke = 7;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   const pct = Math.max(0, Math.min(1, probability));
@@ -107,14 +101,7 @@ function RiskRing({ probability, risk }: { probability: number; risk: Risk }) {
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
       <Svg width={size} height={size}>
-        <Circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke={MonikeColors.bgElevated}
-          strokeWidth={stroke}
-          fill="none"
-        />
+        <Circle cx={size / 2} cy={size / 2} r={radius} stroke={LightColors.barTrack} strokeWidth={stroke} fill="none" />
         <Circle
           cx={size / 2}
           cy={size / 2}
@@ -139,12 +126,12 @@ function RiskRing({ probability, risk }: { probability: number; risk: Risk }) {
 
 const ringStyles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  pct: { fontFamily: Fonts.mono, fontSize: 18, fontWeight: '800' },
+  pct: { fontFamily: Fonts.mono, fontSize: 14, fontWeight: '800' },
 });
 
 // ─── Week Bars ────────────────────────────────────────────────────────────────
 
-function WeekBars({ dashboard, accent }: { dashboard: DashboardResponse; accent: string }) {
+function WeekBars({ dashboard }: { dashboard: DashboardResponse }) {
   const bars = dashboard.seven_day_bars;
   const max = Math.max(...bars.map((b) => b.total_debit), 1);
   const today = todayKey();
@@ -154,13 +141,13 @@ function WeekBars({ dashboard, accent }: { dashboard: DashboardResponse; accent:
       {bars.map((bar) => {
         const isToday = bar.date === today;
         const pct = Math.max(0.04, bar.total_debit / max);
-        const color = bar.is_high_spend ? MonikeColors.signalRed : isToday ? accent : MonikeColors.bgElevated;
+        const color = bar.is_high_spend ? LightColors.red : isToday ? LightColors.green : LightColors.barTrack;
         return (
           <View key={bar.date} style={styles.weekBarCol}>
             <View style={styles.weekBarTrack}>
               <View style={[styles.weekBarFill, { height: `${pct * 100}%`, backgroundColor: color }]} />
             </View>
-            <Text style={[styles.weekBarLabel, isToday && { color: accent, fontWeight: '700' }]}>
+            <Text style={[styles.weekBarLabel, isToday && { color: LightColors.green, fontWeight: '700' }]}>
               {bar.day_label}
             </Text>
           </View>
@@ -175,22 +162,27 @@ function WeekBars({ dashboard, accent }: { dashboard: DashboardResponse; accent:
 export default function MonikeHome() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { accent } = useAccent();
 
   const { data: dashboard, isLoading } = useSWR<DashboardResponse>('/dashboard', apiFetch);
   const { data: prediction } = useSWR<PredictionResponse>('/prediction', apiFetch);
 
   const greeting = useMemo(() => getGreeting(), []);
 
+  const weekTotal = useMemo(
+    () => dashboard?.seven_day_bars.reduce((sum, b) => sum + b.total_debit, 0) ?? 0,
+    [dashboard],
+  );
+
   if (!dashboard) {
     return (
       <View style={styles.root}>
+        <StatusBar style="dark" />
         <SafeAreaView style={styles.safeArea} edges={['top']}>
           <View style={styles.loadingWrap}>
             <Text style={styles.loadingText}>{isLoading ? 'Loading…' : 'No data yet'}</Text>
           </View>
         </SafeAreaView>
-        <BottomNavigation activeRoute="home" />
+        <BottomNavigation activeRoute="home" variant="light" />
       </View>
     );
   }
@@ -198,20 +190,21 @@ export default function MonikeHome() {
   const risk = normalizeRisk(prediction?.risk_level);
   const pctChange = dashboard.pct_change_vs_last_month;
   const isUp = pctChange >= 0;
-  const pctColor = isUp ? MonikeColors.signalRed : MonikeColors.accentPulse;
+  const pctColor = isUp ? LightColors.red : LightColors.green;
   const transactions: RecentTransaction[] = dashboard.recent_transactions.slice(0, 6);
 
   return (
     <View style={styles.root}>
+      <StatusBar style="dark" />
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         {/* Header */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.greeting}>{greeting}</Text>
+            <Text style={styles.greeting}>{greeting.toUpperCase()}</Text>
             <Text style={styles.greetingName}>Chijioke</Text>
           </View>
           <Pressable style={styles.gearButton} onPress={() => router.navigate('/profile' as any)} hitSlop={10}>
-            <Settings size={18} color={MonikeColors.inkSecondary} strokeWidth={2} />
+            <Settings size={18} color={LightColors.textSecondary} strokeWidth={2} />
           </Pressable>
         </View>
 
@@ -226,10 +219,13 @@ export default function MonikeHome() {
               <Text style={styles.heroCurrency}>₦</Text>
               <Text style={styles.heroAmount}>{formatNaira(dashboard.total_spent_this_month)}</Text>
             </View>
-            <View style={[styles.pctPill, { backgroundColor: pctColor + '14', borderColor: pctColor + '40' }]}>
-              <Text style={[styles.pctPillText, { color: pctColor }]}>
-                {isUp ? '▲' : '▼'} {Math.abs(pctChange).toFixed(1)}% vs last month
-              </Text>
+            <View style={styles.pctRow}>
+              <View style={[styles.pctPill, { backgroundColor: isUp ? LightColors.redSoft : LightColors.greenSoft }]}>
+                <Text style={[styles.pctPillText, { color: pctColor }]}>
+                  {isUp ? '↑' : '↓'} {Math.abs(pctChange).toFixed(1)}%
+                </Text>
+              </View>
+              <Text style={styles.pctCaption}>{isUp ? 'above' : 'below'} last month</Text>
             </View>
           </View>
 
@@ -237,7 +233,10 @@ export default function MonikeHome() {
           <View style={styles.statRow}>
             <View style={styles.statCell}>
               <Text style={styles.statLabel}>PACE</Text>
-              <Text style={styles.statValue}>{dashboard.spend_health.pace}</Text>
+              <View style={styles.paceValueRow}>
+                <View style={[styles.paceDot, { backgroundColor: LightColors.green }]} />
+                <Text style={styles.statValue}>{dashboard.spend_health.pace}</Text>
+              </View>
             </View>
             <View style={styles.statSep} />
             <View style={styles.statCell}>
@@ -247,79 +246,74 @@ export default function MonikeHome() {
             <View style={styles.statSep} />
             <View style={styles.statCell}>
               <Text style={styles.statLabel}>SAVED</Text>
-              <Text style={[styles.statValue, { color: MonikeColors.accentPulse }]}>
+              <Text style={[styles.statValue, { color: LightColors.green }]}>
                 ₦{formatNaira(dashboard.spend_health.saved_this_month)}
               </Text>
             </View>
           </View>
 
           {/* This week */}
-          <View style={styles.sectionCard}>
-            <Text style={styles.sectionTitle}>This week</Text>
-            <WeekBars dashboard={dashboard} accent={accent} />
-            <Text style={styles.sectionSub}>
-              {dashboard.high_spend_days} high-spend day{dashboard.high_spend_days === 1 ? '' : 's'} in {dashboard.month_label}
-            </Text>
+          <View>
+            <View style={styles.weekHeaderRow}>
+              <Text style={styles.weekTitle}>This week</Text>
+              <Text style={styles.weekTotal}>₦{formatNaira(weekTotal)}</Text>
+            </View>
+            <View style={styles.highSpendRow}>
+              <View style={[styles.highSpendDot, { backgroundColor: LightColors.red }]} />
+              <Text style={styles.highSpendText}>
+                {dashboard.high_spend_days} high-spend day{dashboard.high_spend_days === 1 ? '' : 's'} in {dashboard.month_label}
+              </Text>
+            </View>
+            <WeekBars dashboard={dashboard} />
           </View>
 
           {/* Tomorrow's outlook */}
           {prediction && prediction.target_date ? (
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>Tomorrow&apos;s outlook</Text>
-              <View style={styles.outlookRow}>
-                <RiskRing probability={prediction.probability} risk={risk} />
-                <View style={styles.outlookCopy}>
-                  <View style={[styles.riskBadge, { borderColor: riskColor(risk) + '50', backgroundColor: riskColor(risk) + '14' }]}>
-                    <Text style={[styles.riskBadgeText, { color: riskColor(risk) }]}>{risk} RISK</Text>
-                  </View>
-                  <Text style={styles.outlookDay}>{prediction.day_name}</Text>
-                  <Text style={styles.outlookNarrative} numberOfLines={3}>
-                    {prediction.velocity?.narrative ?? 'Based on your recent spending pattern.'}
-                  </Text>
-                </View>
+            <View style={styles.outlookCard}>
+              <View style={styles.outlookCopy}>
+                <Text style={styles.outlookLabel}>TOMORROW&apos;S OUTLOOK</Text>
+                <Text style={styles.outlookHeadline}>
+                  {riskLabel(risk)} chance of overspending
+                </Text>
+                <Text style={styles.outlookNarrative} numberOfLines={3}>
+                  {prediction.velocity?.narrative ?? 'Based on your recent spending pattern.'}
+                </Text>
               </View>
+              <OutlookRing probability={prediction.probability} risk={risk} />
             </View>
           ) : null}
 
           {/* Recent activity */}
-          <View style={styles.sectionCard}>
-            <View style={styles.recentHeader}>
-              <Text style={styles.sectionTitle}>Recent activity</Text>
-              <Pressable style={styles.seeAll} onPress={() => router.navigate('/insights' as any)} hitSlop={8}>
-                <Text style={styles.seeAllText}>See all</Text>
-                <ChevronRight size={13} color={MonikeColors.inkMuted} strokeWidth={2} />
-              </Pressable>
+          <View>
+            <Text style={styles.sectionTitle}>Recent activity</Text>
+            <View style={styles.activityCard}>
+              {transactions.length > 0 ? transactions.map((t, i) => {
+                const isCredit = t.credit > 0;
+                const amount = isCredit ? t.credit : t.debit;
+                return (
+                  <View
+                    key={`${t.trans_date}-${i}`}
+                    style={[styles.txRow, i < transactions.length - 1 && styles.txRowSeparator]}
+                  >
+                    <View style={[styles.txDot, { backgroundColor: categoryDotColor(t.category) }]} />
+                    <View style={styles.txCenter}>
+                      <Text style={styles.txDescription} numberOfLines={1}>{t.description}</Text>
+                      <Text style={styles.txSubtitle}>{formatTxnSubtitle(t.category, t.trans_date)}</Text>
+                    </View>
+                    <Text style={[styles.txAmount, isCredit && { color: LightColors.green }]}>
+                      {isCredit ? '+' : '−'}₦{formatNaira(amount)}
+                    </Text>
+                  </View>
+                );
+              }) : (
+                <Text style={styles.emptyText}>No transactions yet this month.</Text>
+              )}
             </View>
-
-            {transactions.length > 0 ? transactions.map((t, i) => {
-              const Icon = categoryIcon(t.category);
-              const isCredit = t.credit > 0;
-              const amount = isCredit ? t.credit : t.debit;
-              return (
-                <View
-                  key={`${t.trans_date}-${i}`}
-                  style={[styles.txRow, i < transactions.length - 1 && styles.txRowSeparator]}
-                >
-                  <View style={styles.txIconCircle}>
-                    <Icon size={18} color={MonikeColors.inkSecondary} strokeWidth={1.8} />
-                  </View>
-                  <View style={styles.txCenter}>
-                    <Text style={styles.txDescription} numberOfLines={1}>{t.description}</Text>
-                    <Text style={styles.txDate}>{formatDayDate(t.trans_date)}</Text>
-                  </View>
-                  <Text style={[styles.txAmount, isCredit && { color: MonikeColors.accentPulse }]}>
-                    {isCredit ? '+' : '−'}₦{formatNaira(amount)}
-                  </Text>
-                </View>
-              );
-            }) : (
-              <Text style={styles.emptyText}>No transactions yet this month.</Text>
-            )}
           </View>
         </ScrollView>
       </SafeAreaView>
 
-      <BottomNavigation activeRoute="home" />
+      <BottomNavigation activeRoute="home" variant="light" />
     </View>
   );
 }
@@ -327,10 +321,10 @@ export default function MonikeHome() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: MonikeColors.bgVoid },
+  root: { flex: 1, backgroundColor: LightColors.bg },
   safeArea: { flex: 1 },
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  loadingText: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 13 },
+  loadingText: { color: LightColors.textMuted, fontFamily: Fonts.sans, fontSize: 13 },
 
   header: {
     flexDirection: 'row',
@@ -340,72 +334,78 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 4,
   },
-  greeting: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 12 },
-  greetingName: { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 19, fontWeight: '700', marginTop: 2 },
+  greeting: { color: LightColors.textMuted, fontFamily: Fonts.mono, fontSize: 11, fontWeight: '700', letterSpacing: 1 },
+  greetingName: { color: LightColors.textPrimary, fontFamily: Fonts.heading, fontSize: 22, fontWeight: '700', marginTop: 2 },
   gearButton: {
-    width: 38, height: 38, borderRadius: 12,
-    backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: MonikeColors.inkGhost,
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: LightColors.card, borderWidth: 1, borderColor: LightColors.cardBorder,
     alignItems: 'center', justifyContent: 'center',
   },
 
-  content: { paddingHorizontal: ScreenPadding, paddingTop: 16, gap: 18 },
+  content: { paddingHorizontal: ScreenPadding, paddingTop: 16, gap: 22 },
 
   // Hero
   hero: { gap: 6 },
-  heroLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 10, fontWeight: '700', letterSpacing: 1.2 },
+  heroLabel: { color: LightColors.textMuted, fontFamily: Fonts.mono, fontSize: 10, fontWeight: '700', letterSpacing: 1.2 },
   heroAmountRow: { flexDirection: 'row', alignItems: 'flex-end' },
-  heroCurrency: { color: MonikeColors.inkSecondary, fontFamily: Fonts.mono, fontSize: 26, fontWeight: '700', marginBottom: 4, marginRight: 3 },
-  heroAmount: { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 44, fontWeight: '800', letterSpacing: -1.5 },
-  pctPill: { alignSelf: 'flex-start', borderWidth: 1, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, marginTop: 4 },
+  heroCurrency: { color: LightColors.textPrimary, fontFamily: Fonts.mono, fontSize: 30, fontWeight: '700', marginBottom: 6, marginRight: 2 },
+  heroAmount: { color: LightColors.textPrimary, fontFamily: Fonts.mono, fontSize: 48, fontWeight: '800', letterSpacing: -1.5 },
+  pctRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
+  pctPill: { alignSelf: 'flex-start', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 },
   pctPillText: { fontFamily: Fonts.mono, fontSize: 12, fontWeight: '700' },
+  pctCaption: { color: LightColors.textSecondary, fontFamily: Fonts.sans, fontSize: 13 },
 
   // Stat row
   statRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: MonikeColors.inkGhost,
-    borderRadius: CardRadius, paddingVertical: 14,
+    backgroundColor: LightColors.card, borderRadius: 18, paddingVertical: 16,
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2,
   },
-  statCell: { flex: 1, alignItems: 'center', gap: 5 },
-  statSep: { width: 1, height: 28, backgroundColor: MonikeColors.inkGhost },
-  statLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 9, fontWeight: '700', letterSpacing: 0.8 },
-  statValue: { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 14, fontWeight: '700' },
+  statCell: { flex: 1, alignItems: 'center', gap: 6 },
+  statSep: { width: 1, height: 28, backgroundColor: LightColors.divider },
+  statLabel: { color: LightColors.textMuted, fontFamily: Fonts.mono, fontSize: 9, fontWeight: '700', letterSpacing: 0.8 },
+  statValue: { color: LightColors.textPrimary, fontFamily: Fonts.heading, fontSize: 14, fontWeight: '700' },
+  paceValueRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  paceDot: { width: 7, height: 7, borderRadius: 3.5 },
 
-  // Section card
-  sectionCard: {
-    backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: MonikeColors.inkGhost,
-    borderRadius: CardRadius, padding: 16, gap: 12,
-  },
-  sectionTitle: { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 15, fontWeight: '700' },
-  sectionSub: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 12 },
+  // This week
+  weekHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  weekTitle: { color: LightColors.textPrimary, fontFamily: Fonts.heading, fontSize: 18, fontWeight: '700' },
+  weekTotal: { color: LightColors.textPrimary, fontFamily: Fonts.mono, fontSize: 15, fontWeight: '700' },
+  highSpendRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, marginBottom: 16 },
+  highSpendDot: { width: 6, height: 6, borderRadius: 3 },
+  highSpendText: { color: LightColors.textSecondary, fontFamily: Fonts.sans, fontSize: 12.5 },
 
   // Week bars
-  weekBarsRow: { flexDirection: 'row', alignItems: 'flex-end', height: 100, gap: 8 },
-  weekBarCol: { flex: 1, alignItems: 'center', gap: 6 },
-  weekBarTrack: { width: '100%', height: 76, justifyContent: 'flex-end' },
-  weekBarFill: { width: '100%', borderRadius: 5, minHeight: 4 },
-  weekBarLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 10 },
+  weekBarsRow: { flexDirection: 'row', alignItems: 'flex-end', height: 130, gap: 10 },
+  weekBarCol: { flex: 1, alignItems: 'center', gap: 8 },
+  weekBarTrack: { width: '100%', height: 104, justifyContent: 'flex-end' },
+  weekBarFill: { width: '100%', borderRadius: 7, minHeight: 6 },
+  weekBarLabel: { color: LightColors.textMuted, fontFamily: Fonts.sans, fontSize: 12 },
 
   // Outlook
-  outlookRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  outlookCard: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16,
+    backgroundColor: LightColors.card, borderRadius: 18, padding: 18,
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2,
+  },
   outlookCopy: { flex: 1, gap: 6 },
-  riskBadge: { alignSelf: 'flex-start', borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
-  riskBadgeText: { fontFamily: Fonts.mono, fontSize: 10, fontWeight: '700', letterSpacing: 0.4 },
-  outlookDay: { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 16, fontWeight: '700' },
-  outlookNarrative: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 12, lineHeight: 17 },
+  outlookLabel: { color: LightColors.textMuted, fontFamily: Fonts.mono, fontSize: 10, fontWeight: '700', letterSpacing: 1 },
+  outlookHeadline: { color: LightColors.textPrimary, fontFamily: Fonts.heading, fontSize: 17, fontWeight: '700', lineHeight: 22 },
+  outlookNarrative: { color: LightColors.textSecondary, fontFamily: Fonts.sans, fontSize: 12.5, lineHeight: 17 },
 
   // Recent activity
-  recentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  seeAll: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  seeAllText: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 12 },
-  txRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },
-  txRowSeparator: { borderBottomWidth: 0.5, borderBottomColor: MonikeColors.inkGhost },
-  txIconCircle: {
-    width: 38, height: 38, borderRadius: 12, backgroundColor: MonikeColors.bgElevated,
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  sectionTitle: { color: LightColors.textPrimary, fontFamily: Fonts.heading, fontSize: 18, fontWeight: '700', marginBottom: 10 },
+  activityCard: {
+    backgroundColor: LightColors.card, borderRadius: 18, paddingHorizontal: 16,
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2,
   },
+  txRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13 },
+  txRowSeparator: { borderBottomWidth: 1, borderBottomColor: LightColors.divider },
+  txDot: { width: 9, height: 9, borderRadius: 4.5, flexShrink: 0 },
   txCenter: { flex: 1, minWidth: 0 },
-  txDescription: { color: MonikeColors.inkPrimary, fontFamily: Fonts.sans, fontSize: 13, fontWeight: '600' },
-  txDate: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11, marginTop: 2 },
-  txAmount: { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 13, fontWeight: '700', flexShrink: 0 },
-  emptyText: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 12, paddingVertical: 8 },
+  txDescription: { color: LightColors.textPrimary, fontFamily: Fonts.sans, fontSize: 13.5, fontWeight: '600' },
+  txSubtitle: { color: LightColors.textMuted, fontFamily: Fonts.sans, fontSize: 11.5, marginTop: 2 },
+  txAmount: { color: LightColors.textPrimary, fontFamily: Fonts.mono, fontSize: 13.5, fontWeight: '700', flexShrink: 0 },
+  emptyText: { color: LightColors.textMuted, fontFamily: Fonts.sans, fontSize: 12, paddingVertical: 16 },
 });

@@ -212,7 +212,20 @@ export default function InsightsScreen() {
     : 0;
   const isUp = pctChange >= 0;
   const pctColor = isUp ? MonikeColors.signalRed : MonikeColors.accentPulse;
-  const overUnderBudget = summary ? summary.real_spend - summary.budget : 0;
+
+  const isCurrentMonth = period.year === now().year && period.month === now().month;
+  const projectedSpend = useMemo(() => {
+    if (!summary) return 0;
+    if (!isCurrentMonth) return summary.real_spend;
+    const dayOfMonth = new Date().getDate();
+    const daysInMonth = new Date(period.year, period.month, 0).getDate();
+    if (dayOfMonth <= 0) return summary.real_spend;
+    return (summary.spend_to_date / dayOfMonth) * daysInMonth;
+  }, [summary, isCurrentMonth, period]);
+  const prevMonthName = useMemo(
+    () => new Date(period.year, period.month - 2, 1).toLocaleDateString('en-NG', { month: 'short' }),
+    [period],
+  );
 
   return (
     <View style={styles.root}>
@@ -247,16 +260,23 @@ export default function InsightsScreen() {
                     </Text>
                   </View>
                   <Text style={styles.paceNote}>
-                    {overUnderBudget >= 0
-                      ? `₦${formatNaira(overUnderBudget)} over budget`
-                      : `₦${formatNaira(Math.abs(overUnderBudget))} under budget`}
+                    vs {prevMonthName} · on pace for ₦{formatNaira(projectedSpend)}
                   </Text>
                 </View>
               </View>
 
               {/* Daily spend heatmap */}
               <View style={styles.sectionCard}>
-                <Text style={styles.sectionTitle}>Daily spend</Text>
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.sectionTitle}>Daily spend</Text>
+                  <View style={styles.legendRow}>
+                    <Text style={styles.legendLabel}>LOW</Text>
+                    <View style={[styles.legendDot, { backgroundColor: hexA(accent, 0.32) }]} />
+                    <View style={[styles.legendDot, { backgroundColor: hexA(accent, 0.65) }]} />
+                    <View style={[styles.legendDot, { backgroundColor: MonikeColors.signalRed }]} />
+                    <Text style={styles.legendLabel}>HIGH</Text>
+                  </View>
+                </View>
                 <DailyHeatmap daily={summary.daily} year={period.year} month={period.month} accent={accent} />
               </View>
 
@@ -397,6 +417,10 @@ const styles = StyleSheet.create({
     borderRadius: CardRadius, padding: 16, gap: 12,
   },
   sectionTitle: { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 15, fontWeight: '700' },
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  legendRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  legendLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 8, fontWeight: '700', letterSpacing: 0.4 },
+  legendDot: { width: 8, height: 8, borderRadius: 4, marginHorizontal: 1 },
 
   // Heatmap
   heatmapWeekRow: { flexDirection: 'row', justifyContent: 'space-between' },

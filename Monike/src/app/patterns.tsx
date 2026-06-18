@@ -64,6 +64,12 @@ function formatNaira(value: number, fractionDigits = 0) {
   }).format(Math.abs(value));
 }
 
+function formatCompact(value: number) {
+  const abs = Math.abs(value);
+  if (abs >= 1000) return `${(abs / 1000).toFixed(1)}k`;
+  return formatNaira(abs);
+}
+
 const CATEGORY_COLOR: Record<string, string> = {
   p2p: MonikeColors.signalBlue,
   pos: MonikeColors.accentOrange,
@@ -180,6 +186,21 @@ export default function PatternsScreen() {
     return ((patterns.weekend_avg - patterns.weekday_avg) / patterns.weekday_avg) * 100;
   }, [patterns]);
 
+  const peakSharePct = useMemo(() => {
+    if (!patterns || !peakBar) return 0;
+    const weekTotal = patterns.dow_bars.reduce((sum, b) => sum + b.total_spend, 0);
+    if (weekTotal <= 0) return 0;
+    return (peakBar.total_spend / weekTotal) * 100;
+  }, [patterns, peakBar]);
+
+  const topCategoryLabels = useMemo(() => {
+    if (!patterns) return [];
+    return [...patterns.spend_composition]
+      .sort((a, b) => b.share_pct - a.share_pct)
+      .slice(0, 2)
+      .map((c) => c.label);
+  }, [patterns]);
+
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -199,25 +220,30 @@ export default function PatternsScreen() {
               <View style={[styles.sectionCard, { borderColor: hexA(accent, 0.35) }]}>
                 <Text style={[styles.habitLabel, { color: accent }]}>YOUR HABIT</Text>
                 <Text style={styles.habitHeadline}>
-                  {peakBar
-                    ? `You spend the most on ${peakBar.day_name}s — averaging ₦${formatNaira(peakBar.avg_spend)}.`
-                    : 'Not enough data yet to spot a habit.'}
+                  {peakBar ? `You spend most on ${peakBar.day_name}s` : 'Not enough data yet to spot a habit.'}
                 </Text>
-                <Text style={styles.habitSub}>
-                  {patterns.total_high_spend_days} high-spend day{patterns.total_high_spend_days === 1 ? '' : 's'} out of {patterns.total_days_recorded} tracked.
-                </Text>
+                {peakBar ? (
+                  <Text style={styles.habitSub}>
+                    {peakBar.day_name} evenings drive {peakSharePct.toFixed(0)}% of your weekly outflow
+                    {topCategoryLabels.length > 0 ? ` — mostly ${topCategoryLabels.join(' and ').toLowerCase()}.` : '.'}
+                  </Text>
+                ) : null}
               </View>
 
               {/* Weekday / Weekend row */}
               <View style={styles.twoCardRow}>
                 <View style={styles.sectionCard}>
-                  <Text style={styles.tinyLabel}>WEEKDAY AVG</Text>
-                  <Text style={styles.tinyValue}>₦{formatNaira(patterns.weekday_avg)}</Text>
+                  <Text style={styles.tinyLabel}>WEEKDAYS</Text>
+                  <Text style={styles.tinyValue}>₦{formatCompact(patterns.weekday_avg)}</Text>
+                  <Text style={styles.tinySub}>avg / day</Text>
                 </View>
                 <View style={styles.sectionCard}>
-                  <Text style={styles.tinyLabel}>WEEKEND AVG</Text>
+                  <Text style={styles.tinyLabel}>WEEKENDS</Text>
                   <Text style={[styles.tinyValue, weekendVsWeekdayPct > 0 && { color: MonikeColors.signalRed }]}>
-                    ₦{formatNaira(patterns.weekend_avg)}
+                    ₦{formatCompact(patterns.weekend_avg)}
+                  </Text>
+                  <Text style={[styles.tinySub, weekendVsWeekdayPct > 0 && { color: MonikeColors.signalRed }]}>
+                    {Math.abs(weekendVsWeekdayPct).toFixed(0)}% {weekendVsWeekdayPct >= 0 ? 'higher' : 'lower'}
                   </Text>
                 </View>
               </View>
@@ -302,6 +328,7 @@ const styles = StyleSheet.create({
   twoCardRow: { flexDirection: 'row', gap: 12 },
   tinyLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 9, fontWeight: '700', letterSpacing: 0.6 },
   tinyValue: { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 18, fontWeight: '800' },
+  tinySub: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11 },
 
   // dow bars
   dowRow: { flexDirection: 'row', alignItems: 'flex-end', height: 100, gap: 8 },

@@ -12,7 +12,18 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronRight, RefreshCw, User, X } from 'lucide-react-native';
+import {
+  Bell,
+  ChevronRight,
+  DollarSign,
+  Download,
+  Globe,
+  RefreshCw,
+  Tag,
+  TriangleAlert,
+  User,
+  X,
+} from 'lucide-react-native';
 
 import { BottomNavigation } from '@/components/bottom-navigation';
 import { useSWR } from '@/hooks/use-swr';
@@ -49,6 +60,42 @@ type RetrainResult = {
 
 function formatNaira(value: number) {
   return new Intl.NumberFormat('en-NG', { maximumFractionDigits: 0 }).format(Math.abs(value));
+}
+
+// ─── Settings row ──────────────────────────────────────────────────────────────
+
+function SettingsRow({
+  Icon,
+  iconColor,
+  label,
+  value,
+  sub,
+  onPress,
+  chevron = true,
+}: {
+  Icon: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
+  iconColor: string;
+  label: string;
+  value?: string;
+  sub?: string;
+  onPress?: () => void;
+  chevron?: boolean;
+}) {
+  return (
+    <Pressable style={styles.row} onPress={onPress} disabled={!onPress}>
+      <View style={[styles.rowIcon, { backgroundColor: iconColor + '26' }]}>
+        <Icon size={16} color={iconColor} strokeWidth={2} />
+      </View>
+      <View style={styles.rowTextWrap}>
+        <Text style={styles.rowLabel}>{label}</Text>
+        {sub ? <Text style={styles.rowSub}>{sub}</Text> : null}
+      </View>
+      <View style={styles.rowRight}>
+        {value ? <Text style={styles.rowValue}>{value}</Text> : null}
+        {chevron ? <ChevronRight size={16} color={MonikeColors.inkMuted} /> : null}
+      </View>
+    </Pressable>
+  );
 }
 
 // ─── Edit-value modal ──────────────────────────────────────────────────────────
@@ -109,6 +156,11 @@ export default function ProfileScreen() {
 
   const [editing, setEditing] = useState<'budget' | 'threshold' | null>(null);
   const [retraining, setRetraining] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  const notificationsOn = Boolean(
+    settings?.notify_high_spend || settings?.notify_weekly_summary || settings?.notify_model_updates,
+  );
 
   async function patchSettings(patch: Partial<NonNullable<typeof settings>>) {
     if (!settings) return;
@@ -201,26 +253,28 @@ export default function ProfileScreen() {
           <View style={styles.group}>
             <Text style={styles.groupTitle}>BUDGET</Text>
             <View style={styles.sectionCard}>
-              <Pressable style={styles.row} onPress={() => setEditing('budget')}>
-                <Text style={styles.rowLabel}>Monthly budget</Text>
-                <View style={styles.rowRight}>
-                  <Text style={styles.rowValue}>₦{formatNaira(settings?.monthly_budget ?? 0)}</Text>
-                  <ChevronRight size={16} color={MonikeColors.inkMuted} />
-                </View>
-              </Pressable>
+              <SettingsRow
+                Icon={DollarSign}
+                iconColor="#5B7CFA"
+                label="Monthly budget"
+                value={`₦${formatNaira(settings?.monthly_budget ?? 0)}`}
+                onPress={() => setEditing('budget')}
+              />
               <View style={styles.divider} />
-              <Pressable style={styles.row} onPress={() => setEditing('threshold')}>
-                <Text style={styles.rowLabel}>High-spend threshold</Text>
-                <View style={styles.rowRight}>
-                  <Text style={styles.rowValue}>₦{formatNaira(settings?.high_spend_threshold ?? 0)}</Text>
-                  <ChevronRight size={16} color={MonikeColors.inkMuted} />
-                </View>
-              </Pressable>
+              <SettingsRow
+                Icon={TriangleAlert}
+                iconColor="#E2685B"
+                label="High-spend threshold"
+                value={`₦${formatNaira(settings?.high_spend_threshold ?? 0)}`}
+                onPress={() => setEditing('threshold')}
+              />
               <View style={styles.divider} />
-              <Pressable style={styles.row} onPress={() => router.navigate('/patterns' as any)}>
-                <Text style={styles.rowLabel}>Categories</Text>
-                <ChevronRight size={16} color={MonikeColors.inkMuted} />
-              </Pressable>
+              <SettingsRow
+                Icon={Tag}
+                iconColor="#D9A23A"
+                label="Categories"
+                onPress={() => router.navigate('/patterns' as any)}
+              />
             </View>
           </View>
 
@@ -228,45 +282,29 @@ export default function ProfileScreen() {
           <View style={styles.group}>
             <Text style={styles.groupTitle}>PREFERENCES</Text>
             <View style={styles.sectionCard}>
-              <View style={styles.row}>
-                <Text style={styles.rowLabel}>High-spend alerts</Text>
-                <Switch
-                  value={settings?.notify_high_spend ?? false}
-                  onValueChange={(v) => patchSettings({ notify_high_spend: v })}
-                  trackColor={{ false: MonikeColors.bgElevated, true: accent }}
-                />
-              </View>
+              <SettingsRow
+                Icon={Bell}
+                iconColor="#2FBF6B"
+                label="Notifications"
+                value={notificationsOn ? 'On' : 'Off'}
+                onPress={() => setShowNotifications(true)}
+              />
               <View style={styles.divider} />
-              <View style={styles.row}>
-                <Text style={styles.rowLabel}>Weekly summary</Text>
-                <Switch
-                  value={settings?.notify_weekly_summary ?? false}
-                  onValueChange={(v) => patchSettings({ notify_weekly_summary: v })}
-                  trackColor={{ false: MonikeColors.bgElevated, true: accent }}
-                />
-              </View>
+              <SettingsRow
+                Icon={Globe}
+                iconColor="#2FA9A0"
+                label="Currency"
+                value="₦ NGN"
+                chevron={false}
+              />
               <View style={styles.divider} />
-              <View style={styles.row}>
-                <Text style={styles.rowLabel}>Model update notices</Text>
-                <Switch
-                  value={settings?.notify_model_updates ?? false}
-                  onValueChange={(v) => patchSettings({ notify_model_updates: v })}
-                  trackColor={{ false: MonikeColors.bgElevated, true: accent }}
-                />
-              </View>
-              <View style={styles.divider} />
-              <View style={styles.row}>
-                <Text style={styles.rowLabel}>Currency</Text>
-                <Text style={styles.rowValue}>NGN (₦)</Text>
-              </View>
-              <View style={styles.divider} />
-              <Pressable
-                style={styles.row}
+              <SettingsRow
+                Icon={Download}
+                iconColor="#A368E0"
+                label="Export data"
+                value="CSV"
                 onPress={() => Alert.alert('Export data', 'Data export is coming soon.')}
-              >
-                <Text style={styles.rowLabel}>Export data</Text>
-                <ChevronRight size={16} color={MonikeColors.inkMuted} />
-              </Pressable>
+              />
             </View>
           </View>
 
@@ -292,7 +330,7 @@ export default function ProfileScreen() {
             </View>
           </View>
 
-          <Text style={styles.footer}>Monike v2.0</Text>
+          <Text style={styles.footer}>Monike v2.0 · Spending, better</Text>
         </ScrollView>
       </SafeAreaView>
 
@@ -324,6 +362,45 @@ export default function ProfileScreen() {
           }}
         />
       )}
+
+      <Modal visible={showNotifications} transparent animationType="fade" onRequestClose={() => setShowNotifications(false)}>
+        <Pressable style={modalStyles.backdrop} onPress={() => setShowNotifications(false)}>
+          <Pressable style={modalStyles.sheet} onPress={(e) => e.stopPropagation()}>
+            <View style={modalStyles.sheetHeader}>
+              <Text style={modalStyles.sheetTitle}>Notifications</Text>
+              <Pressable onPress={() => setShowNotifications(false)} hitSlop={8}>
+                <X size={18} color={MonikeColors.inkMuted} />
+              </Pressable>
+            </View>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>High-spend alerts</Text>
+              <Switch
+                value={settings?.notify_high_spend ?? false}
+                onValueChange={(v) => patchSettings({ notify_high_spend: v })}
+                trackColor={{ false: MonikeColors.bgElevated, true: accent }}
+              />
+            </View>
+            <View style={styles.divider} />
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Weekly summary</Text>
+              <Switch
+                value={settings?.notify_weekly_summary ?? false}
+                onValueChange={(v) => patchSettings({ notify_weekly_summary: v })}
+                trackColor={{ false: MonikeColors.bgElevated, true: accent }}
+              />
+            </View>
+            <View style={styles.divider} />
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Model update notices</Text>
+              <Switch
+                value={settings?.notify_model_updates ?? false}
+                onValueChange={(v) => patchSettings({ notify_model_updates: v })}
+                trackColor={{ false: MonikeColors.bgElevated, true: accent }}
+              />
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <BottomNavigation activeRoute="profile" />
     </View>
@@ -358,7 +435,9 @@ const styles = StyleSheet.create({
     backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: MonikeColors.inkGhost,
     borderRadius: CardRadius, paddingHorizontal: 16, paddingVertical: 4,
   },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14 },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, gap: 10 },
+  rowIcon: { width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  rowTextWrap: { flex: 1 },
   rowLabel: { color: MonikeColors.inkPrimary, fontFamily: Fonts.sans, fontSize: 13.5 },
   rowSub: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11.5, marginTop: 2 },
   rowRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },

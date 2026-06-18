@@ -41,6 +41,25 @@ export const Colors = {
   },
 } as const;
 
+// Home is the one screen rendered in light mode — everything else (Add,
+// Patterns, Profile, Insights) stays on MonikeColors (dark).
+export const LightColors = {
+  bg: '#EAE8E2',
+  card: '#FFFFFF',
+  cardBorder: 'rgba(20,20,18,0.06)',
+  divider: 'rgba(20,20,18,0.08)',
+  textPrimary: '#16181B',
+  textSecondary: '#6E7077',
+  textMuted: '#9B9D9F',
+  green: '#1BA866',
+  greenSoft: '#DDEFE2',
+  red: '#E2645A',
+  redSoft: '#FBE4E1',
+  amber: '#D99A2B',
+  amberSoft: '#F6E8CE',
+  barTrack: '#E2DFD8',
+} as const;
+
 export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
 
 export const AccentPresets = {

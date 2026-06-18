@@ -17,7 +17,9 @@ export default function RootLayout() {
       <StatusBar style="light" />
       <AccentProvider>
         <StartupPrefetch />
-        <Stack screenOptions={{ headerShown: false, animation: 'fade', contentStyle: { backgroundColor: MonikeColors.bgVoid } }} />
+        <Stack screenOptions={{ headerShown: false, animation: 'fade', contentStyle: { backgroundColor: MonikeColors.bgVoid } }}>
+          <Stack.Screen name="log" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        </Stack>
       </AccentProvider>
     </>
   );
