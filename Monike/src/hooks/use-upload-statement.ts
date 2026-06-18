@@ -55,6 +55,13 @@ export function useUploadStatement(
   const [uploadState, setUploadState] = useState<UploadState>({ status: 'idle' });
   const wsRef = useRef<WebSocket | null>(null);
 
+  // Keep onSuccess ref current so pickAndUpload never captures a stale closure.
+  // This lets pickAndUpload's dep array be [] while always calling the latest cb.
+  const onSuccessRef = useRef(onSuccess);
+  useEffect(() => {
+    onSuccessRef.current = onSuccess;
+  }, [onSuccess]);
+
   // Clean up any open socket on unmount
   useEffect(() => {
     return () => {
@@ -131,6 +138,10 @@ export function useUploadStatement(
     const ws = new WebSocket(wsUrl(jobId));
     wsRef.current = ws;
 
+    // Tracks whether onmessage already moved us to a terminal state so that
+    // the onclose fallback doesn't overwrite a legitimate complete/error.
+    let settled = false;
+
     ws.onmessage = (evt) => {
       let event: Record<string, any>;
       try {
@@ -183,6 +194,7 @@ export function useUploadStatement(
         }
 
         case 'complete':
+          settled = true;
           ws.close();
           wsRef.current = null;
           setUploadState({
@@ -190,10 +202,11 @@ export function useUploadStatement(
             filename,
             result:   event.result as UploadResult,
           });
-          onSuccess?.(event.result as UploadResult);
+          onSuccessRef.current?.(event.result as UploadResult);
           break;
 
         case 'error':
+          settled = true;
           ws.close();
           wsRef.current = null;
           setUploadState({
@@ -205,25 +218,32 @@ export function useUploadStatement(
     };
 
     ws.onerror = () => {
+      // onerror is always followed by onclose in React Native / browsers.
+      // We set settled here so onclose knows this was a connection error
+      // (not an unexpected close), and we let onclose do the single
+      // state transition to avoid a double-set race.
+      settled = true;
+      wsRef.current = null;
       setUploadState({
         status:  'error',
         message: 'Lost connection to server during processing.',
       });
     };
 
-    ws.onclose = (e) => {
-      // If we close unexpectedly (not after complete/error), surface an error
-      setUploadState((prev) => {
-        if (prev.status === 'processing') {
-          return {
-            status:  'error',
-            message: 'Connection closed before processing completed.',
-          };
-        }
-        return prev;
-      });
+    ws.onclose = () => {
+      wsRef.current = null;
+      // Only act if nothing else (complete / error event / onerror) already
+      // moved us to a terminal state. This guards against the onerror → onclose
+      // double-fire clobbering the more descriptive error message.
+      if (!settled) {
+        setUploadState((prev) =>
+          prev.status === 'processing'
+            ? { status: 'error', message: 'Connection closed before processing completed.' }
+            : prev,
+        );
+      }
     };
-  }, [onSuccess]);
+  }, []); // stable — onSuccess is accessed via ref
 
   return { uploadState, pickAndUpload, reset };
 }

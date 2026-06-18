@@ -1,7 +1,8 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Modal,
   Pressable,
   ScrollView,
@@ -35,7 +36,6 @@ import { apiFetch, apiPost, type DashboardResponse } from '@/services/api';
 import { AccentPresets, BottomTabInset, Fonts, ScreenPadding, hexAlpha, type AccentName } from '@/constants/theme';
 
 // ─── Local types ──────────────────────────────────────────────────────────────
-// Not (yet) exported from services/api.ts — declared locally to avoid backend/API surface changes.
 
 type DrawerStats = {
   txn_this_month: number;
@@ -71,6 +71,118 @@ function daysAgo(iso: string) {
   return `${days} day${days === 1 ? '' : 's'} ago`;
 }
 
+// ─── Import progress row ──────────────────────────────────────────────────────
+// Replaces the standard SettingsRow while a WebSocket upload is in-flight.
+// Shows phase label, animated percentage, and a thin progress bar.
+
+function ImportProgressRow({
+  accent,
+  accentTint,
+  colors,
+  phase,
+  pct,
+}: {
+  accent: string;
+  accentTint: string;
+  colors: { ink: string; ink2: string; ink3: string; line: string; card: string };
+  phase: 'transactions' | 'daily' | null;
+  pct: number;
+}) {
+  const barWidth = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(barWidth, {
+      toValue: pct,
+      duration: 300,
+      useNativeDriver: false,
+    }).start();
+  }, [pct]);
+
+  const phaseLabel =
+    phase === 'transactions' ? 'Inserting transactions' :
+    phase === 'daily'        ? 'Updating daily totals'  :
+    'Processing…';
+
+  return (
+    <View style={[importStyles.row, { borderBottomWidth: 0 }]}>
+      <View style={[importStyles.rowIcon, { backgroundColor: hexAlpha('#E0A11C', 0.16) }]}>
+        <Upload size={16} color="#E0A11C" strokeWidth={1.9} />
+      </View>
+
+      <View style={importStyles.body}>
+        {/* Top line: phase label + percentage */}
+        <View style={importStyles.topLine}>
+          <Text style={[importStyles.phaseLabel, { color: colors.ink }]}>{phaseLabel}</Text>
+          <Text style={[importStyles.pct, { color: accent, fontFamily: Fonts.mono }]}>
+            {pct > 0 ? `${pct}%` : '—'}
+          </Text>
+        </View>
+
+        {/* Progress track */}
+        <View style={[importStyles.track, { backgroundColor: accentTint }]}>
+          <Animated.View
+            style={[
+              importStyles.fill,
+              {
+                backgroundColor: accent,
+                width: barWidth.interpolate({
+                  inputRange: [0, 100],
+                  outputRange: ['0%', '100%'],
+                  extrapolate: 'clamp',
+                }),
+              },
+            ]}
+          />
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const importStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 15,
+  },
+  rowIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  body: {
+    flex: 1,
+    gap: 7,
+  },
+  topLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  phaseLabel: {
+    fontFamily: Fonts.sans,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  pct: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  track: {
+    height: 3,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  fill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+});
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function ProfileScreen() {
@@ -88,11 +200,13 @@ export default function ProfileScreen() {
 
   const handleUploadSuccess = useCallback(() => { mutateAll(); }, []);
   const { uploadState, pickAndUpload, reset: resetUpload } = useUploadStatement(handleUploadSuccess);
+
   const uploadBusy = uploadState.status !== 'idle' && uploadState.status !== 'success' && uploadState.status !== 'error';
+
+  // Derive label for the non-processing states (used in SettingsRow)
   const uploadValue =
-    uploadState.status === 'picking' ? 'Opening…' :
+    uploadState.status === 'picking'   ? 'Opening…'   :
     uploadState.status === 'uploading' ? 'Uploading…' :
-    uploadState.status === 'processing' ? 'Processing…' :
     'CSV / XLSX';
 
   const notificationsOn = Boolean(
@@ -273,17 +387,33 @@ export default function ProfileScreen() {
                 onPress={() => Alert.alert('Export data', 'Data export is coming soon.')}
                 divider
               />
-              <SettingsRow
-                colors={colors}
-                Icon={Upload}
-                iconColor="#E0A11C"
-                label="Import statement"
-                value={uploadValue}
-                onPress={pickAndUpload}
-                disabled={uploadBusy}
-                rightAdornment={uploadBusy ? <ActivityIndicator size="small" color={accent} /> : undefined}
-                chevron={!uploadBusy}
-              />
+
+              {/* Import row — swaps to progress view during WS processing */}
+              {uploadState.status === 'processing' ? (
+                <ImportProgressRow
+                  accent={accent}
+                  accentTint={accentTint}
+                  colors={colors}
+                  phase={uploadState.progress?.phase ?? null}
+                  pct={uploadState.progress?.pct ?? 0}
+                />
+              ) : (
+                <SettingsRow
+                  colors={colors}
+                  Icon={Upload}
+                  iconColor="#E0A11C"
+                  label="Import statement"
+                  value={uploadState.status === 'picking' ? 'Opening…' : uploadState.status === 'uploading' ? 'Uploading…' : 'CSV / XLSX'}
+                  onPress={pickAndUpload}
+                  disabled={uploadBusy}
+                  rightAdornment={
+                    (uploadState.status === 'picking' || uploadState.status === 'uploading')
+                      ? <ActivityIndicator size="small" color={accent} />
+                      : undefined
+                  }
+                  chevron={!uploadBusy}
+                />
+              )}
             </View>
           </View>
 
