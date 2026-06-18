@@ -1,26 +1,32 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 
-import { AccentProvider } from '@/contexts/accent-context';
+import { AccentProvider, useAccent } from '@/contexts/accent-context';
 import { useSWR } from '@/hooks/use-swr';
 import { apiFetch } from '@/services/api';
-import { MonikeColors } from '@/constants/theme';
 
 function StartupPrefetch() {
   useSWR('/model/status', apiFetch);
   return null;
 }
 
-export default function RootLayout() {
+function AppShell() {
+  const { dark, colors } = useAccent();
   return (
     <>
-      <StatusBar style="light" />
-      <AccentProvider>
-        <StartupPrefetch />
-        <Stack screenOptions={{ headerShown: false, animation: 'fade', contentStyle: { backgroundColor: MonikeColors.bgVoid } }}>
-          <Stack.Screen name="log" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-        </Stack>
-      </AccentProvider>
+      <StatusBar style={dark ? 'light' : 'dark'} />
+      <StartupPrefetch />
+      <Stack screenOptions={{ headerShown: false, animation: 'fade', contentStyle: { backgroundColor: colors.bg } }}>
+        <Stack.Screen name="log" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+      </Stack>
     </>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <AccentProvider>
+      <AppShell />
+    </AccentProvider>
   );
 }

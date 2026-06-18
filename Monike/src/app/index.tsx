@@ -7,12 +7,12 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle } from 'react-native-svg';
-import { Settings } from 'lucide-react-native';
+import { User } from 'lucide-react-native';
 
 import { BottomNavigation } from '@/components/bottom-navigation';
+import { useAccent } from '@/contexts/accent-context';
 import { useSWR } from '@/hooks/use-swr';
 import {
   apiFetch,
@@ -20,7 +20,7 @@ import {
   type PredictionResponse,
   type RecentTransaction,
 } from '@/services/api';
-import { BottomTabInset, Fonts, LightColors, ScreenPadding } from '@/constants/theme';
+import { BottomTabInset, Fonts, ScreenPadding } from '@/constants/theme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -29,7 +29,7 @@ type Risk = 'HIGH' | 'MEDIUM' | 'LOW';
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatNaira(value: number, fractionDigits = 0) {
-  return new Intl.NumberFormat('en-NG', {
+  return '₦' + new Intl.NumberFormat('en-US', {
     maximumFractionDigits: fractionDigits,
     minimumFractionDigits: fractionDigits,
   }).format(Math.abs(value));
@@ -53,10 +53,13 @@ function riskLabel(risk: Risk) {
   return 'Low';
 }
 
-function riskColor(risk: Risk) {
-  if (risk === 'HIGH') return LightColors.red;
-  if (risk === 'MEDIUM') return LightColors.amber;
-  return LightColors.green;
+// Mirrors the mockup's single amber example (`riskColor: '#E0A11C'`) — extended
+// to a low/high pair using the same red/accent semantics used everywhere else
+// in the design (accent = good, #E5645B = bad).
+function riskColor(risk: Risk, accent: string) {
+  if (risk === 'HIGH') return '#E5645B';
+  if (risk === 'MEDIUM') return '#E0A11C';
+  return accent;
 }
 
 function todayKey() {
@@ -66,42 +69,40 @@ function todayKey() {
 function formatTxnSubtitle(category: string, isoDate: string) {
   const parsed = new Date(isoDate);
   if (Number.isNaN(parsed.getTime())) return category;
-  const dateLabel = parsed.toLocaleDateString('en-NG', { day: 'numeric', month: 'short' });
-  const timeLabel = parsed.toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' });
+  const dateLabel = parsed.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+  const timeLabel = parsed.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   return `${category} · ${dateLabel}, ${timeLabel}`;
 }
 
+// Matches the exact per-category dot colors from the mockup's `txnRaw` data.
 const CATEGORY_DOT: Record<string, string> = {
   'Person-to-Person': '#5B7CFA',
-  'POS Purchase': LightColors.amber,
-  Data: '#2FA98E',
-  Airtime: '#A368E0',
-  'Food & Dining': LightColors.amber,
+  'POS Purchase': '#E08A3C',
+  Data: '#2BB3A3',
+  Airtime: '#B06FD6',
+  'Food & Dining': '#E08A3C',
   'Online Payment': '#5B7CFA',
-  Electricity: '#D99A2B',
-  'Family Transfer': LightColors.red,
-  Savings: LightColors.green,
-  'Loan Repayment': '#9B9D9F',
+  Electricity: '#E0A11C',
+  'Family Transfer': '#E5645B',
+  Savings: '#2BB3A3',
+  'Loan Repayment': '#5A635D',
 };
-
-function categoryDotColor(category: string) {
-  return CATEGORY_DOT[category] ?? LightColors.textMuted;
-}
 
 // ─── Outlook Ring ─────────────────────────────────────────────────────────────
 
-function OutlookRing({ probability, risk }: { probability: number; risk: Risk }) {
-  const size = 72;
+function OutlookRing({ probability, color, trackColor, cardColor }: {
+  probability: number; color: string; trackColor: string; cardColor: string;
+}) {
+  const size = 62;
   const stroke = 7;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   const pct = Math.max(0, Math.min(1, probability));
-  const color = riskColor(risk);
 
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
       <Svg width={size} height={size}>
-        <Circle cx={size / 2} cy={size / 2} r={radius} stroke={LightColors.barTrack} strokeWidth={stroke} fill="none" />
+        <Circle cx={size / 2} cy={size / 2} r={radius} stroke={trackColor} strokeWidth={stroke} fill="none" />
         <Circle
           cx={size / 2}
           cy={size / 2}
@@ -117,7 +118,9 @@ function OutlookRing({ probability, risk }: { probability: number; risk: Risk })
       </Svg>
       <View style={StyleSheet.absoluteFill}>
         <View style={ringStyles.center}>
-          <Text style={[ringStyles.pct, { color }]}>{Math.round(pct * 100)}%</Text>
+          <View style={[ringStyles.inner, { backgroundColor: cardColor }]}>
+            <Text style={[ringStyles.pct, { color }]}>{Math.round(pct * 100)}%</Text>
+          </View>
         </View>
       </View>
     </View>
@@ -126,12 +129,15 @@ function OutlookRing({ probability, risk }: { probability: number; risk: Risk })
 
 const ringStyles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  pct: { fontFamily: Fonts.mono, fontSize: 14, fontWeight: '800' },
+  inner: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  pct: { fontFamily: Fonts.mono, fontSize: 14, fontWeight: '500' },
 });
 
 // ─── Week Bars ────────────────────────────────────────────────────────────────
 
-function WeekBars({ dashboard }: { dashboard: DashboardResponse }) {
+function WeekBars({ dashboard, accent, neutralBar, ink3 }: {
+  dashboard: DashboardResponse; accent: string; neutralBar: string; ink3: string;
+}) {
   const bars = dashboard.seven_day_bars;
   const max = Math.max(...bars.map((b) => b.total_debit), 1);
   const today = todayKey();
@@ -141,13 +147,13 @@ function WeekBars({ dashboard }: { dashboard: DashboardResponse }) {
       {bars.map((bar) => {
         const isToday = bar.date === today;
         const pct = Math.max(0.04, bar.total_debit / max);
-        const color = bar.is_high_spend ? LightColors.red : isToday ? LightColors.green : LightColors.barTrack;
+        const color = bar.is_high_spend ? '#E5645B' : isToday ? accent : neutralBar;
         return (
           <View key={bar.date} style={styles.weekBarCol}>
             <View style={styles.weekBarTrack}>
               <View style={[styles.weekBarFill, { height: `${pct * 100}%`, backgroundColor: color }]} />
             </View>
-            <Text style={[styles.weekBarLabel, isToday && { color: LightColors.green, fontWeight: '700' }]}>
+            <Text style={[styles.weekBarLabel, { color: isToday ? accent : ink3 }, isToday && { fontWeight: '700' }]}>
               {bar.day_label}
             </Text>
           </View>
@@ -162,11 +168,13 @@ function WeekBars({ dashboard }: { dashboard: DashboardResponse }) {
 export default function MonikeHome() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { colors, accent, accentTint, dark } = useAccent();
 
   const { data: dashboard, isLoading } = useSWR<DashboardResponse>('/dashboard', apiFetch);
   const { data: prediction } = useSWR<PredictionResponse>('/prediction', apiFetch);
 
   const greeting = useMemo(() => getGreeting(), []);
+  const neutralBar = dark ? '#2C352F' : '#D9DBD2';
 
   const weekTotal = useMemo(
     () => dashboard?.seven_day_bars.reduce((sum, b) => sum + b.total_debit, 0) ?? 0,
@@ -175,14 +183,13 @@ export default function MonikeHome() {
 
   if (!dashboard) {
     return (
-      <View style={styles.root}>
-        <StatusBar style="dark" />
+      <View style={[styles.root, { backgroundColor: colors.bg }]}>
         <SafeAreaView style={styles.safeArea} edges={['top']}>
           <View style={styles.loadingWrap}>
-            <Text style={styles.loadingText}>{isLoading ? 'Loading…' : 'No data yet'}</Text>
+            <Text style={[styles.loadingText, { color: colors.ink2 }]}>{isLoading ? 'Loading…' : 'No data yet'}</Text>
           </View>
         </SafeAreaView>
-        <BottomNavigation activeRoute="home" variant="light" />
+        <BottomNavigation activeRoute="home" />
       </View>
     );
   }
@@ -190,21 +197,26 @@ export default function MonikeHome() {
   const risk = normalizeRisk(prediction?.risk_level);
   const pctChange = dashboard.pct_change_vs_last_month;
   const isUp = pctChange >= 0;
-  const pctColor = isUp ? LightColors.red : LightColors.green;
+  const pctColor = isUp ? '#E5645B' : accent;
+  const pctPillBg = isUp ? '#E5645B29' : accentTint;
   const transactions: RecentTransaction[] = dashboard.recent_transactions.slice(0, 6);
+  const riskCol = riskColor(risk, accent);
 
   return (
-    <View style={styles.root}>
-      <StatusBar style="dark" />
+    <View style={[styles.root, { backgroundColor: colors.bg }]}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         {/* Header */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.greeting}>{greeting.toUpperCase()}</Text>
-            <Text style={styles.greetingName}>Chijioke</Text>
+            <Text style={[styles.greeting, { color: colors.ink2 }]}>{greeting.toUpperCase()}</Text>
+            <Text style={[styles.greetingName, { color: colors.ink }]}>Chijioke</Text>
           </View>
-          <Pressable style={styles.gearButton} onPress={() => router.navigate('/profile' as any)} hitSlop={10}>
-            <Settings size={18} color={LightColors.textSecondary} strokeWidth={2} />
+          <Pressable
+            style={[styles.profileButton, { backgroundColor: colors.chip }]}
+            onPress={() => router.navigate('/profile' as any)}
+            hitSlop={10}
+          >
+            <User size={20} color={colors.ink} strokeWidth={1.7} />
           </Pressable>
         </View>
 
@@ -214,40 +226,37 @@ export default function MonikeHome() {
         >
           {/* Hero */}
           <View style={styles.hero}>
-            <Text style={styles.heroLabel}>SPENT IN {dashboard.month_label.toUpperCase()}</Text>
-            <View style={styles.heroAmountRow}>
-              <Text style={styles.heroCurrency}>₦</Text>
-              <Text style={styles.heroAmount}>{formatNaira(dashboard.total_spent_this_month)}</Text>
-            </View>
+            <Text style={[styles.heroLabel, { color: colors.ink2 }]}>SPENT IN {dashboard.month_label.toUpperCase()}</Text>
+            <Text style={[styles.heroAmount, { color: colors.ink }]}>{formatNaira(dashboard.total_spent_this_month)}</Text>
             <View style={styles.pctRow}>
-              <View style={[styles.pctPill, { backgroundColor: isUp ? LightColors.redSoft : LightColors.greenSoft }]}>
+              <View style={[styles.pctPill, { backgroundColor: pctPillBg }]}>
                 <Text style={[styles.pctPillText, { color: pctColor }]}>
                   {isUp ? '↑' : '↓'} {Math.abs(pctChange).toFixed(1)}%
                 </Text>
               </View>
-              <Text style={styles.pctCaption}>{isUp ? 'above' : 'below'} last month</Text>
+              <Text style={[styles.pctCaption, { color: colors.ink2 }]}>{isUp ? 'above' : 'below'} last month</Text>
             </View>
           </View>
 
           {/* Stat tile row */}
-          <View style={styles.statRow}>
+          <View style={[styles.statRow, { backgroundColor: colors.card, borderColor: colors.line }]}>
             <View style={styles.statCell}>
-              <Text style={styles.statLabel}>PACE</Text>
+              <Text style={[styles.statLabel, { color: colors.ink3 }]}>PACE</Text>
               <View style={styles.paceValueRow}>
-                <View style={[styles.paceDot, { backgroundColor: LightColors.green }]} />
-                <Text style={styles.statValue}>{dashboard.spend_health.pace}</Text>
+                <View style={[styles.paceDot, { backgroundColor: accent }]} />
+                <Text style={[styles.statValue, { color: colors.ink }]}>{dashboard.spend_health.pace}</Text>
               </View>
             </View>
-            <View style={styles.statSep} />
+            <View style={[styles.statSep, { backgroundColor: colors.line }]} />
             <View style={styles.statCell}>
-              <Text style={styles.statLabel}>DAILY AVG</Text>
-              <Text style={styles.statValue}>₦{formatNaira(dashboard.avg_daily)}</Text>
+              <Text style={[styles.statLabel, { color: colors.ink3 }]}>DAILY AVG</Text>
+              <Text style={[styles.statValue, { color: colors.ink }]}>{formatNaira(dashboard.avg_daily)}</Text>
             </View>
-            <View style={styles.statSep} />
+            <View style={[styles.statSep, { backgroundColor: colors.line }]} />
             <View style={styles.statCell}>
-              <Text style={styles.statLabel}>SAVED</Text>
-              <Text style={[styles.statValue, { color: LightColors.green }]}>
-                ₦{formatNaira(dashboard.spend_health.saved_this_month)}
+              <Text style={[styles.statLabel, { color: colors.ink3 }]}>SAVED</Text>
+              <Text style={[styles.statValue, { color: accent }]}>
+                {formatNaira(dashboard.spend_health.saved_this_month)}
               </Text>
             </View>
           </View>
@@ -255,65 +264,66 @@ export default function MonikeHome() {
           {/* This week */}
           <View>
             <View style={styles.weekHeaderRow}>
-              <Text style={styles.weekTitle}>This week</Text>
-              <Text style={styles.weekTotal}>₦{formatNaira(weekTotal)}</Text>
+              <Text style={[styles.weekTitle, { color: colors.ink }]}>This week</Text>
+              <Text style={[styles.weekTotal, { color: colors.ink }]}>{formatNaira(weekTotal)}</Text>
             </View>
             <View style={styles.highSpendRow}>
-              <View style={[styles.highSpendDot, { backgroundColor: LightColors.red }]} />
-              <Text style={styles.highSpendText}>
+              <View style={[styles.highSpendDot, { backgroundColor: '#E5645B' }]} />
+              <Text style={[styles.highSpendText, { color: colors.ink2 }]}>
                 {dashboard.high_spend_days} high-spend day{dashboard.high_spend_days === 1 ? '' : 's'} in {dashboard.month_label}
               </Text>
             </View>
-            <WeekBars dashboard={dashboard} />
+            <WeekBars dashboard={dashboard} accent={accent} neutralBar={neutralBar} ink3={colors.ink3} />
           </View>
 
           {/* Tomorrow's outlook */}
           {prediction && prediction.target_date ? (
-            <View style={styles.outlookCard}>
+            <View style={[styles.outlookCard, { backgroundColor: colors.card, borderColor: colors.line }]}>
               <View style={styles.outlookCopy}>
-                <Text style={styles.outlookLabel}>TOMORROW&apos;S OUTLOOK</Text>
-                <Text style={styles.outlookHeadline}>
+                <Text style={[styles.outlookLabel, { color: colors.ink3 }]}>TOMORROW&apos;S OUTLOOK</Text>
+                <Text style={[styles.outlookHeadline, { color: colors.ink }]}>
                   {riskLabel(risk)} chance of overspending
                 </Text>
-                <Text style={styles.outlookNarrative} numberOfLines={3}>
+                <Text style={[styles.outlookNarrative, { color: colors.ink2 }]} numberOfLines={3}>
                   {prediction.velocity?.narrative ?? 'Based on your recent spending pattern.'}
                 </Text>
               </View>
-              <OutlookRing probability={prediction.probability} risk={risk} />
+              <OutlookRing probability={prediction.probability} color={riskCol} trackColor={colors.line} cardColor={colors.card} />
             </View>
           ) : null}
 
           {/* Recent activity */}
           <View>
-            <Text style={styles.sectionTitle}>Recent activity</Text>
-            <View style={styles.activityCard}>
-              {transactions.length > 0 ? transactions.map((t, i) => {
-                const isCredit = t.credit > 0;
-                const amount = isCredit ? t.credit : t.debit;
-                return (
-                  <View
-                    key={`${t.trans_date}-${i}`}
-                    style={[styles.txRow, i < transactions.length - 1 && styles.txRowSeparator]}
-                  >
-                    <View style={[styles.txDot, { backgroundColor: categoryDotColor(t.category) }]} />
-                    <View style={styles.txCenter}>
-                      <Text style={styles.txDescription} numberOfLines={1}>{t.description}</Text>
-                      <Text style={styles.txSubtitle}>{formatTxnSubtitle(t.category, t.trans_date)}</Text>
-                    </View>
-                    <Text style={[styles.txAmount, isCredit && { color: LightColors.green }]}>
-                      {isCredit ? '+' : '−'}₦{formatNaira(amount)}
-                    </Text>
-                  </View>
-                );
-              }) : (
-                <Text style={styles.emptyText}>No transactions yet this month.</Text>
-              )}
+            <View style={styles.recentHeaderRow}>
+              <Text style={[styles.sectionTitle, { color: colors.ink }]}>Recent activity</Text>
+              <Text style={[styles.seeAll, { color: accent }]}>See all</Text>
             </View>
+            {transactions.length > 0 ? transactions.map((t, i) => {
+              const isCredit = t.credit > 0;
+              const amount = isCredit ? t.credit : t.debit;
+              return (
+                <View
+                  key={`${t.trans_date}-${i}`}
+                  style={[styles.txRow, { borderBottomColor: colors.line }]}
+                >
+                  <View style={[styles.txDot, { backgroundColor: CATEGORY_DOT[t.category] ?? colors.ink3 }]} />
+                  <View style={styles.txCenter}>
+                    <Text style={[styles.txDescription, { color: colors.ink }]} numberOfLines={1}>{t.description}</Text>
+                    <Text style={[styles.txSubtitle, { color: colors.ink2 }]}>{formatTxnSubtitle(t.category, t.trans_date)}</Text>
+                  </View>
+                  <Text style={[styles.txAmount, { color: isCredit ? accent : colors.ink }]}>
+                    {isCredit ? '+' : '−'}{formatNaira(amount)}
+                  </Text>
+                </View>
+              );
+            }) : (
+              <Text style={[styles.emptyText, { color: colors.ink2 }]}>No transactions yet this month.</Text>
+            )}
           </View>
         </ScrollView>
       </SafeAreaView>
 
-      <BottomNavigation activeRoute="home" variant="light" />
+      <BottomNavigation activeRoute="home" />
     </View>
   );
 }
@@ -321,10 +331,10 @@ export default function MonikeHome() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: LightColors.bg },
+  root: { flex: 1 },
   safeArea: { flex: 1 },
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  loadingText: { color: LightColors.textMuted, fontFamily: Fonts.sans, fontSize: 13 },
+  loadingText: { fontFamily: Fonts.sans, fontSize: 13 },
 
   header: {
     flexDirection: 'row',
@@ -334,78 +344,70 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 4,
   },
-  greeting: { color: LightColors.textMuted, fontFamily: Fonts.mono, fontSize: 11, fontWeight: '700', letterSpacing: 1 },
-  greetingName: { color: LightColors.textPrimary, fontFamily: Fonts.heading, fontSize: 22, fontWeight: '700', marginTop: 2 },
-  gearButton: {
-    width: 38, height: 38, borderRadius: 19,
-    backgroundColor: LightColors.card, borderWidth: 1, borderColor: LightColors.cardBorder,
+  greeting: { fontFamily: Fonts.mono, fontSize: 11, letterSpacing: 1.7 },
+  greetingName: { fontFamily: Fonts.heading, fontSize: 21, fontWeight: '600', marginTop: 3, letterSpacing: -0.2 },
+  profileButton: {
+    width: 42, height: 42, borderRadius: 21,
     alignItems: 'center', justifyContent: 'center',
   },
 
-  content: { paddingHorizontal: ScreenPadding, paddingTop: 16, gap: 22 },
+  content: { paddingHorizontal: ScreenPadding, paddingTop: 6, gap: 28 },
 
   // Hero
-  hero: { gap: 6 },
-  heroLabel: { color: LightColors.textMuted, fontFamily: Fonts.mono, fontSize: 10, fontWeight: '700', letterSpacing: 1.2 },
-  heroAmountRow: { flexDirection: 'row', alignItems: 'flex-end' },
-  heroCurrency: { color: LightColors.textPrimary, fontFamily: Fonts.mono, fontSize: 30, fontWeight: '700', marginBottom: 6, marginRight: 2 },
-  heroAmount: { color: LightColors.textPrimary, fontFamily: Fonts.mono, fontSize: 48, fontWeight: '800', letterSpacing: -1.5 },
-  pctRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
-  pctPill: { alignSelf: 'flex-start', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 },
-  pctPillText: { fontFamily: Fonts.mono, fontSize: 12, fontWeight: '700' },
-  pctCaption: { color: LightColors.textSecondary, fontFamily: Fonts.sans, fontSize: 13 },
+  hero: { paddingBottom: 0 },
+  heroLabel: { fontFamily: Fonts.mono, fontSize: 11, letterSpacing: 1.96 },
+  heroAmount: { fontFamily: Fonts.heading, fontSize: 46, fontWeight: '600', letterSpacing: -1, lineHeight: 49, marginTop: 10 },
+  pctRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14 },
+  pctPill: { flexDirection: 'row', alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5, gap: 4 },
+  pctPillText: { fontFamily: Fonts.mono, fontSize: 12, fontWeight: '500' },
+  pctCaption: { fontFamily: Fonts.sans, fontSize: 13 },
 
   // Stat row
   statRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: LightColors.card, borderRadius: 18, paddingVertical: 16,
-    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2,
+    borderWidth: 1, borderRadius: 22, paddingVertical: 18,
   },
-  statCell: { flex: 1, alignItems: 'center', gap: 6 },
-  statSep: { width: 1, height: 28, backgroundColor: LightColors.divider },
-  statLabel: { color: LightColors.textMuted, fontFamily: Fonts.mono, fontSize: 9, fontWeight: '700', letterSpacing: 0.8 },
-  statValue: { color: LightColors.textPrimary, fontFamily: Fonts.heading, fontSize: 14, fontWeight: '700' },
-  paceValueRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  statCell: { flex: 1, alignItems: 'center', gap: 7 },
+  statSep: { width: 1, height: 32 },
+  statLabel: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 1 },
+  statValue: { fontFamily: Fonts.heading, fontSize: 16, fontWeight: '600' },
+  paceValueRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   paceDot: { width: 7, height: 7, borderRadius: 3.5 },
 
   // This week
-  weekHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  weekTitle: { color: LightColors.textPrimary, fontFamily: Fonts.heading, fontSize: 18, fontWeight: '700' },
-  weekTotal: { color: LightColors.textPrimary, fontFamily: Fonts.mono, fontSize: 15, fontWeight: '700' },
-  highSpendRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, marginBottom: 16 },
+  weekHeaderRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
+  weekTitle: { fontFamily: Fonts.heading, fontSize: 17, fontWeight: '600' },
+  weekTotal: { fontFamily: Fonts.mono, fontSize: 14 },
+  highSpendRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 5 },
   highSpendDot: { width: 6, height: 6, borderRadius: 3 },
-  highSpendText: { color: LightColors.textSecondary, fontFamily: Fonts.sans, fontSize: 12.5 },
+  highSpendText: { fontFamily: Fonts.sans, fontSize: 12 },
 
   // Week bars
-  weekBarsRow: { flexDirection: 'row', alignItems: 'flex-end', height: 130, gap: 10 },
-  weekBarCol: { flex: 1, alignItems: 'center', gap: 8 },
-  weekBarTrack: { width: '100%', height: 104, justifyContent: 'flex-end' },
-  weekBarFill: { width: '100%', borderRadius: 7, minHeight: 6 },
-  weekBarLabel: { color: LightColors.textMuted, fontFamily: Fonts.sans, fontSize: 12 },
+  weekBarsRow: { flexDirection: 'row', alignItems: 'flex-end', height: 150, gap: 8, marginTop: 20 },
+  weekBarCol: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', gap: 9, height: '100%' },
+  weekBarTrack: { width: '100%', flex: 1, justifyContent: 'flex-end' },
+  weekBarFill: { width: '100%', maxWidth: 28, alignSelf: 'center', borderRadius: 8, minHeight: 6 },
+  weekBarLabel: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 0.5 },
 
   // Outlook
   outlookCard: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16,
-    backgroundColor: LightColors.card, borderRadius: 18, padding: 18,
-    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2,
+    borderWidth: 1, borderRadius: 22, padding: 18,
   },
-  outlookCopy: { flex: 1, gap: 6 },
-  outlookLabel: { color: LightColors.textMuted, fontFamily: Fonts.mono, fontSize: 10, fontWeight: '700', letterSpacing: 1 },
-  outlookHeadline: { color: LightColors.textPrimary, fontFamily: Fonts.heading, fontSize: 17, fontWeight: '700', lineHeight: 22 },
-  outlookNarrative: { color: LightColors.textSecondary, fontFamily: Fonts.sans, fontSize: 12.5, lineHeight: 17 },
+  outlookCopy: { flex: 1, gap: 0 },
+  outlookLabel: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 1.2 },
+  outlookHeadline: { fontFamily: Fonts.heading, fontSize: 16, fontWeight: '600', marginTop: 7 },
+  outlookNarrative: { fontFamily: Fonts.sans, fontSize: 12.5, lineHeight: 17, marginTop: 4 },
 
   // Recent activity
-  sectionTitle: { color: LightColors.textPrimary, fontFamily: Fonts.heading, fontSize: 18, fontWeight: '700', marginBottom: 10 },
-  activityCard: {
-    backgroundColor: LightColors.card, borderRadius: 18, paddingHorizontal: 16,
-    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2,
-  },
-  txRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13 },
-  txRowSeparator: { borderBottomWidth: 1, borderBottomColor: LightColors.divider },
-  txDot: { width: 9, height: 9, borderRadius: 4.5, flexShrink: 0 },
+  recentHeaderRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 },
+  sectionTitle: { fontFamily: Fonts.heading, fontSize: 17, fontWeight: '600' },
+  seeAll: { fontFamily: Fonts.sans, fontSize: 13, fontWeight: '500' },
+  txRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 13, borderBottomWidth: 1 },
+  txDot: { width: 11, height: 11, borderRadius: 5.5, flexShrink: 0 },
   txCenter: { flex: 1, minWidth: 0 },
-  txDescription: { color: LightColors.textPrimary, fontFamily: Fonts.sans, fontSize: 13.5, fontWeight: '600' },
-  txSubtitle: { color: LightColors.textMuted, fontFamily: Fonts.sans, fontSize: 11.5, marginTop: 2 },
-  txAmount: { color: LightColors.textPrimary, fontFamily: Fonts.mono, fontSize: 13.5, fontWeight: '700', flexShrink: 0 },
-  emptyText: { color: LightColors.textMuted, fontFamily: Fonts.sans, fontSize: 12, paddingVertical: 16 },
+  txDescription: { fontFamily: Fonts.sans, fontSize: 14.5, fontWeight: '600' },
+  txSubtitle: { fontFamily: Fonts.mono, fontSize: 11, marginTop: 3 },
+  txAmount: { fontFamily: Fonts.mono, fontSize: 14, fontWeight: '500', flexShrink: 0 },
+  emptyText: { fontFamily: Fonts.sans, fontSize: 12, paddingVertical: 16 },
 });

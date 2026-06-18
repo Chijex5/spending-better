@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import {
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -8,7 +7,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronDown, X } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 
 import { BottomNavigation } from '@/components/bottom-navigation';
 import { useSWR } from '@/hooks/use-swr';
@@ -21,23 +20,12 @@ import {
   type ExploreMonthsResponse,
   type ExploreSummaryResponse,
 } from '@/services/api';
-import { BottomTabInset, CardRadius, Fonts, MonikeColors, ScreenPadding } from '@/constants/theme';
+import { BottomTabInset, Fonts, ScreenPadding, hexAlpha } from '@/constants/theme';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function hexA(hex: string, alpha: number) {
-  const clean = hex.replace('#', '');
-  const r = parseInt(clean.substring(0, 2), 16);
-  const g = parseInt(clean.substring(2, 4), 16);
-  const b = parseInt(clean.substring(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-function formatNaira(value: number, fractionDigits = 0) {
-  return new Intl.NumberFormat('en-NG', {
-    maximumFractionDigits: fractionDigits,
-    minimumFractionDigits: fractionDigits,
-  }).format(Math.abs(value));
+function formatNaira(value: number) {
+  return '₦' + new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(Math.abs(value));
 }
 
 function now() {
@@ -45,123 +33,20 @@ function now() {
   return { year: d.getFullYear(), month: d.getMonth() + 1 };
 }
 
-// First-of-month JS weekday (0=Sun) → number of leading blank cells
-function leadingBlanks(year: number, month: number) {
-  return new Date(year, month - 1, 1).getDay();
+function monthSortKey(m: { year: number; month: number }) {
+  return m.year * 12 + m.month;
 }
 
-const CATEGORY_COLOR: Record<string, string> = {
-  'Person-to-Person': MonikeColors.signalBlue,
-  'POS Purchase': MonikeColors.accentOrange,
-  Data: MonikeColors.signalAmber,
-  Airtime: MonikeColors.accentPulse,
-  'Online Payment': MonikeColors.inkSecondary,
-  Other: MonikeColors.inkMuted,
-};
-
-// ─── Month picker modal ────────────────────────────────────────────────────────
-
-function MonthPickerModal({
-  visible,
-  months,
-  current,
-  onSelect,
-  onClose,
-}: {
-  visible: boolean;
-  months: ExploreMonth[];
-  current: { year: number; month: number };
-  onSelect: (year: number, month: number) => void;
-  onClose: () => void;
-}) {
-  const { accent } = useAccent();
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={modalStyles.backdrop} onPress={onClose}>
-        <Pressable style={modalStyles.sheet} onPress={(e) => e.stopPropagation()}>
-          <View style={modalStyles.sheetHeader}>
-            <Text style={modalStyles.sheetTitle}>Select month</Text>
-            <Pressable onPress={onClose} hitSlop={8}>
-              <X size={18} color={MonikeColors.inkMuted} />
-            </Pressable>
-          </View>
-          <ScrollView style={{ maxHeight: 360 }}>
-            {months.map((m) => {
-              const active = m.year === current.year && m.month === current.month;
-              return (
-                <Pressable
-                  key={`${m.year}-${m.month}`}
-                  style={[modalStyles.row, active && { backgroundColor: hexA(accent, 0.12) }]}
-                  onPress={() => onSelect(m.year, m.month)}
-                >
-                  <Text style={[modalStyles.rowText, active && { color: accent, fontWeight: '700' }]}>
-                    {m.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
-
-// ─── Daily heatmap ────────────────────────────────────────────────────────────
-
-function DailyHeatmap({ daily, year, month, accent }: { daily: DailyCell[]; year: number; month: number; accent: string }) {
-  const blanks = leadingBlanks(year, month);
-  const cells: (DailyCell | null)[] = [...Array(blanks).fill(null), ...daily];
-  while (cells.length % 7 !== 0) cells.push(null);
-
-  function levelColor(cell: DailyCell) {
-    if (cell.total <= 0) return MonikeColors.bgElevated;
-    if (cell.risk === 'HIGH') return MonikeColors.signalRed;
-    if (cell.risk === 'MEDIUM') return hexA(accent, 0.65);
-    return hexA(accent, 0.32);
-  }
-
-  return (
-    <View>
-      <View style={styles.heatmapWeekRow}>
-        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
-          <Text key={i} style={styles.heatmapWeekLabel}>{d}</Text>
-        ))}
-      </View>
-      <View style={styles.heatmapGrid}>
-        {cells.map((cell, i) => (
-          <View
-            key={i}
-            style={[
-              styles.heatmapCell,
-              cell ? { backgroundColor: levelColor(cell) } : styles.heatmapCellBlank,
-              cell?.is_today && { borderWidth: 1.5, borderColor: accent },
-            ]}
-          >
-            {cell ? (
-              <Text
-                style={[
-                  styles.heatmapCellText,
-                  cell.total > 0 && cell.risk !== 'LOW' ? { color: '#fff' } : null,
-                ]}
-              >
-                {cell.day}
-              </Text>
-            ) : null}
-          </View>
-        ))}
-      </View>
-    </View>
-  );
+function titleCase(label: string) {
+  return label.split(' ').map((w) => (/^[A-Za-z]+$/.test(w) ? w[0] + w.slice(1).toLowerCase() : w)).join(' ');
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function InsightsScreen() {
   const insets = useSafeAreaInsets();
-  const { accent } = useAccent();
+  const { accent, accentTint, colors } = useAccent();
   const [period, setPeriod] = useState(now());
-  const [pickerOpen, setPickerOpen] = useState(false);
 
   const { data: monthsData } = useSWR<ExploreMonthsResponse>('/explore/months', exploreMonthsFetcher);
   const { data: summary, isLoading } = useSWR<ExploreSummaryResponse>(
@@ -169,41 +54,78 @@ export default function InsightsScreen() {
     exploreSummaryFetcher(period.year, period.month),
   );
 
-  const months = useMemo(() => monthsData?.months ?? [], [monthsData]);
+  const sortedMonths = useMemo(
+    () => [...(monthsData?.months ?? [])].sort((a, b) => monthSortKey(a) - monthSortKey(b)),
+    [monthsData],
+  );
+  const currentIndex = sortedMonths.findIndex((m) => m.year === period.year && m.month === period.month);
+  const prevMonth: ExploreMonth | undefined = currentIndex > 0 ? sortedMonths[currentIndex - 1] : undefined;
+  const nextMonth: ExploreMonth | undefined = currentIndex >= 0 && currentIndex < sortedMonths.length - 1
+    ? sortedMonths[currentIndex + 1] : undefined;
   const currentLabel = useMemo(() => {
-    const match = months.find((m) => m.year === period.year && m.month === period.month);
-    return match?.label ?? `${period.month}/${period.year}`;
-  }, [months, period]);
+    const match = sortedMonths.find((m) => m.year === period.year && m.month === period.month);
+    return titleCase(match?.label ?? `${period.month}/${period.year}`);
+  }, [sortedMonths, period]);
+
+  const ramp = useMemo(() => [
+    colors.line,
+    hexAlpha(accent, 0.16),
+    hexAlpha(accent, 0.34),
+    hexAlpha(accent, 0.58),
+    hexAlpha(accent, 0.85),
+    '#E5645B',
+  ], [colors.line, accent]);
+
+  function cellLevel(cell: DailyCell) {
+    if (cell.total <= 0) return 0;
+    if (cell.risk === 'HIGH') return 5;
+    if (cell.risk === 'MEDIUM') return 4;
+    return 2;
+  }
 
   const topCategories = useMemo(() => {
     if (!summary) return [];
     const totals = new Map<string, number>();
     for (const t of summary.day_transactions) {
-      if (t.amount >= 0) continue; // skip credits
+      if (t.amount >= 0) continue;
       totals.set(t.category, (totals.get(t.category) ?? 0) + Math.abs(t.amount));
     }
     const grand = [...totals.values()].reduce((a, b) => a + b, 0) || 1;
     return [...totals.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
-      .map(([category, total]) => ({ category, total, pct: (total / grand) * 100 }));
+      .map(([category, total]) => ({ category, total, share: (total / grand) * 100 }));
   }, [summary]);
 
+  const prevMonthLabel = useMemo(() => {
+    const d = new Date(period.year, period.month - 2, 1);
+    return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  }, [period]);
+
   const keyStats = useMemo(() => {
-    if (!summary || summary.daily.length === 0) {
-      return { peak: null as DailyCell | null, quiet: null as DailyCell | null, netFlow: 0, highDays: 0 };
-    }
+    if (!summary) return null;
     const spendDays = summary.daily.filter((d) => d.total > 0);
-    const peak = spendDays.length
-      ? spendDays.reduce((a, b) => (b.total > a.total ? b : a))
-      : null;
-    const quiet = spendDays.length
-      ? spendDays.reduce((a, b) => (b.total < a.total ? b : a))
-      : null;
-    const netFlow = summary.credits - summary.real_spend;
-    const highDays = summary.daily.filter((d) => d.risk === 'HIGH').length;
-    return { peak, quiet, netFlow, highDays };
-  }, [summary]);
+    const peak = spendDays.length ? spendDays.reduce((a, b) => (b.total > a.total ? b : a)) : null;
+    const peakSub = peak
+      ? new Date(summary.year, summary.month - 1, peak.day).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
+      : '';
+    const debits = summary.day_transactions.filter((t) => t.amount < 0);
+    const biggest = debits.length ? debits.reduce((a, b) => (Math.abs(b.amount) > Math.abs(a.amount) ? b : a)) : null;
+    const avgPerDay = spendDays.length ? summary.real_spend / spendDays.length : 0;
+    const savedAmount = summary.previous_spend - summary.real_spend;
+    const savedPct = summary.previous_spend > 0 ? (Math.abs(savedAmount) / summary.previous_spend) * 100 : 0;
+    return [
+      { label: 'PEAK DAY', value: peak ? formatNaira(peak.total) : '—', sub: peakSub, valueColor: colors.ink },
+      { label: 'BIGGEST TXN', value: biggest ? formatNaira(biggest.amount) : '—', sub: biggest?.description ?? '', valueColor: colors.ink },
+      { label: 'AVG / DAY', value: formatNaira(avgPerDay), sub: `Across ${spendDays.length} day${spendDays.length === 1 ? '' : 's'}`, valueColor: colors.ink },
+      {
+        label: savedAmount >= 0 ? 'SAVED VS LAST MO.' : 'OVER VS LAST MO.',
+        value: formatNaira(savedAmount),
+        sub: `${savedPct.toFixed(1)}% ${savedAmount >= 0 ? 'less' : 'more'} spent`,
+        valueColor: savedAmount >= 0 ? accent : '#E5645B',
+      },
+    ];
+  }, [summary, colors.ink, accent]);
 
   const pctChange = summary
     ? summary.previous_spend > 0
@@ -211,147 +133,139 @@ export default function InsightsScreen() {
       : 0
     : 0;
   const isUp = pctChange >= 0;
-  const pctColor = isUp ? MonikeColors.signalRed : MonikeColors.accentPulse;
-
-  const isCurrentMonth = period.year === now().year && period.month === now().month;
-  const projectedSpend = useMemo(() => {
-    if (!summary) return 0;
-    if (!isCurrentMonth) return summary.real_spend;
-    const dayOfMonth = new Date().getDate();
-    const daysInMonth = new Date(period.year, period.month, 0).getDate();
-    if (dayOfMonth <= 0) return summary.real_spend;
-    return (summary.spend_to_date / dayOfMonth) * daysInMonth;
-  }, [summary, isCurrentMonth, period]);
-  const prevMonthName = useMemo(
-    () => new Date(period.year, period.month - 2, 1).toLocaleDateString('en-NG', { month: 'short' }),
-    [period],
-  );
+  const pctColor = isUp ? '#E5645B' : accent;
+  const pctPillBg = isUp ? hexAlpha('#E5645B', 0.16) : accentTint;
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { backgroundColor: colors.bg }]}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Insights</Text>
-          <Pressable style={styles.monthChip} onPress={() => setPickerOpen(true)}>
-            <Text style={styles.monthChipText}>{currentLabel}</Text>
-            <ChevronDown size={14} color={MonikeColors.inkSecondary} />
-          </Pressable>
+          <Text style={[styles.headerTitle, { color: colors.ink }]}>Insights</Text>
+          <View style={[styles.monthChip, { backgroundColor: colors.chip }]}>
+            <Pressable disabled={!prevMonth} hitSlop={8} onPress={() => prevMonth && setPeriod({ year: prevMonth.year, month: prevMonth.month })}>
+              <ChevronLeft size={16} color={colors.ink2} strokeWidth={2.2} />
+            </Pressable>
+            <Text style={[styles.monthChipText, { color: colors.ink }]}>{currentLabel}</Text>
+            <Pressable disabled={!nextMonth} hitSlop={8} onPress={() => nextMonth && setPeriod({ year: nextMonth.year, month: nextMonth.month })}>
+              <ChevronRight size={16} color={colors.ink3} strokeWidth={2.2} />
+            </Pressable>
+          </View>
         </View>
 
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + BottomTabInset + 28 }]}
         >
-          {!summary ? (
-            <Text style={styles.loadingText}>{isLoading ? 'Loading…' : 'No data yet'}</Text>
+          {!summary || !keyStats ? (
+            <Text style={[styles.loadingText, { color: colors.ink2 }]}>{isLoading ? 'Loading…' : 'No data yet'}</Text>
           ) : (
             <>
               {/* Hero */}
               <View style={styles.hero}>
-                <Text style={styles.heroLabel}>REAL SPEND</Text>
-                <View style={styles.heroAmountRow}>
-                  <Text style={styles.heroCurrency}>₦</Text>
-                  <Text style={styles.heroAmount}>{formatNaira(summary.real_spend)}</Text>
-                </View>
-                <View style={styles.heroMetaRow}>
-                  <View style={[styles.pctPill, { backgroundColor: hexA(pctColor, 0.12), borderColor: hexA(pctColor, 0.35) }]}>
+                <Text style={[styles.heroLabel, { color: colors.ink2 }]}>REAL SPEND</Text>
+                <Text style={[styles.heroAmount, { color: colors.ink }]}>{formatNaira(summary.real_spend)}</Text>
+                <View style={styles.pctRow}>
+                  <View style={[styles.pctPill, { backgroundColor: pctPillBg }]}>
                     <Text style={[styles.pctPillText, { color: pctColor }]}>
-                      {isUp ? '▲' : '▼'} {Math.abs(pctChange).toFixed(1)}% vs last month
+                      {isUp ? '↑' : '↓'} {Math.abs(pctChange).toFixed(1)}%
                     </Text>
                   </View>
-                  <Text style={styles.paceNote}>
-                    vs {prevMonthName} · on pace for ₦{formatNaira(projectedSpend)}
-                  </Text>
+                  <Text style={[styles.paceNote, { color: colors.ink2 }]}>vs. {prevMonthLabel}</Text>
                 </View>
               </View>
 
               {/* Daily spend heatmap */}
-              <View style={styles.sectionCard}>
+              <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.line }]}>
                 <View style={styles.sectionHeaderRow}>
-                  <Text style={styles.sectionTitle}>Daily spend</Text>
+                  <Text style={[styles.sectionTitle, { color: colors.ink }]}>Daily spend</Text>
                   <View style={styles.legendRow}>
-                    <Text style={styles.legendLabel}>LOW</Text>
-                    <View style={[styles.legendDot, { backgroundColor: hexA(accent, 0.32) }]} />
-                    <View style={[styles.legendDot, { backgroundColor: hexA(accent, 0.65) }]} />
-                    <View style={[styles.legendDot, { backgroundColor: MonikeColors.signalRed }]} />
-                    <Text style={styles.legendLabel}>HIGH</Text>
+                    <Text style={[styles.legendLabel, { color: colors.ink3 }]}>LOW</Text>
+                    {ramp.map((color, i) => (
+                      <View key={i} style={[styles.legendDot, { backgroundColor: color }]} />
+                    ))}
+                    <Text style={[styles.legendLabel, { color: colors.ink3 }]}>HIGH</Text>
                   </View>
                 </View>
-                <DailyHeatmap daily={summary.daily} year={period.year} month={period.month} accent={accent} />
+                <View style={styles.dowRow}>
+                  {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+                    <Text key={i} style={[styles.dowLabel, { color: colors.ink3 }]}>{d}</Text>
+                  ))}
+                </View>
+                <View style={styles.calendarGrid}>
+                  {summary.daily.map((cell, i) => {
+                    const level = cellLevel(cell);
+                    const bg = ramp[level];
+                    const textColor = level >= 4 ? 'rgba(255,255,255,0.92)' : colors.ink3;
+                    return (
+                      <View key={i} style={[styles.calCell, { backgroundColor: bg }]}>
+                        <Text style={[styles.calCellText, { color: textColor }]}>{cell.day}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
               </View>
 
               {/* By week */}
-              <View style={styles.sectionCard}>
-                <Text style={styles.sectionTitle}>By week</Text>
-                {summary.weekly.map((w) => {
-                  const max = Math.max(...summary.weekly.map((x) => x.spend), 1);
-                  const pct = Math.max(0.03, w.spend / max);
-                  return (
-                    <View key={w.week} style={styles.weekRow}>
-                      <View style={styles.weekRowTop}>
-                        <Text style={styles.weekRowLabel}>{w.range}</Text>
-                        <Text style={styles.weekRowAmount}>₦{formatNaira(w.spend)}</Text>
+              <View>
+                <Text style={[styles.h2, { color: colors.ink }]}>By week</Text>
+                <View style={styles.weekList}>
+                  {summary.weekly.map((w) => {
+                    const max = Math.max(...summary.weekly.map((x) => x.spend), 1);
+                    const pct = Math.max(0.03, w.spend / max);
+                    return (
+                      <View key={w.week}>
+                        <View style={styles.weekRowTop}>
+                          <Text style={[styles.weekRowLabel, { color: colors.ink }]}>
+                            {w.range} <Text style={[styles.weekRowCount, { color: colors.ink3 }]}>· {w.txns} txns</Text>
+                          </Text>
+                          <Text style={[styles.weekRowAmount, { color: colors.ink }]}>{formatNaira(w.spend)}</Text>
+                        </View>
+                        <View style={[styles.barTrack, { backgroundColor: colors.line }]}>
+                          <View style={[styles.barFill, { width: `${pct * 100}%`, backgroundColor: accent }]} />
+                        </View>
                       </View>
-                      <View style={styles.weekBarTrack}>
-                        <View style={[styles.weekBarFill, { width: `${pct * 100}%`, backgroundColor: accent }]} />
-                      </View>
-                    </View>
-                  );
-                })}
+                    );
+                  })}
+                </View>
               </View>
 
               {/* Top categories */}
-              <View style={styles.sectionCard}>
-                <Text style={styles.sectionTitle}>Top categories</Text>
-                {topCategories.length > 0 ? topCategories.map((c) => {
-                  const dotColor = CATEGORY_COLOR[c.category] ?? MonikeColors.inkMuted;
-                  return (
+              <View>
+                <Text style={[styles.h2, { color: colors.ink }]}>Top categories</Text>
+                <View style={styles.catList}>
+                  {topCategories.length > 0 ? topCategories.map((c) => (
                     <View key={c.category} style={styles.catRow}>
-                      <View style={styles.catRowTop}>
-                        <View style={styles.catLabelRow}>
-                          <View style={[styles.catDot, { backgroundColor: dotColor }]} />
-                          <Text style={styles.catLabel}>{c.category}</Text>
+                      <View style={[styles.catDot, { backgroundColor: catColor(c.category) }]} />
+                      <View style={styles.catBody}>
+                        <View style={styles.catTopRow}>
+                          <Text style={[styles.catName, { color: colors.ink }]}>{c.category}</Text>
+                          <Text style={[styles.catTotal, { color: colors.ink }]}>{formatNaira(c.total)}</Text>
                         </View>
-                        <Text style={styles.catShare}>{c.pct.toFixed(0)}%</Text>
-                      </View>
-                      <View style={styles.weekBarTrack}>
-                        <View style={[styles.weekBarFill, { width: `${c.pct}%`, backgroundColor: dotColor }]} />
+                        <View style={styles.catBarRow}>
+                          <View style={[styles.barTrack, styles.catBarTrack, { backgroundColor: colors.line }]}>
+                            <View style={[styles.barFill, { width: `${c.share}%`, backgroundColor: catColor(c.category) }]} />
+                          </View>
+                          <Text style={[styles.catShare, { color: colors.ink3 }]}>{c.share.toFixed(0)}%</Text>
+                        </View>
                       </View>
                     </View>
-                  );
-                }) : (
-                  <Text style={styles.emptyText}>No spend recorded this month.</Text>
-                )}
+                  )) : (
+                    <Text style={[styles.emptyText, { color: colors.ink2 }]}>No spend recorded this month.</Text>
+                  )}
+                </View>
               </View>
 
               {/* Key stats */}
-              <View style={styles.sectionCard}>
-                <Text style={styles.sectionTitle}>Key stats</Text>
+              <View style={styles.keyStatsWrap}>
+                <Text style={[styles.h2, { color: colors.ink }]}>Key stats</Text>
                 <View style={styles.statsGrid}>
-                  <View style={styles.statsCell}>
-                    <Text style={styles.statsLabel}>PEAK DAY</Text>
-                    <Text style={styles.statsValue}>
-                      {keyStats.peak ? `₦${formatNaira(keyStats.peak.total)}` : '—'}
-                    </Text>
-                    <Text style={styles.statsSub}>{keyStats.peak?.date ?? ''}</Text>
-                  </View>
-                  <View style={styles.statsCell}>
-                    <Text style={styles.statsLabel}>QUIETEST DAY</Text>
-                    <Text style={styles.statsValue}>
-                      {keyStats.quiet ? `₦${formatNaira(keyStats.quiet.total)}` : '—'}
-                    </Text>
-                    <Text style={styles.statsSub}>{keyStats.quiet?.date ?? ''}</Text>
-                  </View>
-                  <View style={styles.statsCell}>
-                    <Text style={styles.statsLabel}>NET FLOW</Text>
-                    <Text style={[styles.statsValue, { color: keyStats.netFlow >= 0 ? MonikeColors.accentPulse : MonikeColors.signalRed }]}>
-                      {keyStats.netFlow >= 0 ? '+' : '−'}₦{formatNaira(keyStats.netFlow)}
-                    </Text>
-                  </View>
-                  <View style={styles.statsCell}>
-                    <Text style={styles.statsLabel}>HIGH-SPEND DAYS</Text>
-                    <Text style={[styles.statsValue, { color: MonikeColors.signalRed }]}>{keyStats.highDays}</Text>
-                  </View>
+                  {keyStats.map((s) => (
+                    <View key={s.label} style={[styles.statsCard, { backgroundColor: colors.card, borderColor: colors.line }]}>
+                      <Text style={[styles.statsLabel, { color: colors.ink3 }]}>{s.label}</Text>
+                      <Text style={[styles.statsValue, { color: s.valueColor }]}>{s.value}</Text>
+                      <Text style={[styles.statsSub, { color: colors.ink2 }]} numberOfLines={1}>{s.sub}</Text>
+                    </View>
+                  ))}
                 </View>
               </View>
             </>
@@ -359,28 +273,31 @@ export default function InsightsScreen() {
         </ScrollView>
       </SafeAreaView>
 
-      <MonthPickerModal
-        visible={pickerOpen}
-        months={months}
-        current={period}
-        onSelect={(year, month) => {
-          setPeriod({ year, month });
-          setPickerOpen(false);
-        }}
-        onClose={() => setPickerOpen(false)}
-      />
-
       <BottomNavigation activeRoute="insights" />
     </View>
   );
 }
 
+// Matches the exact per-category dot colors used in the mockup's `catRaw` data.
+const CATEGORY_COLOR: Record<string, string> = {
+  'Family Transfer': '#E5645B',
+  'POS Purchase': '#E08A3C',
+  'Person-to-Person': '#5B7CFA',
+  Data: '#2BB3A3',
+  Airtime: '#2BB3A3',
+  'Data & Airtime': '#2BB3A3',
+  'Online Payment': '#B06FD6',
+};
+function catColor(category: string) {
+  return CATEGORY_COLOR[category] ?? '#B06FD6';
+}
+
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: MonikeColors.bgVoid },
+  root: { flex: 1 },
   safeArea: { flex: 1 },
-  loadingText: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 13, textAlign: 'center', marginTop: 40 },
+  loadingText: { fontFamily: Fonts.sans, fontSize: 13, textAlign: 'center', marginTop: 40 },
 
   header: {
     flexDirection: 'row',
@@ -390,81 +307,70 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 4,
   },
-  headerTitle: { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 22, fontWeight: '700' },
+  headerTitle: { fontFamily: Fonts.heading, fontSize: 24, fontWeight: '600', letterSpacing: -0.3 },
   monthChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: MonikeColors.inkGhost,
-    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7,
   },
-  monthChipText: { color: MonikeColors.inkSecondary, fontFamily: Fonts.mono, fontSize: 11, fontWeight: '700' },
+  monthChipText: { fontFamily: Fonts.mono, fontSize: 12, fontWeight: '500' },
 
-  content: { paddingHorizontal: ScreenPadding, paddingTop: 16, gap: 18 },
+  content: { paddingHorizontal: ScreenPadding, paddingTop: 2, gap: 28 },
 
   // Hero
-  hero: { gap: 6 },
-  heroLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 10, fontWeight: '700', letterSpacing: 1.2 },
-  heroAmountRow: { flexDirection: 'row', alignItems: 'flex-end' },
-  heroCurrency: { color: MonikeColors.inkSecondary, fontFamily: Fonts.mono, fontSize: 24, fontWeight: '700', marginBottom: 4, marginRight: 3 },
-  heroAmount: { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 40, fontWeight: '800', letterSpacing: -1.5 },
-  heroMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4, flexWrap: 'wrap' },
-  pctPill: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 },
-  pctPillText: { fontFamily: Fonts.mono, fontSize: 12, fontWeight: '700' },
-  paceNote: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 12 },
+  hero: {},
+  heroLabel: { fontFamily: Fonts.mono, fontSize: 11, letterSpacing: 1.5 },
+  heroAmount: { fontFamily: Fonts.heading, fontSize: 44, fontWeight: '600', letterSpacing: -1, lineHeight: 47, marginTop: 8 },
+  pctRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 13 },
+  pctPill: { flexDirection: 'row', alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5, gap: 4 },
+  pctPillText: { fontFamily: Fonts.mono, fontSize: 12, fontWeight: '500' },
+  paceNote: { fontFamily: Fonts.sans, fontSize: 13 },
 
   // Section card
-  sectionCard: {
-    backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: MonikeColors.inkGhost,
-    borderRadius: CardRadius, padding: 16, gap: 12,
+  sectionCard: { borderWidth: 1, borderRadius: 22, padding: 18, paddingBottom: 16 },
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 14 },
+  sectionTitle: { fontFamily: Fonts.heading, fontSize: 15, fontWeight: '600' },
+  legendRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  legendLabel: { fontFamily: Fonts.mono, fontSize: 9 },
+  legendDot: { width: 11, height: 11, borderRadius: 3 },
+
+  // Calendar
+  dowRow: { flexDirection: 'row', gap: 6 },
+  dowLabel: { flex: 1, textAlign: 'center', fontFamily: Fonts.mono, fontSize: 9 },
+  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
+  calCell: {
+    width: '12.6%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 5,
   },
-  sectionTitle: { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 15, fontWeight: '700' },
-  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  legendRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  legendLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 8, fontWeight: '700', letterSpacing: 0.4 },
-  legendDot: { width: 8, height: 8, borderRadius: 4, marginHorizontal: 1 },
+  calCellText: { fontFamily: Fonts.mono, fontSize: 9 },
 
-  // Heatmap
-  heatmapWeekRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  heatmapWeekLabel: { flex: 1, textAlign: 'center', color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 9 },
-  heatmapGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 6 },
-  heatmapCell: {
-    width: '14.28%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center',
-    borderRadius: 8, marginBottom: 4,
-  },
-  heatmapCellBlank: { backgroundColor: 'transparent' },
-  heatmapCellText: { color: MonikeColors.inkSecondary, fontFamily: Fonts.mono, fontSize: 10, fontWeight: '600' },
+  h2: { fontFamily: Fonts.heading, fontSize: 17, fontWeight: '600' },
 
-  // Weekly + categories shared bar
-  weekRow: { gap: 6 },
-  weekRowTop: { flexDirection: 'row', justifyContent: 'space-between' },
-  weekRowLabel: { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 12 },
-  weekRowAmount: { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 12, fontWeight: '700' },
-  weekBarTrack: { height: 6, borderRadius: 3, backgroundColor: MonikeColors.bgElevated, overflow: 'hidden' },
-  weekBarFill: { height: '100%', borderRadius: 3 },
+  // By week
+  weekList: { marginTop: 14, gap: 16 },
+  weekRowTop: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 7 },
+  weekRowLabel: { fontFamily: Fonts.sans, fontSize: 13.5, fontWeight: '600' },
+  weekRowCount: { fontFamily: Fonts.mono, fontSize: 11, fontWeight: '500' },
+  weekRowAmount: { fontFamily: Fonts.mono, fontSize: 13 },
+  barTrack: { height: 6, borderRadius: 3, overflow: 'hidden' },
+  barFill: { height: '100%', borderRadius: 3 },
 
-  catRow: { gap: 6 },
-  catRowTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  catLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  catDot: { width: 8, height: 8, borderRadius: 4 },
-  catLabel: { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 12 },
-  catShare: { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 12, fontWeight: '700' },
-  emptyText: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 12 },
+  // Top categories
+  catList: { marginTop: 14, gap: 15 },
+  catRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  catDot: { width: 11, height: 11, borderRadius: 5.5, flexShrink: 0 },
+  catBody: { flex: 1, minWidth: 0 },
+  catTopRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 },
+  catName: { fontFamily: Fonts.sans, fontSize: 14, fontWeight: '600' },
+  catTotal: { fontFamily: Fonts.mono, fontSize: 13 },
+  catBarRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  catBarTrack: { flex: 1, height: 5 },
+  catShare: { fontFamily: Fonts.mono, fontSize: 10, width: 30, textAlign: 'right' },
+  emptyText: { fontFamily: Fonts.sans, fontSize: 12 },
 
   // Key stats
-  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  statsCell: { width: '47%', gap: 4 },
-  statsLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 9, fontWeight: '700', letterSpacing: 0.6 },
-  statsValue: { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 16, fontWeight: '800' },
-  statsSub: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11 },
-});
-
-const modalStyles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 24 },
-  sheet: {
-    backgroundColor: MonikeColors.bgSurface, borderRadius: CardRadius, borderWidth: 1,
-    borderColor: MonikeColors.inkGhost, padding: 16,
-  },
-  sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  sheetTitle: { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 16, fontWeight: '700' },
-  row: { paddingVertical: 12, paddingHorizontal: 10, borderRadius: 10 },
-  rowText: { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 14 },
+  keyStatsWrap: { paddingBottom: 8 },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 14 },
+  statsCard: { width: '47.5%', borderWidth: 1, borderRadius: 18, padding: 15, paddingHorizontal: 16 },
+  statsLabel: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 0.6 },
+  statsValue: { fontFamily: Fonts.heading, fontSize: 19, fontWeight: '600', marginTop: 8, letterSpacing: -0.1 },
+  statsSub: { fontFamily: Fonts.sans, fontSize: 11.5, marginTop: 3 },
 });

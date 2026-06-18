@@ -7,7 +7,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Activity, BarChart2, House, Plus, User } from 'lucide-react-native';
-import { Fonts, LightColors, MonikeColors } from '@/constants/theme';
+import { Fonts } from '@/constants/theme';
 import { useAccent } from '@/contexts/accent-context';
 
 // Add is presented as a modal (see app/_layout.tsx) — it has no "active" tab
@@ -81,20 +81,10 @@ function PressScale({
 }
 
 // ─── BottomNavigation ─────────────────────────────────────────────────────────
-// `variant` controls the bar's own palette — 'light' for the Home screen
-// (which renders on a cream background), 'dark' everywhere else.
-export function BottomNavigation({
-  activeRoute,
-  variant = 'dark',
-}: {
-  activeRoute: RouteName;
-  variant?: 'light' | 'dark';
-}) {
+export function BottomNavigation({ activeRoute }: { activeRoute: RouteName }) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { accent } = useAccent();
-  const isLight = variant === 'light';
-  const inactiveColor = isLight ? LightColors.textMuted : MonikeColors.inkMuted;
+  const { accent, colors } = useAccent();
 
   const leftTabs = tabs.slice(0, 2);
   const rightTabs = tabs.slice(2);
@@ -110,11 +100,11 @@ export function BottomNavigation({
         onPress={() => router.navigate(route as any)}
       >
         <Icon
-          size={21}
-          color={active ? accent : inactiveColor}
+          size={23}
+          color={active ? accent : colors.ink3}
           strokeWidth={active ? 2.2 : 1.7}
         />
-        <Text style={[styles.tabLabel, { color: inactiveColor }, active && { color: accent, fontWeight: '700' }]}>
+        <Text style={[styles.tabLabel, { color: colors.ink3 }, active && { color: accent, fontWeight: '700' }]}>
           {label}
         </Text>
       </PressScale>
@@ -125,7 +115,7 @@ export function BottomNavigation({
     <View
       style={[
         styles.container,
-        { backgroundColor: isLight ? LightColors.card : '#0A0C12', borderTopColor: isLight ? LightColors.divider : 'rgba(255,255,255,0.07)' },
+        { backgroundColor: colors.card, borderTopColor: colors.line },
         { paddingBottom: insets.bottom > 0 ? insets.bottom : 8 },
       ]}
     >
@@ -153,9 +143,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#0A0C12',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.07)',
     pointerEvents: 'box-none',
   },
 
@@ -178,7 +166,6 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   tabLabel: {
-    color: MonikeColors.inkMuted,
     fontFamily: Fonts.sans,
     fontSize: 10,
     fontWeight: '500',
@@ -193,13 +180,12 @@ const styles = StyleSheet.create({
   fabInner: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
-    paddingBottom: 4,
+    marginTop: -4,
   },
   fab: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 48,
+    height: 48,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     shadowOffset: { width: 0, height: 4 },

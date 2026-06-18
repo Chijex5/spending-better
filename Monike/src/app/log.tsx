@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   Modal,
   Pressable,
   ScrollView,
@@ -14,44 +13,38 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   Calendar,
   Check,
+  ChevronDown,
   CreditCard,
   StickyNote,
-  TriangleAlert,
-  Upload,
   X,
 } from 'lucide-react-native';
 
 import { useAccent } from '@/contexts/accent-context';
-import { apiFetch, postLog, type LogEntry, type LogWriteRequest, type UploadResult } from '@/services/api';
+import { apiFetch, postLog, type LogEntry, type LogWriteRequest } from '@/services/api';
 import { mutateAll } from '@/hooks/use-swr';
-import { useUploadStatement } from '@/hooks/use-upload-statement';
-import { CardRadius, Fonts, MonikeColors, ScreenPadding } from '@/constants/theme';
+import { CardRadius, Fonts, ScreenPadding, hexAlpha } from '@/constants/theme';
 
 // ─── Categories ───────────────────────────────────────────────────────────────
 // Maps to a LogWriteRequest field. LogEntry (the GET /log/{date} response) only
-// round-trips p2p/pos/data/airtime/online/family/savings — "Food" and the other
-// LogWriteRequest-only fields aren't returned, so handleSave folds whatever part
-// of baseline.total_debit isn't explained by those 7 fields into other_spend
-// instead of dropping it, to avoid shrinking total_debit on every subsequent save.
+// round-trips p2p/pos/data/airtime/online/family/savings — "Bills" has no direct
+// counterpart so it folds into electricity_spend, the closest existing field.
+// handleSave folds whatever part of baseline.total_debit isn't explained by the
+// 6 tracked fields into other_spend, to avoid shrinking total_debit on every save.
 
-type CategoryKey = 'pos_spend' | 'p2p_spend' | 'data_spend' | 'airtime_spend' | 'family_spend' | 'online_spend' | 'food_spend' | 'savings_out';
+type CategoryKey = 'p2p_spend' | 'pos_spend' | 'airtime_spend' | 'data_spend' | 'family_spend' | 'electricity_spend';
 
-type CategoryDef = {
-  key: CategoryKey;
-  label: string;
-  color: string;
-};
+type CategoryDef = { key: CategoryKey; name: string; dot: string };
 
 const CATEGORIES: CategoryDef[] = [
-  { key: 'pos_spend', label: 'POS', color: '#D9822B' },
-  { key: 'p2p_spend', label: 'Transfer', color: '#5B7CFA' },
-  { key: 'data_spend', label: 'Data', color: '#2FA98E' },
-  { key: 'airtime_spend', label: 'Airtime', color: '#A368E0' },
-  { key: 'family_spend', label: 'Family', color: '#E2685B' },
-  { key: 'online_spend', label: 'Online', color: '#5B7CFA' },
-  { key: 'food_spend', label: 'Food', color: '#D9A23A' },
-  { key: 'savings_out', label: 'Savings', color: '#2FBF6B' },
+  { key: 'p2p_spend', name: 'Transfer', dot: '#5B7CFA' },
+  { key: 'pos_spend', name: 'POS', dot: '#E08A3C' },
+  { key: 'airtime_spend', name: 'Airtime', dot: '#B06FD6' },
+  { key: 'data_spend', name: 'Data', dot: '#2BB3A3' },
+  { key: 'family_spend', name: 'Family', dot: '#E5645B' },
+  { key: 'electricity_spend', name: 'Bills', dot: '#E0A11C' },
 ];
+
+const KEY_LABELS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'];
 
 const EMPTY_REQUEST: Omit<LogWriteRequest, 'date'> = {
   p2p_spend: 0,
@@ -87,18 +80,9 @@ function addDays(d: Date, n: number) {
 function formatDateLabel(d: Date) {
   const today = dateKey(new Date());
   const key = dateKey(d);
-  if (key === today) return `Today · ${d.toLocaleDateString('en-NG', { month: 'short', day: 'numeric' })}`;
+  if (key === today) return 'Today';
   if (key === dateKey(addDays(new Date(), -1))) return 'Yesterday';
-  return d.toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short' });
-}
-
-function dayName(d: Date) {
-  return d.toLocaleDateString('en-NG', { weekday: 'long' });
-}
-
-function parseAmount(raw: string): number {
-  const value = parseFloat(raw.replace(/[^0-9.]/g, ''));
-  return Number.isFinite(value) ? value : 0;
+  return d.toLocaleDateString('en-NG', { day: 'numeric', month: 'short' });
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
@@ -106,21 +90,17 @@ function parseAmount(raw: string): number {
 export default function LogScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { accent } = useAccent();
+  const { accent, accentTint, colors, dark } = useAccent();
 
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [category, setCategory] = useState<CategoryKey>('pos_spend');
+  const [category, setCategory] = useState<CategoryKey>('p2p_spend');
   const [mode, setMode] = useState<'debit' | 'credit'>('debit');
-  const [amountInput, setAmountInput] = useState('');
+  const [amountDigits, setAmountDigits] = useState('');
   const [note, setNote] = useState('');
   const [baseline, setBaseline] = useState<LogEntry | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedModal, setSavedModal] = useState<{ visible: boolean; highSpend: boolean }>({ visible: false, highSpend: false });
-
-  const handleUploadSuccess = useCallback((_result: UploadResult) => {
-    mutateAll();
-  }, []);
-  const { uploadState, pickAndUpload, reset: resetUpload } = useUploadStatement(handleUploadSuccess);
+  const [moreSheet, setMoreSheet] = useState(false);
 
   const key = dateKey(selectedDate);
 
@@ -132,12 +112,25 @@ export default function LogScreen() {
     return () => { cancelled = true; };
   }, [key]);
 
-  const amount = parseAmount(amountInput);
+  const amountDisplay = amountDigits === '' ? '0' : Number(amountDigits).toLocaleString('en-US');
+  const amount = parseFloat(amountDigits) || 0;
   const activeCategory = CATEGORIES.find((c) => c.key === category)!;
 
   function close() {
     if (router.canGoBack()) router.back();
     else router.replace('/');
+  }
+
+  function press(v: string) {
+    if (v === 'back') {
+      setAmountDigits((cur) => cur.slice(0, -1));
+      return;
+    }
+    setAmountDigits((cur) => {
+      if (cur.length >= 9) return cur;
+      if (v === '0' && cur === '') return cur;
+      return cur + v;
+    });
   }
 
   async function handleSave() {
@@ -176,7 +169,7 @@ export default function LogScreen() {
 
       const result = await postLog(merged);
       await mutateAll();
-      setAmountInput('');
+      setAmountDigits('');
       setNote('');
       setBaseline(result);
       setSavedModal({ visible: true, highSpend: result.high_spend });
@@ -188,199 +181,153 @@ export default function LogScreen() {
   }
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { backgroundColor: colors.bg }]}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.header}>
-          <Pressable style={styles.closeButton} onPress={close} hitSlop={8}>
-            <X size={18} color={MonikeColors.inkPrimary} strokeWidth={2} />
+          <Pressable style={[styles.closeButton, { backgroundColor: colors.card }]} onPress={close} hitSlop={8}>
+            <X size={18} color={colors.ink} strokeWidth={2} />
           </Pressable>
-          <Text style={styles.headerTitle}>Log a spend</Text>
-          <Pressable
-            style={styles.uploadButton}
-            onPress={pickAndUpload}
-            disabled={uploadState.status !== 'idle' && uploadState.status !== 'error'}
-            hitSlop={8}
-          >
-            <Upload size={16} color={MonikeColors.inkSecondary} strokeWidth={2} />
+          <Pressable style={[styles.moreChip, { backgroundColor: colors.card }]} onPress={() => setMoreSheet(true)}>
+            <Text style={[styles.moreChipText, { color: colors.ink2 }]}>
+              {formatDateLabel(selectedDate)} · {mode === 'debit' ? 'Debit' : 'Credit'}
+            </Text>
+            <ChevronDown size={14} color={colors.ink3} strokeWidth={2.2} />
           </Pressable>
         </View>
 
-        {uploadState.status === 'picking' || uploadState.status === 'uploading' || uploadState.status === 'processing' ? (
-          <View style={styles.uploadStrip}>
-            <ActivityIndicator size="small" color={accent} />
-            <Text style={styles.uploadStripText} numberOfLines={1}>
-              {uploadState.status === 'picking' && 'Opening file picker…'}
-              {uploadState.status === 'uploading' && `Uploading ${uploadState.filename}…`}
-              {uploadState.status === 'processing' &&
-                (uploadState.progress
-                  ? `Processing ${uploadState.progress.phase === 'transactions' ? 'transactions' : 'daily totals'} ${uploadState.progress.done}/${uploadState.progress.total}`
-                  : 'Processing statement…')}
-            </Text>
-          </View>
-        ) : null}
-
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 28 }]}
+          contentContainerStyle={styles.content}
         >
           {/* Amount display */}
           <View style={styles.amountWrap}>
-            <Text style={styles.amountLabel}>AMOUNT</Text>
+            <Text style={[styles.amountLabel, { color: colors.ink3 }]}>AMOUNT</Text>
             <View style={styles.amountRow}>
-              <Text style={styles.amountCurrency}>₦</Text>
-              <TextInput
-                style={styles.amountInput}
-                value={amountInput}
-                onChangeText={(t) => setAmountInput(t.replace(/[^0-9.]/g, ''))}
-                placeholder="0"
-                placeholderTextColor={MonikeColors.inkMuted}
-                keyboardType="decimal-pad"
-                autoFocus
-              />
+              <Text style={[styles.amountCurrency, { color: colors.ink2 }]}>₦</Text>
+              <Text style={[styles.amountValue, { color: colors.ink }]}>{amountDisplay}</Text>
+            </View>
+            <View style={[styles.predictedPill, { backgroundColor: accentTint }]}>
+              <Check size={13} color={accent} strokeWidth={2.4} />
+              <Text style={[styles.predictedCat, { color: accent }]}>{activeCategory.name}</Text>
+              <Text style={[styles.predictedConf, { color: accent }]}>92%</Text>
             </View>
           </View>
 
           {/* Category chips */}
-          <View>
-            <Text style={styles.fieldLabel}>CATEGORY</Text>
-            <View style={styles.chipGrid}>
-              {CATEGORIES.map((c) => {
-                const active = c.key === category;
-                return (
-                  <Pressable
-                    key={c.key}
-                    style={[
-                      styles.chip,
-                      active && { backgroundColor: c.color + '33', borderColor: c.color },
-                    ]}
-                    onPress={() => setCategory(c.key)}
-                  >
-                    <View style={[styles.chipDot, { backgroundColor: c.color }]} />
-                    <Text style={[styles.chipLabel, active && { color: MonikeColors.inkPrimary, fontWeight: '700' }]}>{c.label}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+          <Text style={[styles.fieldLabel, { color: colors.ink3 }]}>CATEGORY</Text>
+          <View style={styles.chipGrid}>
+            {CATEGORIES.map((c) => {
+              const active = c.key === category;
+              return (
+                <Pressable
+                  key={c.key}
+                  style={[
+                    styles.chip,
+                    { backgroundColor: active ? hexAlpha(accent, dark ? 0.18 : 0.12) : colors.card, borderColor: active ? accent : colors.line },
+                  ]}
+                  onPress={() => setCategory(c.key)}
+                >
+                  <View style={[styles.chipDot, { backgroundColor: c.dot }]} />
+                  <Text style={[styles.chipLabel, { color: active ? colors.ink : colors.ink2, fontWeight: active ? '600' : '500' }]}>{c.name}</Text>
+                </Pressable>
+              );
+            })}
           </View>
 
-          {/* Fields card */}
-          <View style={styles.sectionCard}>
-            <View style={styles.fieldRow}>
-              <View style={styles.fieldLeft}>
-                <Calendar size={16} color={MonikeColors.inkSecondary} strokeWidth={1.8} />
-                <Text style={styles.fieldRowLabel}>Date</Text>
-              </View>
-              <Pressable onPress={() => setSelectedDate(new Date())} hitSlop={6}>
-                <Text style={styles.dateText}>{formatDateLabel(selectedDate)}</Text>
+          {/* Note */}
+          <Text style={[styles.fieldLabel, { color: colors.ink3 }]}>NOTE</Text>
+          <View style={[styles.noteRow, { backgroundColor: colors.card, borderColor: colors.line }]}>
+            <StickyNote size={17} color={colors.ink3} strokeWidth={2} />
+            <TextInput
+              style={[styles.noteInput, { color: colors.ink }]}
+              value={note}
+              onChangeText={setNote}
+              placeholder="Add a note (optional)"
+              placeholderTextColor={colors.ink2}
+            />
+          </View>
+
+          {/* Keypad */}
+          <View style={styles.keypad}>
+            {KEY_LABELS.map((l) => (
+              <Pressable
+                key={l}
+                style={[styles.key, { backgroundColor: l === '.' || l === '⌫' ? 'transparent' : colors.card }]}
+                onPress={() => press(l === '⌫' ? 'back' : l)}
+              >
+                <Text style={[styles.keyText, { color: colors.ink }]}>{l}</Text>
               </Pressable>
-            </View>
-            <View style={styles.divider} />
-
-            <View style={styles.fieldRow}>
-              <View style={styles.fieldLeft}>
-                <CreditCard size={16} color={MonikeColors.inkSecondary} strokeWidth={1.8} />
-                <Text style={styles.fieldRowLabel}>Type</Text>
-              </View>
-              <View style={styles.toggleRow}>
-                <Pressable
-                  style={[styles.toggleBtn, mode === 'debit' && { backgroundColor: accent }]}
-                  onPress={() => setMode('debit')}
-                >
-                  <Text style={[styles.toggleText, mode === 'debit' && { color: '#fff', fontWeight: '700' }]}>Debit</Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.toggleBtn, mode === 'credit' && { backgroundColor: accent }]}
-                  onPress={() => setMode('credit')}
-                >
-                  <Text style={[styles.toggleText, mode === 'credit' && { color: '#fff', fontWeight: '700' }]}>Credit</Text>
-                </Pressable>
-              </View>
-            </View>
-            <View style={styles.divider} />
-
-            <View style={styles.noteRow}>
-              <StickyNote size={16} color={MonikeColors.inkSecondary} strokeWidth={1.8} />
-              <TextInput
-                style={styles.noteInput}
-                value={note}
-                onChangeText={setNote}
-                placeholder="Add a note (optional)"
-                placeholderTextColor={MonikeColors.inkMuted}
-              />
-            </View>
+            ))}
           </View>
+        </ScrollView>
 
-          <View style={styles.tipRow}>
-            <View style={[styles.tipIcon, { borderColor: accent }]}>
-              <Text style={[styles.tipIconText, { color: accent }]}>i</Text>
-            </View>
-            <Text style={styles.tipText}>
-              Most spends here are tagged <Text style={styles.tipBold}>{activeCategory.label}</Text> on {dayName(selectedDate)}s.
-            </Text>
-          </View>
-
+        <View style={[styles.footer, { backgroundColor: colors.bg, paddingBottom: Math.max(14, insets.bottom) }]}>
           <Pressable
             style={[styles.saveButton, { backgroundColor: accent, shadowColor: accent }, amount <= 0 && styles.saveButtonDisabled]}
             onPress={handleSave}
             disabled={amount <= 0 || saving}
           >
-            <Check size={16} color="#fff" strokeWidth={2.5} />
+            <Check size={20} color="#fff" strokeWidth={2.4} />
             <Text style={styles.saveButtonText}>{saving ? 'Saving…' : 'Save spend'}</Text>
           </Pressable>
-        </ScrollView>
+        </View>
       </SafeAreaView>
+
+      {/* Tucked-away Date / Type sheet */}
+      <Modal visible={moreSheet} transparent animationType="fade" onRequestClose={() => setMoreSheet(false)}>
+        <Pressable style={modalStyles.backdrop} onPress={() => setMoreSheet(false)}>
+          <Pressable style={[modalStyles.sheet, { backgroundColor: colors.card, borderColor: colors.line }]} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.fieldRow}>
+              <View style={styles.fieldLeft}>
+                <Calendar size={16} color={colors.ink2} strokeWidth={1.8} />
+                <Text style={[styles.fieldRowLabel, { color: colors.ink2 }]}>Date</Text>
+              </View>
+              <Pressable onPress={() => setSelectedDate(new Date())} hitSlop={6}>
+                <Text style={[styles.dateText, { color: colors.ink }]}>{formatDateLabel(selectedDate)}</Text>
+              </Pressable>
+            </View>
+            <View style={[styles.divider, { backgroundColor: colors.line }]} />
+            <View style={styles.fieldRow}>
+              <View style={styles.fieldLeft}>
+                <CreditCard size={16} color={colors.ink2} strokeWidth={1.8} />
+                <Text style={[styles.fieldRowLabel, { color: colors.ink2 }]}>Type</Text>
+              </View>
+              <View style={[styles.toggleRow, { backgroundColor: colors.chip }]}>
+                <Pressable
+                  style={[styles.toggleBtn, mode === 'debit' && { backgroundColor: accent }]}
+                  onPress={() => setMode('debit')}
+                >
+                  <Text style={[styles.toggleText, { color: mode === 'debit' ? '#fff' : colors.ink2, fontWeight: mode === 'debit' ? '700' : '500' }]}>Debit</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.toggleBtn, mode === 'credit' && { backgroundColor: accent }]}
+                  onPress={() => setMode('credit')}
+                >
+                  <Text style={[styles.toggleText, { color: mode === 'credit' ? '#fff' : colors.ink2, fontWeight: mode === 'credit' ? '700' : '500' }]}>Credit</Text>
+                </Pressable>
+              </View>
+            </View>
+            <Pressable style={[modalStyles.doneButton, { backgroundColor: accent }]} onPress={() => setMoreSheet(false)}>
+              <Text style={modalStyles.doneText}>Done</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal visible={savedModal.visible} transparent animationType="fade" onRequestClose={() => setSavedModal({ visible: false, highSpend: false })}>
         <View style={modalStyles.backdrop}>
-          <View style={modalStyles.sheet}>
-            <View style={[modalStyles.checkCircle, { backgroundColor: accent + '20', borderColor: accent }]}>
+          <View style={[modalStyles.sheet, { backgroundColor: colors.card, borderColor: colors.line, alignItems: 'center' }]}>
+            <View style={[modalStyles.checkCircle, { backgroundColor: accentTint, borderColor: accent }]}>
               <Check size={24} color={accent} strokeWidth={2.5} />
             </View>
-            <Text style={modalStyles.title}>Spend saved</Text>
+            <Text style={[modalStyles.title, { color: colors.ink }]}>Spend saved</Text>
             {savedModal.highSpend ? (
-              <Text style={modalStyles.warning}>This pushed today over your high-spend threshold.</Text>
+              <Text style={[modalStyles.warning, { color: '#E0A11C' }]}>This pushed today over your high-spend threshold.</Text>
             ) : null}
             <Pressable
               style={[modalStyles.doneButton, { backgroundColor: accent }]}
               onPress={() => setSavedModal({ visible: false, highSpend: false })}
             >
-              <Text style={modalStyles.doneText}>Done</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={uploadState.status === 'success' || uploadState.status === 'error'}
-        transparent
-        animationType="fade"
-        onRequestClose={resetUpload}
-      >
-        <View style={modalStyles.backdrop}>
-          <View style={modalStyles.sheet}>
-            {uploadState.status === 'success' ? (
-              <>
-                <View style={[modalStyles.checkCircle, { backgroundColor: accent + '20', borderColor: accent }]}>
-                  <Check size={24} color={accent} strokeWidth={2.5} />
-                </View>
-                <Text style={modalStyles.title}>Statement imported</Text>
-                <Text style={modalStyles.summary}>
-                  {uploadState.result.new_days_inserted} new days · {uploadState.result.days_updated} updated · {uploadState.result.duplicate_transactions_skipped} duplicates skipped
-                </Text>
-                <Text style={modalStyles.summaryMuted}>
-                  {uploadState.result.date_range_start} → {uploadState.result.date_range_end}
-                </Text>
-              </>
-            ) : uploadState.status === 'error' ? (
-              <>
-                <View style={[modalStyles.checkCircle, { backgroundColor: MonikeColors.signalAmber + '20', borderColor: MonikeColors.signalAmber }]}>
-                  <TriangleAlert size={24} color={MonikeColors.signalAmber} strokeWidth={2.5} />
-                </View>
-                <Text style={modalStyles.title}>Upload failed</Text>
-                <Text style={modalStyles.summaryMuted}>{uploadState.message}</Text>
-              </>
-            ) : null}
-            <Pressable style={[modalStyles.doneButton, { backgroundColor: accent }]} onPress={resetUpload}>
               <Text style={modalStyles.doneText}>Done</Text>
             </Pressable>
           </View>
@@ -393,7 +340,7 @@ export default function LogScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: MonikeColors.bgVoid },
+  root: { flex: 1 },
   safeArea: { flex: 1 },
 
   header: {
@@ -402,85 +349,75 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: MonikeColors.bgSurface,
   },
-  headerTitle: { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 17, fontWeight: '700' },
-  uploadButton: {
-    width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: MonikeColors.bgSurface,
+  moreChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999,
   },
+  moreChipText: { fontFamily: Fonts.mono, fontSize: 11.5 },
 
-  uploadStrip: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    marginHorizontal: ScreenPadding, marginTop: 10, paddingHorizontal: 12, paddingVertical: 8,
-    borderRadius: 10, backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: MonikeColors.inkGhost,
+  content: { paddingHorizontal: ScreenPadding, paddingTop: 6, paddingBottom: 12 },
+
+  amountWrap: { alignItems: 'center', paddingVertical: 14, paddingBottom: 26 },
+  amountLabel: { fontFamily: Fonts.mono, fontSize: 11, letterSpacing: 1.4 },
+  amountRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4, marginTop: 12 },
+  amountCurrency: { fontFamily: Fonts.heading, fontSize: 34, fontWeight: '600' },
+  amountValue: { fontFamily: Fonts.heading, fontSize: 56, fontWeight: '600', letterSpacing: -0.5, lineHeight: 60 },
+  predictedPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 16,
+    paddingHorizontal: 13, paddingVertical: 6, borderRadius: 999,
   },
-  uploadStripText: { flex: 1, color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 12 },
+  predictedCat: { fontFamily: Fonts.sans, fontSize: 12.5, fontWeight: '600' },
+  predictedConf: { fontFamily: Fonts.mono, fontSize: 11, opacity: 0.7 },
 
-  content: { paddingHorizontal: ScreenPadding, paddingTop: 8, gap: 22 },
+  fieldLabel: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 1.2, marginHorizontal: 2, marginBottom: 11 },
 
-  amountWrap: { alignItems: 'center', gap: 8, paddingVertical: 16 },
-  amountLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 10, fontWeight: '700', letterSpacing: 1.2 },
-  amountRow: { flexDirection: 'row', alignItems: 'center' },
-  amountCurrency: { color: MonikeColors.inkSecondary, fontFamily: Fonts.mono, fontSize: 30, fontWeight: '700', marginRight: 6 },
-  amountInput: {
-    color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 52, fontWeight: '800',
-    minWidth: 90, textAlign: 'center', padding: 0,
-  },
-
-  fieldLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 10 },
-  chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginBottom: 26 },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 7,
-    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20,
-    backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: 'transparent',
+    paddingHorizontal: 15, paddingVertical: 9, borderRadius: 999, borderWidth: 1,
   },
-  chipDot: { width: 8, height: 8, borderRadius: 4 },
-  chipLabel: { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 13 },
+  chipDot: { width: 9, height: 9, borderRadius: 4.5 },
+  chipLabel: { fontFamily: Fonts.sans, fontSize: 13.5 },
 
-  sectionCard: {
-    backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: MonikeColors.inkGhost,
-    borderRadius: CardRadius, paddingHorizontal: 16,
+  noteRow: {
+    borderWidth: 1, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 15,
+    flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 24,
   },
-  fieldRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14 },
-  fieldLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  fieldRowLabel: { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 13.5 },
-  dateText: { color: MonikeColors.inkPrimary, fontFamily: Fonts.sans, fontSize: 13.5, fontWeight: '600' },
-  divider: { height: 0.5, backgroundColor: MonikeColors.inkGhost },
+  noteInput: { flex: 1, fontFamily: Fonts.sans, fontSize: 14, padding: 0 },
 
-  toggleRow: { flexDirection: 'row', backgroundColor: MonikeColors.bgElevated, borderRadius: 16, padding: 3, gap: 3 },
-  toggleBtn: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 13 },
-  toggleText: { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 12 },
+  keypad: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  key: { width: '31.5%', height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  keyText: { fontFamily: Fonts.heading, fontSize: 22, fontWeight: '500' },
 
-  noteRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 14 },
-  noteInput: { flex: 1, color: MonikeColors.inkPrimary, fontFamily: Fonts.sans, fontSize: 13.5, padding: 0 },
-
-  tipRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingHorizontal: 2 },
-  tipIcon: { width: 16, height: 16, borderRadius: 8, borderWidth: 1.3, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
-  tipIconText: { fontSize: 10, fontWeight: '700', fontFamily: Fonts.sans },
-  tipText: { flex: 1, color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 12.5, lineHeight: 17 },
-  tipBold: { color: MonikeColors.inkPrimary, fontWeight: '700' },
-
+  footer: { paddingHorizontal: 22, paddingTop: 8, paddingBottom: 14 },
   saveButton: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    borderRadius: CardRadius, paddingVertical: 16,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+    height: 56, borderRadius: 18,
     shadowOpacity: 0.4, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 6,
   },
   saveButtonDisabled: { opacity: 0.4 },
-  saveButtonText: { color: '#fff', fontFamily: Fonts.heading, fontSize: 15, fontWeight: '700' },
+  saveButtonText: { color: '#fff', fontFamily: Fonts.heading, fontSize: 16, fontWeight: '600' },
+
+  // Tucked sheet rows
+  fieldRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12 },
+  fieldLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  fieldRowLabel: { fontFamily: Fonts.sans, fontSize: 13.5 },
+  dateText: { fontFamily: Fonts.sans, fontSize: 13.5, fontWeight: '600' },
+  divider: { height: 0.5 },
+  toggleRow: { flexDirection: 'row', borderRadius: 16, padding: 3, gap: 3 },
+  toggleBtn: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 13 },
+  toggleText: { fontFamily: Fonts.sans, fontSize: 12 },
 });
 
 const modalStyles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 32 },
   sheet: {
-    backgroundColor: MonikeColors.bgSurface, borderRadius: CardRadius, borderWidth: 1,
-    borderColor: MonikeColors.inkGhost, padding: 24, alignItems: 'center', gap: 10,
+    borderRadius: CardRadius, borderWidth: 1, padding: 20, gap: 4,
   },
   checkCircle: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, marginBottom: 4 },
-  title: { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 17, fontWeight: '700' },
-  warning: { color: MonikeColors.signalAmber, fontFamily: Fonts.sans, fontSize: 12, textAlign: 'center' },
-  summary: { color: MonikeColors.inkSecondary, fontFamily: Fonts.sans, fontSize: 12, textAlign: 'center' },
-  summaryMuted: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 11, textAlign: 'center' },
-  doneButton: { borderRadius: 12, paddingHorizontal: 28, paddingVertical: 10, marginTop: 8 },
+  title: { fontFamily: Fonts.heading, fontSize: 17, fontWeight: '700' },
+  warning: { fontFamily: Fonts.sans, fontSize: 12, textAlign: 'center', marginTop: 4 },
+  doneButton: { borderRadius: 12, paddingHorizontal: 28, paddingVertical: 10, marginTop: 14, alignSelf: 'center' },
   doneText: { color: '#fff', fontFamily: Fonts.sans, fontSize: 13, fontWeight: '700' },
 });

@@ -18,6 +18,9 @@ async def lifespan(app: FastAPI):
     await execute(
         "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS accent_theme TEXT NOT NULL DEFAULT 'Emerald'"
     )
+    await execute(
+        "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS dark_mode BOOLEAN NOT NULL DEFAULT TRUE"
+    )
     await config.load_from_db()
     try:
         df = await combined_dataframe()

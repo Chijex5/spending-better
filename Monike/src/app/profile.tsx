@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Modal,
   Pressable,
@@ -18,18 +19,20 @@ import {
   DollarSign,
   Download,
   Globe,
-  RefreshCw,
+  Moon,
+  Palette,
   Tag,
   TriangleAlert,
-  User,
+  Upload,
   X,
 } from 'lucide-react-native';
 
 import { BottomNavigation } from '@/components/bottom-navigation';
-import { useSWR } from '@/hooks/use-swr';
+import { useSWR, mutateAll } from '@/hooks/use-swr';
+import { useUploadStatement } from '@/hooks/use-upload-statement';
 import { useAccent } from '@/contexts/accent-context';
 import { apiFetch, apiPost, type DashboardResponse } from '@/services/api';
-import { AccentPresets, BottomTabInset, CardRadius, Fonts, MonikeColors, ScreenPadding, type AccentName } from '@/constants/theme';
+import { AccentPresets, BottomTabInset, Fonts, ScreenPadding, hexAlpha, type AccentName } from '@/constants/theme';
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 // Not (yet) exported from services/api.ts — declared locally to avoid backend/API surface changes.
@@ -62,85 +65,10 @@ function formatNaira(value: number) {
   return new Intl.NumberFormat('en-NG', { maximumFractionDigits: 0 }).format(Math.abs(value));
 }
 
-// ─── Settings row ──────────────────────────────────────────────────────────────
-
-function SettingsRow({
-  Icon,
-  iconColor,
-  label,
-  value,
-  sub,
-  onPress,
-  chevron = true,
-}: {
-  Icon: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
-  iconColor: string;
-  label: string;
-  value?: string;
-  sub?: string;
-  onPress?: () => void;
-  chevron?: boolean;
-}) {
-  return (
-    <Pressable style={styles.row} onPress={onPress} disabled={!onPress}>
-      <View style={[styles.rowIcon, { backgroundColor: iconColor + '26' }]}>
-        <Icon size={16} color={iconColor} strokeWidth={2} />
-      </View>
-      <View style={styles.rowTextWrap}>
-        <Text style={styles.rowLabel}>{label}</Text>
-        {sub ? <Text style={styles.rowSub}>{sub}</Text> : null}
-      </View>
-      <View style={styles.rowRight}>
-        {value ? <Text style={styles.rowValue}>{value}</Text> : null}
-        {chevron ? <ChevronRight size={16} color={MonikeColors.inkMuted} /> : null}
-      </View>
-    </Pressable>
-  );
-}
-
-// ─── Edit-value modal ──────────────────────────────────────────────────────────
-
-function EditValueModal({
-  visible,
-  title,
-  initialValue,
-  accent,
-  onSave,
-  onClose,
-}: {
-  visible: boolean;
-  title: string;
-  initialValue: string;
-  accent: string;
-  onSave: (value: string) => void;
-  onClose: () => void;
-}) {
-  const [value, setValue] = useState(initialValue);
-
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={modalStyles.backdrop} onPress={onClose}>
-        <Pressable style={modalStyles.sheet} onPress={(e) => e.stopPropagation()}>
-          <View style={modalStyles.sheetHeader}>
-            <Text style={modalStyles.sheetTitle}>{title}</Text>
-            <Pressable onPress={onClose} hitSlop={8}>
-              <X size={18} color={MonikeColors.inkMuted} />
-            </Pressable>
-          </View>
-          <TextInput
-            style={modalStyles.input}
-            value={value}
-            onChangeText={setValue}
-            keyboardType="decimal-pad"
-            autoFocus
-          />
-          <Pressable style={[modalStyles.saveBtn, { backgroundColor: accent }]} onPress={() => onSave(value)}>
-            <Text style={modalStyles.saveBtnText}>Save</Text>
-          </Pressable>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
+function daysAgo(iso: string) {
+  const days = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000));
+  if (days === 0) return 'today';
+  return `${days} day${days === 1 ? '' : 's'} ago`;
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
@@ -148,7 +76,7 @@ function EditValueModal({
 export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { accentName, accent, setAccentName, settings, mutateSettings } = useAccent();
+  const { accentName, accent, accentTint, setAccentName, dark, setDark, colors, settings, mutateSettings } = useAccent();
 
   const { data: stats } = useSWR<DrawerStats>('/stats', apiFetch);
   const { data: modelStatus, mutate: mutateModelStatus } = useSWR<ModelStatusResponse>('/model/status', apiFetch);
@@ -157,6 +85,15 @@ export default function ProfileScreen() {
   const [editing, setEditing] = useState<'budget' | 'threshold' | null>(null);
   const [retraining, setRetraining] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+
+  const handleUploadSuccess = useCallback(() => { mutateAll(); }, []);
+  const { uploadState, pickAndUpload, reset: resetUpload } = useUploadStatement(handleUploadSuccess);
+  const uploadBusy = uploadState.status !== 'idle' && uploadState.status !== 'success' && uploadState.status !== 'error';
+  const uploadValue =
+    uploadState.status === 'picking' ? 'Opening…' :
+    uploadState.status === 'uploading' ? 'Uploading…' :
+    uploadState.status === 'processing' ? 'Processing…' :
+    'CSV / XLSX';
 
   const notificationsOn = Boolean(
     settings?.notify_high_spend || settings?.notify_weekly_summary || settings?.notify_model_updates,
@@ -182,8 +119,13 @@ export default function ProfileScreen() {
     }
   }
 
+  const initial = (settings?.display_name?.trim()?.[0] ?? 'C').toUpperCase();
+  const retrainSub = modelStatus?.trained
+    ? `Trained on ${modelStatus.training_rows} days${modelStatus.last_trained_at ? ` · ${daysAgo(modelStatus.last_trained_at)}` : ''}`
+    : 'Not yet trained';
+
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { backgroundColor: colors.bg }]}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <ScrollView
           showsVerticalScrollIndicator={false}
@@ -191,87 +133,109 @@ export default function ProfileScreen() {
         >
           {/* Profile head */}
           <View style={styles.profileHead}>
-            <View style={[styles.avatar, { backgroundColor: accent + '22', borderColor: accent }]}>
-              <User size={26} color={accent} strokeWidth={1.8} />
+            <View style={[styles.avatar, { backgroundColor: accent }]}>
+              <Text style={styles.avatarText}>{initial}</Text>
             </View>
-            <Text style={styles.profileName}>{settings?.display_name ?? 'Chijioke'}</Text>
-            <Text style={styles.profileSub}>OPay account</Text>
+            <View>
+              <Text style={[styles.profileName, { color: colors.ink }]}>{settings?.display_name ?? 'Chijioke'}</Text>
+              <Text style={[styles.profileSub, { color: colors.ink2 }]}>OPay account</Text>
+            </View>
           </View>
 
           {/* Mini stats */}
-          <View style={styles.statRow}>
+          <View style={[styles.statRow, { backgroundColor: colors.card, borderColor: colors.line }]}>
             <View style={styles.statCell}>
-              <Text style={styles.statLabel}>DAYS TRACKED</Text>
-              <Text style={styles.statValue}>{stats?.days_tracked ?? '—'}</Text>
+              <Text style={[styles.statValue, { color: colors.ink }]}>{stats?.days_tracked ?? '—'}</Text>
+              <Text style={[styles.statLabel, { color: colors.ink3 }]}>DAYS TRACKED</Text>
             </View>
-            <View style={styles.statSep} />
+            <View style={[styles.statSep, { backgroundColor: colors.line }]} />
             <View style={styles.statCell}>
-              <Text style={styles.statLabel}>DAY STREAK</Text>
-              <Text style={styles.statValue}>{dashboard?.spend_health.streak_days ?? '—'}</Text>
+              <Text style={[styles.statValue, { color: accent }]}>{dashboard?.spend_health.streak_days ?? '—'}</Text>
+              <Text style={[styles.statLabel, { color: colors.ink3 }]}>DAY STREAK</Text>
             </View>
-            <View style={styles.statSep} />
+            <View style={[styles.statSep, { backgroundColor: colors.line }]} />
             <View style={styles.statCell}>
-              <Text style={styles.statLabel}>MODEL ACC.</Text>
-              <Text style={styles.statValue}>
+              <Text style={[styles.statValue, { color: colors.ink }]}>
                 {modelStatus?.accuracy != null ? `${(modelStatus.accuracy * 100).toFixed(0)}%` : '—'}
               </Text>
+              <Text style={[styles.statLabel, { color: colors.ink3 }]}>MODEL ACC.</Text>
             </View>
           </View>
 
           {/* Appearance */}
           <View style={styles.group}>
-            <Text style={styles.groupTitle}>APPEARANCE</Text>
-            <View style={styles.sectionCard}>
-              <Text style={styles.rowLabel}>Accent color</Text>
-              <View style={styles.swatchRow}>
-                {(Object.keys(AccentPresets) as AccentName[]).map((name) => {
-                  const active = name === accentName;
-                  return (
-                    <Pressable
-                      key={name}
-                      style={styles.swatchWrap}
-                      onPress={() => setAccentName(name)}
-                    >
-                      <View
-                        style={[
-                          styles.swatch,
-                          { backgroundColor: AccentPresets[name] },
-                          active && styles.swatchActive,
-                        ]}
-                      >
-                        {active ? <View style={styles.swatchDot} /> : null}
-                      </View>
-                      <Text style={[styles.swatchLabel, active && { color: accent, fontWeight: '700' }]}>{name}</Text>
-                    </Pressable>
-                  );
-                })}
+            <Text style={[styles.groupTitle, { color: colors.ink3 }]}>APPEARANCE</Text>
+            <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.line }]}>
+              <View style={[styles.row, { borderBottomWidth: 1, borderBottomColor: colors.line }]}>
+                <View style={[styles.rowIcon, { backgroundColor: accentTint }]}>
+                  <Moon size={16} color={accent} strokeWidth={1.9} />
+                </View>
+                <Text style={[styles.rowLabel, { color: colors.ink }]}>Theme</Text>
+                <View style={[styles.segmentRow, { backgroundColor: colors.chip }]}>
+                  <Pressable
+                    style={[styles.segmentBtn, dark && { backgroundColor: accent }]}
+                    onPress={() => setDark(true)}
+                  >
+                    <Text style={[styles.segmentText, { color: dark ? '#fff' : colors.ink2, fontWeight: dark ? '600' : '500' }]}>Dark</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.segmentBtn, !dark && { backgroundColor: accent }]}
+                    onPress={() => setDark(false)}
+                  >
+                    <Text style={[styles.segmentText, { color: !dark ? '#fff' : colors.ink2, fontWeight: !dark ? '600' : '500' }]}>Light</Text>
+                  </Pressable>
+                </View>
+              </View>
+              <View style={styles.row}>
+                <View style={[styles.rowIcon, { backgroundColor: accentTint }]}>
+                  <Palette size={16} color={accent} strokeWidth={1.9} />
+                </View>
+                <Text style={[styles.rowLabel, { color: colors.ink }]}>Accent</Text>
+                <View style={styles.swatchRow}>
+                  {(Object.keys(AccentPresets) as AccentName[]).map((name) => {
+                    const active = name === accentName;
+                    const swatchColor = AccentPresets[name];
+                    return (
+                      <Pressable key={name} onPress={() => setAccentName(name)}>
+                        <View style={[styles.swatchRing, active && { backgroundColor: swatchColor }]}>
+                          <View style={[styles.swatchGap, active && { backgroundColor: colors.card }]}>
+                            <View style={[styles.swatchDot, { backgroundColor: swatchColor }]} />
+                          </View>
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+                </View>
               </View>
             </View>
           </View>
 
           {/* Budget */}
           <View style={styles.group}>
-            <Text style={styles.groupTitle}>BUDGET</Text>
-            <View style={styles.sectionCard}>
+            <Text style={[styles.groupTitle, { color: colors.ink3 }]}>BUDGET</Text>
+            <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.line }]}>
               <SettingsRow
+                colors={colors}
                 Icon={DollarSign}
                 iconColor="#5B7CFA"
                 label="Monthly budget"
                 value={`₦${formatNaira(settings?.monthly_budget ?? 0)}`}
                 onPress={() => setEditing('budget')}
+                divider
               />
-              <View style={styles.divider} />
               <SettingsRow
+                colors={colors}
                 Icon={TriangleAlert}
-                iconColor="#E2685B"
+                iconColor="#E5645B"
                 label="High-spend threshold"
                 value={`₦${formatNaira(settings?.high_spend_threshold ?? 0)}`}
                 onPress={() => setEditing('threshold')}
+                divider
               />
-              <View style={styles.divider} />
               <SettingsRow
+                colors={colors}
                 Icon={Tag}
-                iconColor="#D9A23A"
+                iconColor="#E08A3C"
                 label="Categories"
                 onPress={() => router.navigate('/patterns' as any)}
               />
@@ -280,57 +244,63 @@ export default function ProfileScreen() {
 
           {/* Preferences */}
           <View style={styles.group}>
-            <Text style={styles.groupTitle}>PREFERENCES</Text>
-            <View style={styles.sectionCard}>
+            <Text style={[styles.groupTitle, { color: colors.ink3 }]}>PREFERENCES</Text>
+            <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.line }]}>
               <SettingsRow
+                colors={colors}
                 Icon={Bell}
-                iconColor="#2FBF6B"
+                iconColor={accent}
                 label="Notifications"
                 value={notificationsOn ? 'On' : 'Off'}
                 onPress={() => setShowNotifications(true)}
+                divider
               />
-              <View style={styles.divider} />
               <SettingsRow
+                colors={colors}
                 Icon={Globe}
-                iconColor="#2FA9A0"
+                iconColor="#2BB3A3"
                 label="Currency"
                 value="₦ NGN"
                 chevron={false}
+                divider
               />
-              <View style={styles.divider} />
               <SettingsRow
+                colors={colors}
                 Icon={Download}
-                iconColor="#A368E0"
+                iconColor="#B06FD6"
                 label="Export data"
                 value="CSV"
                 onPress={() => Alert.alert('Export data', 'Data export is coming soon.')}
+                divider
+              />
+              <SettingsRow
+                colors={colors}
+                Icon={Upload}
+                iconColor="#E0A11C"
+                label="Import statement"
+                value={uploadValue}
+                onPress={pickAndUpload}
+                disabled={uploadBusy}
+                rightAdornment={uploadBusy ? <ActivityIndicator size="small" color={accent} /> : undefined}
+                chevron={!uploadBusy}
               />
             </View>
           </View>
 
           {/* Retrain card */}
-          <View style={styles.group}>
-            <Text style={styles.groupTitle}>MODEL</Text>
-            <View style={styles.sectionCard}>
-              <View style={styles.row}>
-                <View>
-                  <Text style={styles.rowLabel}>Prediction model</Text>
-                  <Text style={styles.rowSub}>
-                    {modelStatus?.trained
-                      ? `Trained on ${modelStatus.training_rows} days · ${modelStatus.model_version}`
-                      : 'Not yet trained'}
-                  </Text>
-                </View>
-              </View>
-              <View style={styles.divider} />
-              <Pressable style={[styles.retrainBtn, { borderColor: accent }]} onPress={handleRetrain} disabled={retraining}>
-                <RefreshCw size={15} color={accent} strokeWidth={2} />
-                <Text style={[styles.retrainBtnText, { color: accent }]}>{retraining ? 'Retraining…' : 'Retrain model'}</Text>
-              </Pressable>
+          <View style={[styles.retrainCard, { backgroundColor: accentTint }]}>
+            <View style={styles.retrainBody}>
+              <Text style={[styles.retrainTitle, { color: colors.ink }]}>Retrain your model</Text>
+              <Text style={[styles.retrainSub, { color: colors.ink2 }]}>{retrainSub}</Text>
             </View>
+            <Pressable style={[styles.retrainPill, { backgroundColor: accent }]} onPress={handleRetrain} disabled={retraining}>
+              {retraining ? <ActivityIndicator size="small" color="#fff" /> : (
+                <Text style={styles.retrainPillText}>Retrain</Text>
+              )}
+            </Pressable>
           </View>
 
-          <Text style={styles.footer}>Monike v2.0 · Spending, better</Text>
+          <Text style={[styles.footer, { color: colors.ink3 }]}>Monike v2.0 · Spending, better</Text>
         </ScrollView>
       </SafeAreaView>
 
@@ -340,6 +310,7 @@ export default function ProfileScreen() {
           title="Monthly budget"
           initialValue={String(settings?.monthly_budget ?? 0)}
           accent={accent}
+          colors={colors}
           onClose={() => setEditing(null)}
           onSave={async (value) => {
             const n = parseFloat(value);
@@ -354,6 +325,7 @@ export default function ProfileScreen() {
           title="High-spend threshold"
           initialValue={String(settings?.high_spend_threshold ?? 0)}
           accent={accent}
+          colors={colors}
           onClose={() => setEditing(null)}
           onSave={async (value) => {
             const n = parseFloat(value);
@@ -365,41 +337,78 @@ export default function ProfileScreen() {
 
       <Modal visible={showNotifications} transparent animationType="fade" onRequestClose={() => setShowNotifications(false)}>
         <Pressable style={modalStyles.backdrop} onPress={() => setShowNotifications(false)}>
-          <Pressable style={modalStyles.sheet} onPress={(e) => e.stopPropagation()}>
+          <Pressable style={[modalStyles.sheet, { backgroundColor: colors.card, borderColor: colors.line }]} onPress={(e) => e.stopPropagation()}>
             <View style={modalStyles.sheetHeader}>
-              <Text style={modalStyles.sheetTitle}>Notifications</Text>
+              <Text style={[modalStyles.sheetTitle, { color: colors.ink }]}>Notifications</Text>
               <Pressable onPress={() => setShowNotifications(false)} hitSlop={8}>
-                <X size={18} color={MonikeColors.inkMuted} />
+                <X size={18} color={colors.ink3} />
               </Pressable>
             </View>
             <View style={styles.row}>
-              <Text style={styles.rowLabel}>High-spend alerts</Text>
+              <Text style={[styles.rowLabel, { color: colors.ink }]}>High-spend alerts</Text>
               <Switch
                 value={settings?.notify_high_spend ?? false}
                 onValueChange={(v) => patchSettings({ notify_high_spend: v })}
-                trackColor={{ false: MonikeColors.bgElevated, true: accent }}
+                trackColor={{ false: colors.chip, true: accent }}
               />
             </View>
-            <View style={styles.divider} />
+            <View style={[styles.divider, { backgroundColor: colors.line }]} />
             <View style={styles.row}>
-              <Text style={styles.rowLabel}>Weekly summary</Text>
+              <Text style={[styles.rowLabel, { color: colors.ink }]}>Weekly summary</Text>
               <Switch
                 value={settings?.notify_weekly_summary ?? false}
                 onValueChange={(v) => patchSettings({ notify_weekly_summary: v })}
-                trackColor={{ false: MonikeColors.bgElevated, true: accent }}
+                trackColor={{ false: colors.chip, true: accent }}
               />
             </View>
-            <View style={styles.divider} />
+            <View style={[styles.divider, { backgroundColor: colors.line }]} />
             <View style={styles.row}>
-              <Text style={styles.rowLabel}>Model update notices</Text>
+              <Text style={[styles.rowLabel, { color: colors.ink }]}>Model update notices</Text>
               <Switch
                 value={settings?.notify_model_updates ?? false}
                 onValueChange={(v) => patchSettings({ notify_model_updates: v })}
-                trackColor={{ false: MonikeColors.bgElevated, true: accent }}
+                trackColor={{ false: colors.chip, true: accent }}
               />
             </View>
           </Pressable>
         </Pressable>
+      </Modal>
+
+      <Modal
+        visible={uploadState.status === 'success' || uploadState.status === 'error'}
+        transparent
+        animationType="fade"
+        onRequestClose={resetUpload}
+      >
+        <View style={modalStyles.backdrop}>
+          <View style={[modalStyles.sheet, { backgroundColor: colors.card, borderColor: colors.line }]}>
+            {uploadState.status === 'success' ? (
+              <>
+                <View style={[modalStyles.checkCircle, { backgroundColor: accentTint, borderColor: accent }]}>
+                  <Download size={24} color={accent} strokeWidth={2.5} />
+                </View>
+                <Text style={[modalStyles.title, { color: colors.ink }]}>Statement imported</Text>
+                <Text style={[modalStyles.summary, { color: colors.ink2 }]}>
+                  {uploadState.result.new_days_inserted} new days · {uploadState.result.days_updated} updated · {uploadState.result.duplicate_transactions_skipped} duplicates skipped
+                </Text>
+                <Text style={[modalStyles.summaryMuted, { color: colors.ink3 }]}>
+                  {uploadState.result.date_range_start} → {uploadState.result.date_range_end}
+                </Text>
+              </>
+            ) : uploadState.status === 'error' ? (
+              <>
+                <View style={[modalStyles.checkCircle, { backgroundColor: hexAlpha('#E0A11C', 0.16), borderColor: '#E0A11C' }]}>
+                  <TriangleAlert size={24} color="#E0A11C" strokeWidth={2.5} />
+                </View>
+                <Text style={[modalStyles.title, { color: colors.ink }]}>Upload failed</Text>
+                <Text style={[modalStyles.summaryMuted, { color: colors.ink3 }]}>{uploadState.message}</Text>
+              </>
+            ) : null}
+            <Pressable style={[modalStyles.doneButton, { backgroundColor: accent }]} onPress={resetUpload}>
+              <Text style={modalStyles.doneText}>Done</Text>
+            </Pressable>
+          </View>
+        </View>
       </Modal>
 
       <BottomNavigation activeRoute="profile" />
@@ -407,71 +416,163 @@ export default function ProfileScreen() {
   );
 }
 
+// ─── Settings row ──────────────────────────────────────────────────────────────
+
+function SettingsRow({
+  colors,
+  Icon,
+  iconColor,
+  label,
+  value,
+  onPress,
+  disabled,
+  chevron = true,
+  divider = false,
+  rightAdornment,
+}: {
+  colors: { ink: string; ink2: string; ink3: string; line: string };
+  Icon: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
+  iconColor: string;
+  label: string;
+  value?: string;
+  onPress?: () => void;
+  disabled?: boolean;
+  chevron?: boolean;
+  divider?: boolean;
+  rightAdornment?: React.ReactNode;
+}) {
+  return (
+    <Pressable
+      style={[styles.row, divider && { borderBottomWidth: 1, borderBottomColor: colors.line }]}
+      onPress={onPress}
+      disabled={!onPress || disabled}
+    >
+      <View style={[styles.rowIcon, { backgroundColor: hexAlpha(iconColor, 0.16) }]}>
+        <Icon size={16} color={iconColor} strokeWidth={1.9} />
+      </View>
+      <Text style={[styles.rowLabel, { color: colors.ink }]}>{label}</Text>
+      {value ? <Text style={[styles.rowValue, { color: colors.ink2 }]}>{value}</Text> : null}
+      {rightAdornment}
+      {chevron && !rightAdornment ? <ChevronRight size={17} color={colors.ink3} strokeWidth={2} /> : null}
+    </Pressable>
+  );
+}
+
+// ─── Edit-value modal ──────────────────────────────────────────────────────────
+
+function EditValueModal({
+  visible,
+  title,
+  initialValue,
+  accent,
+  colors,
+  onSave,
+  onClose,
+}: {
+  visible: boolean;
+  title: string;
+  initialValue: string;
+  accent: string;
+  colors: { ink: string; ink3: string; card: string; line: string };
+  onSave: (value: string) => void;
+  onClose: () => void;
+}) {
+  const [value, setValue] = useState(initialValue);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={modalStyles.backdrop} onPress={onClose}>
+        <Pressable style={[modalStyles.sheet, { backgroundColor: colors.card, borderColor: colors.line }]} onPress={(e) => e.stopPropagation()}>
+          <View style={modalStyles.sheetHeader}>
+            <Text style={[modalStyles.sheetTitle, { color: colors.ink }]}>{title}</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <X size={18} color={colors.ink3} />
+            </Pressable>
+          </View>
+          <TextInput
+            style={[modalStyles.input, { color: colors.ink, borderColor: colors.line }]}
+            value={value}
+            onChangeText={setValue}
+            keyboardType="decimal-pad"
+            autoFocus
+          />
+          <Pressable style={[modalStyles.saveBtn, { backgroundColor: accent }]} onPress={() => onSave(value)}>
+            <Text style={modalStyles.saveBtnText}>Save</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: MonikeColors.bgVoid },
+  root: { flex: 1 },
   safeArea: { flex: 1 },
-  content: { paddingHorizontal: ScreenPadding, paddingTop: 24, gap: 18 },
+  content: { paddingHorizontal: ScreenPadding, paddingTop: 12 },
 
-  profileHead: { alignItems: 'center', gap: 6, marginBottom: 4 },
-  avatar: { width: 72, height: 72, borderRadius: 36, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
-  profileName: { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 18, fontWeight: '700', marginTop: 6 },
-  profileSub: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 12 },
+  profileHead: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 12, paddingBottom: 24 },
+  avatar: { width: 64, height: 64, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: '#fff', fontFamily: Fonts.heading, fontSize: 24, fontWeight: '600' },
+  profileName: { fontFamily: Fonts.heading, fontSize: 21, fontWeight: '600' },
+  profileSub: { fontFamily: Fonts.mono, fontSize: 12, marginTop: 4 },
 
   statRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: MonikeColors.inkGhost,
-    borderRadius: CardRadius, paddingVertical: 14,
+    borderWidth: 1, borderRadius: 20, paddingVertical: 16, paddingHorizontal: 6,
+    marginBottom: 26,
   },
-  statCell: { flex: 1, alignItems: 'center', gap: 5 },
-  statSep: { width: 1, height: 28, backgroundColor: MonikeColors.inkGhost },
-  statLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 9, fontWeight: '700', letterSpacing: 0.6 },
-  statValue: { color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 15, fontWeight: '700' },
+  statCell: { flex: 1, alignItems: 'center' },
+  statSep: { width: 1, height: 28 },
+  statLabel: { fontFamily: Fonts.mono, fontSize: 9.5, letterSpacing: 0.6, marginTop: 4 },
+  statValue: { fontFamily: Fonts.heading, fontSize: 18, fontWeight: '600' },
 
-  group: { gap: 8 },
-  groupTitle: { color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 10, fontWeight: '700', letterSpacing: 1.2, marginLeft: 4 },
-  sectionCard: {
-    backgroundColor: MonikeColors.bgSurface, borderWidth: 1, borderColor: MonikeColors.inkGhost,
-    borderRadius: CardRadius, paddingHorizontal: 16, paddingVertical: 4,
-  },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, gap: 10 },
-  rowIcon: { width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
-  rowTextWrap: { flex: 1 },
-  rowLabel: { color: MonikeColors.inkPrimary, fontFamily: Fonts.sans, fontSize: 13.5 },
-  rowSub: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11.5, marginTop: 2 },
-  rowRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  rowValue: { color: MonikeColors.inkSecondary, fontFamily: Fonts.mono, fontSize: 13 },
-  divider: { height: 0.5, backgroundColor: MonikeColors.inkGhost },
+  group: { marginBottom: 22 },
+  groupTitle: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 1.2, marginLeft: 4, marginBottom: 10 },
+  sectionCard: { borderWidth: 1, borderRadius: 20, overflow: 'hidden' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 15 },
+  rowIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  rowLabel: { flex: 1, fontFamily: Fonts.sans, fontSize: 14.5, fontWeight: '500' },
+  rowValue: { fontFamily: Fonts.mono, fontSize: 12.5 },
+  divider: { height: 1 },
 
-  swatchRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12 },
-  swatchWrap: { alignItems: 'center', gap: 6 },
-  swatch: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  swatchActive: { borderWidth: 2.5, borderColor: '#fff' },
-  swatchDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#fff' },
-  swatchLabel: { color: MonikeColors.inkMuted, fontFamily: Fonts.sans, fontSize: 11 },
+  segmentRow: { flexDirection: 'row', gap: 6, borderRadius: 999, padding: 3 },
+  segmentBtn: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 999 },
+  segmentText: { fontFamily: Fonts.sans, fontSize: 12.5 },
 
-  retrainBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    borderWidth: 1, borderRadius: 12, paddingVertical: 12, marginVertical: 12,
-  },
-  retrainBtnText: { fontFamily: Fonts.sans, fontSize: 13, fontWeight: '700' },
+  swatchRow: { flexDirection: 'row', gap: 10 },
+  swatchRing: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  swatchGap: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  swatchDot: { width: 26, height: 26, borderRadius: 13 },
 
-  footer: { textAlign: 'center', color: MonikeColors.inkMuted, fontFamily: Fonts.mono, fontSize: 11, marginTop: 8, marginBottom: 8 },
+  retrainCard: { borderRadius: 20, padding: 18, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 14 },
+  retrainBody: { flex: 1 },
+  retrainTitle: { fontFamily: Fonts.heading, fontSize: 15, fontWeight: '600' },
+  retrainSub: { fontFamily: Fonts.sans, fontSize: 12, marginTop: 3, lineHeight: 17 },
+  retrainPill: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 999, minWidth: 70, alignItems: 'center' },
+  retrainPillText: { color: '#fff', fontFamily: Fonts.sans, fontSize: 13, fontWeight: '600' },
+
+  footer: { textAlign: 'center', fontFamily: Fonts.mono, fontSize: 11, paddingVertical: 14 },
 });
 
 const modalStyles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 32 },
   sheet: {
-    backgroundColor: MonikeColors.bgSurface, borderRadius: CardRadius, borderWidth: 1,
-    borderColor: MonikeColors.inkGhost, padding: 20, gap: 14,
+    borderRadius: 16, borderWidth: 1, padding: 20, gap: 14,
   },
   sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  sheetTitle: { color: MonikeColors.inkPrimary, fontFamily: Fonts.heading, fontSize: 16, fontWeight: '700' },
+  sheetTitle: { fontFamily: Fonts.heading, fontSize: 16, fontWeight: '700' },
   input: {
-    color: MonikeColors.inkPrimary, fontFamily: Fonts.mono, fontSize: 20, fontWeight: '700',
-    borderWidth: 1, borderColor: MonikeColors.inkGhost, borderRadius: 10, padding: 12,
+    fontFamily: Fonts.mono, fontSize: 20, fontWeight: '700',
+    borderWidth: 1, borderRadius: 10, padding: 12,
   },
   saveBtn: { borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
   saveBtnText: { color: '#fff', fontFamily: Fonts.sans, fontSize: 13, fontWeight: '700' },
+  checkCircle: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, marginBottom: 4, alignSelf: 'center' },
+  title: { fontFamily: Fonts.heading, fontSize: 17, fontWeight: '700', textAlign: 'center' },
+  summary: { fontFamily: Fonts.sans, fontSize: 12, textAlign: 'center' },
+  summaryMuted: { fontFamily: Fonts.mono, fontSize: 11, textAlign: 'center' },
+  doneButton: { borderRadius: 12, paddingHorizontal: 28, paddingVertical: 10, marginTop: 8, alignSelf: 'center' },
+  doneText: { color: '#fff', fontFamily: Fonts.sans, fontSize: 13, fontWeight: '700' },
 });
