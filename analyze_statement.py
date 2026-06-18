@@ -64,6 +64,26 @@ def _clean_amount(val) -> float:
     return float(str(val).replace(",", "").replace("₦", "").strip())
 
 
+# OPay's "Trans. Date" column is always "DD Mon YYYY HH:MM:SS" (e.g. "19 May 2026
+# 13:55:12"). pandas' format auto-detection guesses the format from the first
+# row and applies it to the whole column for speed; because "May" is spelled
+# identically as both the abbreviated (%b) and full (%B) month name, a
+# statement starting in May makes pandas guess %B, which then silently fails
+# to match every other month's abbreviated name ("Jun", "Jul", ...) and
+# coerces those rows to NaT — truncating the parsed range at the May/June
+# boundary. Pinning the format avoids the ambiguous guess entirely; rows that
+# don't match it (unexpected format) still fall back to pandas' inference.
+_TRANS_DATE_FORMAT = "%d %b %Y %H:%M:%S"
+
+
+def _parse_trans_date(series: pd.Series) -> pd.Series:
+    parsed = pd.to_datetime(series, format=_TRANS_DATE_FORMAT, errors="coerce")
+    unmatched = parsed.isna() & series.notna()
+    if unmatched.any():
+        parsed.loc[unmatched] = pd.to_datetime(series[unmatched], errors="coerce")
+    return parsed
+
+
 def _parse_raw_sheet(df_raw: pd.DataFrame) -> pd.DataFrame:
     """
     OPay statements have 7 header/metadata rows before data starts.
@@ -76,7 +96,7 @@ def _parse_raw_sheet(df_raw: pd.DataFrame) -> pd.DataFrame:
     for col in ["Debit", "Credit", "Balance"]:
         df[col] = df[col].apply(_clean_amount)
 
-    df["Trans_Date"] = pd.to_datetime(df["Trans_Date"], errors="coerce")
+    df["Trans_Date"] = _parse_trans_date(df["Trans_Date"])
     df = df.dropna(subset=["Trans_Date"]).reset_index(drop=True)
     return df
 
@@ -90,7 +110,7 @@ def _parse_clean_sheet(df: pd.DataFrame) -> pd.DataFrame:
     for col in ["Debit", "Credit", "Balance"]:
         if col in df.columns:
             df[col] = df[col].apply(_clean_amount)
-    df["Trans_Date"] = pd.to_datetime(df["Trans_Date"], errors="coerce")
+    df["Trans_Date"] = _parse_trans_date(df["Trans_Date"])
     df = df.dropna(subset=["Trans_Date"]).reset_index(drop=True)
     return df
 
