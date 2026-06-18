@@ -296,30 +296,34 @@ export default function ProfileScreen() {
         </ScrollView>
       </SafeAreaView>
 
-      <EditValueModal
-        visible={editing === 'budget'}
-        title="Monthly budget"
-        initialValue={String(settings?.monthly_budget ?? 0)}
-        accent={accent}
-        onClose={() => setEditing(null)}
-        onSave={async (value) => {
-          const n = parseFloat(value);
-          if (Number.isFinite(n)) await patchSettings({ monthly_budget: n });
-          setEditing(null);
-        }}
-      />
-      <EditValueModal
-        visible={editing === 'threshold'}
-        title="High-spend threshold"
-        initialValue={String(settings?.high_spend_threshold ?? 0)}
-        accent={accent}
-        onClose={() => setEditing(null)}
-        onSave={async (value) => {
-          const n = parseFloat(value);
-          if (Number.isFinite(n)) await patchSettings({ high_spend_threshold: n });
-          setEditing(null);
-        }}
-      />
+      {editing === 'budget' && (
+        <EditValueModal
+          visible
+          title="Monthly budget"
+          initialValue={String(settings?.monthly_budget ?? 0)}
+          accent={accent}
+          onClose={() => setEditing(null)}
+          onSave={async (value) => {
+            const n = parseFloat(value);
+            if (Number.isFinite(n)) await patchSettings({ monthly_budget: n });
+            setEditing(null);
+          }}
+        />
+      )}
+      {editing === 'threshold' && (
+        <EditValueModal
+          visible
+          title="High-spend threshold"
+          initialValue={String(settings?.high_spend_threshold ?? 0)}
+          accent={accent}
+          onClose={() => setEditing(null)}
+          onSave={async (value) => {
+            const n = parseFloat(value);
+            if (Number.isFinite(n)) await patchSettings({ high_spend_threshold: n });
+            setEditing(null);
+          }}
+        />
+      )}
 
       <BottomNavigation activeRoute="profile" />
     </View>

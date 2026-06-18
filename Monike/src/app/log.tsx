@@ -34,8 +34,11 @@ import { useUploadStatement } from '@/hooks/use-upload-statement';
 import { BottomTabInset, CardRadius, Fonts, MonikeColors, ScreenPadding } from '@/constants/theme';
 
 // ─── Categories ───────────────────────────────────────────────────────────────
-// Maps to the LogWriteRequest field that round-trips through GET /log/{date}.
-// "Food" does not round-trip (LogEntry has no food_spend column) — see note below.
+// Maps to a LogWriteRequest field. LogEntry (the GET /log/{date} response) only
+// round-trips p2p/pos/data/airtime/online/family/savings — "Food" and the other
+// LogWriteRequest-only fields aren't returned, so handleSave folds whatever part
+// of baseline.total_debit isn't explained by those 7 fields into other_spend
+// instead of dropping it, to avoid shrinking total_debit on every subsequent save.
 
 type CategoryKey = 'pos_spend' | 'p2p_spend' | 'data_spend' | 'airtime_spend' | 'family_spend' | 'online_spend' | 'food_spend' | 'savings_out';
 
@@ -75,7 +78,10 @@ const EMPTY_REQUEST: Omit<LogWriteRequest, 'date'> = {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function dateKey(d: Date) {
-  return d.toISOString().slice(0, 10);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function addDays(d: Date, n: number) {
@@ -133,6 +139,16 @@ export default function LogScreen() {
     if (amount <= 0 || saving) return;
     setSaving(true);
     try {
+      const accountedFor =
+        (baseline?.p2p_spend ?? 0) +
+        (baseline?.pos_spend ?? 0) +
+        (baseline?.data_spend ?? 0) +
+        (baseline?.airtime_spend ?? 0) +
+        (baseline?.online_spend ?? 0) +
+        (baseline?.family_spend ?? 0) +
+        (baseline?.savings_out ?? 0);
+      const residual = Math.max(0, (baseline?.total_debit ?? 0) - accountedFor);
+
       const merged: LogWriteRequest = {
         date: key,
         ...EMPTY_REQUEST,
@@ -143,6 +159,7 @@ export default function LogScreen() {
         online_spend: baseline?.online_spend ?? 0,
         family_spend: baseline?.family_spend ?? 0,
         savings_out: baseline?.savings_out ?? 0,
+        other_spend: residual,
         total_credit: baseline?.total_credit ?? 0,
       };
 
