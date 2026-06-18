@@ -43,6 +43,14 @@ export const Colors = {
 
 export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
 
+export const AccentPresets = {
+  Emerald: '#0E9F6E',
+  Violet: '#5B5BD6',
+  Ocean: '#0E84B8',
+} as const;
+
+export type AccentName = keyof typeof AccentPresets;
+
 export const Fonts = Platform.select({
   ios: {
     sans: 'DM Sans',

@@ -28,6 +28,7 @@ class SettingsRead(BaseModel):
     notify_high_spend: bool
     notify_weekly_summary: bool
     notify_model_updates: bool
+    accent_theme: str
 
 
 class SettingsWrite(BaseModel):
@@ -38,6 +39,7 @@ class SettingsWrite(BaseModel):
     notify_high_spend: bool
     notify_weekly_summary: bool
     notify_model_updates: bool
+    accent_theme: str
 
 
 class ModelStatusResponse(BaseModel):
@@ -67,6 +69,7 @@ async def get_settings() -> SettingsRead:
             notify_high_spend=True,
             notify_weekly_summary=True,
             notify_model_updates=False,
+            accent_theme="Emerald",
         )
     return SettingsRead(
         display_name=str(row["display_name"]),
@@ -76,6 +79,7 @@ async def get_settings() -> SettingsRead:
         notify_high_spend=bool(row["notify_high_spend"]),
         notify_weekly_summary=bool(row["notify_weekly_summary"]),
         notify_model_updates=bool(row["notify_model_updates"]),
+        accent_theme=str(row["accent_theme"]),
     )
 
 
@@ -86,8 +90,8 @@ async def post_settings(body: SettingsWrite) -> SettingsRead:
         INSERT INTO user_settings (
           display_name, email, monthly_budget, high_spend_threshold,
           notify_high_spend, notify_weekly_summary, notify_model_updates,
-          updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+          accent_theme, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
         ON CONFLICT (singleton_key) DO UPDATE SET
           display_name         = EXCLUDED.display_name,
           email                = EXCLUDED.email,
@@ -96,6 +100,7 @@ async def post_settings(body: SettingsWrite) -> SettingsRead:
           notify_high_spend    = EXCLUDED.notify_high_spend,
           notify_weekly_summary = EXCLUDED.notify_weekly_summary,
           notify_model_updates = EXCLUDED.notify_model_updates,
+          accent_theme         = EXCLUDED.accent_theme,
           updated_at           = NOW()
         """,
         body.display_name,
@@ -105,6 +110,7 @@ async def post_settings(body: SettingsWrite) -> SettingsRead:
         body.notify_high_spend,
         body.notify_weekly_summary,
         body.notify_model_updates,
+        body.accent_theme,
     )
 
     # Propagate threshold into the running config so predictions are live

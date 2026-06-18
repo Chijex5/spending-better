@@ -16,8 +16,13 @@ CREATE TABLE IF NOT EXISTS user_settings (
   notify_high_spend     BOOLEAN NOT NULL DEFAULT TRUE,
   notify_weekly_summary BOOLEAN NOT NULL DEFAULT TRUE,
   notify_model_updates  BOOLEAN NOT NULL DEFAULT FALSE,
+  accent_theme          TEXT    NOT NULL DEFAULT 'Emerald',
   updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- accent_theme is also patched in automatically at API startup (main.py) so
+-- existing databases pick it up without rerunning this file.
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS accent_theme TEXT NOT NULL DEFAULT 'Emerald';
 
 -- ── model_metadata ────────────────────────────────────────────────────────────
 -- Append-only log — we keep a row per retrain for auditability.

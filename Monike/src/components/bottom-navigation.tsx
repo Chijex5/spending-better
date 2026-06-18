@@ -6,11 +6,12 @@ import {
   type StyleProp, type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BarChart2, House, Menu, Plus, TelescopeIcon } from 'lucide-react-native';
+import { Activity, BarChart2, House, Plus, User } from 'lucide-react-native';
 import { Fonts, MonikeColors } from '@/constants/theme';
+import { useAccent } from '@/contexts/accent-context';
 
-type RouteName = 'home' | 'explore' | 'categories' | 'log' | 'more';
-type Route = '/' | '/explore' | '/categories' | '/log' | '/more';
+type RouteName = 'home' | 'insights' | 'log' | 'patterns' | 'profile';
+type Route = '/' | '/insights' | '/log' | '/patterns' | '/profile';
 
 type NavigationTab = {
   key: RouteName;
@@ -21,11 +22,11 @@ type NavigationTab = {
 };
 
 const tabs: NavigationTab[] = [
-  { key: 'home',       route: '/',           Icon: House,         label: 'Home' },
-  { key: 'categories', route: '/categories', Icon: BarChart2,     label: 'Spend' },
-  { key: 'log',        route: '/log',        Icon: Plus,          label: 'Add', fab: true },
-  { key: 'explore',    route: '/explore',    Icon: TelescopeIcon, label: 'Explore' },
-  { key: 'more',       route: '/more',       Icon: Menu,          label: 'More' },
+  { key: 'home',     route: '/',          Icon: House,     label: 'Home' },
+  { key: 'insights', route: '/insights',  Icon: BarChart2, label: 'Insights' },
+  { key: 'log',      route: '/log',       Icon: Plus,      label: 'Add', fab: true },
+  { key: 'patterns', route: '/patterns',  Icon: Activity,  label: 'Patterns' },
+  { key: 'profile',  route: '/profile',   Icon: User,      label: 'Profile' },
 ];
 
 // ─── PressScale ───────────────────────────────────────────────────────────────
@@ -83,6 +84,7 @@ function PressScale({
 export function BottomNavigation({ activeRoute }: { activeRoute: RouteName }) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { accent } = useAccent();
 
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom > 0 ? insets.bottom : 8 }]}>
@@ -98,10 +100,10 @@ export function BottomNavigation({ activeRoute }: { activeRoute: RouteName }) {
                 innerStyle={styles.fabInner}
                 onPress={() => router.navigate(route as any)}
               >
-                <View style={[styles.fab, active && styles.fabActive]}>
+                <View style={[styles.fab, { backgroundColor: accent, shadowColor: accent }]}>
                   <Icon size={20} color="#fff" strokeWidth={2.5} />
                 </View>
-                <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>
+                <Text style={[styles.tabLabel, active && { color: accent, fontWeight: '700' }]}>
                   {label}
                 </Text>
               </PressScale>
@@ -118,10 +120,10 @@ export function BottomNavigation({ activeRoute }: { activeRoute: RouteName }) {
             >
               <Icon
                 size={21}
-                color={active ? MonikeColors.accentOrange : MonikeColors.inkMuted}
+                color={active ? accent : MonikeColors.inkMuted}
                 strokeWidth={active ? 2.2 : 1.7}
               />
-              <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>
+              <Text style={[styles.tabLabel, active && { color: accent, fontWeight: '700' }]}>
                 {label}
               </Text>
             </PressScale>
@@ -170,10 +172,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     letterSpacing: 0.1,
   },
-  tabLabelActive: {
-    color: MonikeColors.accentOrange,
-    fontWeight: '700',
-  },
 
   fabPressable: {
     flex: 1,
@@ -190,16 +188,11 @@ const styles = StyleSheet.create({
     width: 46,
     height: 46,
     borderRadius: 23,
-    backgroundColor: MonikeColors.accentOrange,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: MonikeColors.accentOrange,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.45,
     shadowRadius: 10,
     elevation: 8,
-  },
-  fabActive: {
-    backgroundColor: MonikeColors.accentOrange,
   },
 });

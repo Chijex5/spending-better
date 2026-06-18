@@ -14,9 +14,7 @@
     "expo-glass-effect": "~56.0.4",
     "expo-image": "~56.0.9",
     "expo-linking": "~56.0.13",
-    "expo-local-authentication": "^56.0.4",
     "expo-router": "~56.2.8",
-    "expo-secure-store": "~56.0.4",
     "expo-splash-screen": "~56.0.10",
     "expo-status-bar": "~56.0.4",
     "expo-symbols": "~56.0.5",
@@ -36,6 +34,8 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "eslint": "^9.39.4",
+    "eslint-config-expo": "~56.0.4",
     "typescript": "~6.0.3"
   },
   "scripts": {
