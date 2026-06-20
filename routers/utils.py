@@ -13,19 +13,10 @@ from database import get_pool
 DAY_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
 DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 MONEY_FEATURES = {
-    "rolling_7d_avg",
-    "prev_day_spend",
-    "rolling_14d_avg",
-    "max_single",
-    "discretionary",
-    "total_credit",
-    "savings_out",
-    "p2p_spend",
-    "pos_spend",
-    "data_spend",
-    "airtime_spend",
-    "online_spend",
-    "family_spend",
+    "dow_avg_spend",
+    "dom_avg_spend",
+    "month_avg_spend",
+    "overall_avg_spend",
 }
 
 COMBINED_CTE = """

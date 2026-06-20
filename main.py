@@ -21,6 +21,18 @@ async def lifespan(app: FastAPI):
     await execute(
         "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS dark_mode BOOLEAN NOT NULL DEFAULT TRUE"
     )
+    # Idempotent column adds for retrain's holdout-evaluation metrics — keeps
+    # Monike.session.sql as the source of truth for fresh installs while
+    # patching existing DBs.
+    await execute(
+        "ALTER TABLE model_metadata ADD COLUMN IF NOT EXISTS precision_score NUMERIC"
+    )
+    await execute(
+        "ALTER TABLE model_metadata ADD COLUMN IF NOT EXISTS recall_score NUMERIC"
+    )
+    await execute(
+        "ALTER TABLE model_metadata ADD COLUMN IF NOT EXISTS roc_auc NUMERIC"
+    )
     await config.load_from_db()
     try:
         df = await combined_dataframe()

@@ -50,6 +50,9 @@ class ModelStatusResponse(BaseModel):
     training_rows: int
     accuracy: float | None
     model_version: str
+    precision: float | None = None
+    recall: float | None = None
+    roc_auc: float | None = None
 
 
 class CacheClearResponse(BaseModel):
@@ -145,6 +148,9 @@ async def get_model_status() -> ModelStatusResponse:
         training_rows=int(row["training_rows"]),
         accuracy=float(row["accuracy"]) if row["accuracy"] is not None else None,
         model_version=str(row["model_version"]),
+        precision=float(row["precision_score"]) if row["precision_score"] is not None else None,
+        recall=float(row["recall_score"]) if row["recall_score"] is not None else None,
+        roc_auc=float(row["roc_auc"]) if row["roc_auc"] is not None else None,
     )
 
 
