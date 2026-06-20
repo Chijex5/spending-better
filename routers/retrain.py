@@ -13,7 +13,7 @@ from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
 
 from cache import invalidate
 from config import FEATURES
-from ml import training_features
+from ml import apply_config_label, training_features
 from routers.utils import execute, combined_dataframe
 
 router = APIRouter()
@@ -131,14 +131,18 @@ async def retrain_model(request: Request) -> RetrainResult:
         )
 
     training_rows = len(df)
-    engineered = training_features(df)
+    # Label against the live config threshold, not the frozen upload-time percentile.
+    engineered = training_features(apply_config_label(df))
     X = engineered[FEATURES].fillna(0)
     y = engineered["high_spend"]
 
     if y.nunique() < 2:
         return RetrainResult(
             success=False,
-            message="Insufficient class variance to train (need both HIGH and non-HIGH days).",
+            message=(
+                "Insufficient class variance to train: every day falls on the same "
+                "side of the high-spend threshold. Adjust the threshold in settings."
+            ),
             training_rows=training_rows,
             accuracy=0.0,
             duration_ms=int((time.monotonic() - t0) * 1000),

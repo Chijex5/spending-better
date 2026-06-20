@@ -134,7 +134,24 @@ export type WeekOutlookDay = {
   avg_spend: number;    // NEW — historical avg for that day-of-week
   probability: number;  // NEW — 0-100, drives the bar height in OutlookCell
 };
- 
+
+export type SpendRegime = {
+  state: 'cool' | 'steady' | 'elevated' | 'hot';
+  momentum_avg: number;   // avg daily spend over the lagged window
+  baseline_avg: number;   // long-run daily average
+  ratio: number;          // momentum / baseline (1.0 == on baseline)
+  narrative: string;
+};
+
+export type BudgetPace = {
+  month_to_date: number;
+  projected_month_end: number;
+  budget: number;                  // 0 when no budget set
+  pct_of_budget_projected: number; // projected / budget * 100
+  on_track: boolean;
+  narrative: string;
+};
+
 export type PredictionResponse = {
   target_date: string;
   day_name: string;
@@ -144,12 +161,17 @@ export type PredictionResponse = {
   rolling_14d_avg: number;
   top_features: FeatureImportance[];
   week_outlook: WeekOutlookDay[];
- 
+
   // ── new ──
   velocity: SpendVelocity;
   advisor_tips: string[];       // server-generated, number-aware
   prev_day_spend: number;
   high_spend_threshold: number;
+
+  // ── honest regime + pace (primary signal) ──
+  regime: SpendRegime;
+  budget_pace: BudgetPace;
+  confidence: 'low' | 'moderate';
 };
 
 export async function predictionFetcher(_key: string): Promise<PredictionResponse> {

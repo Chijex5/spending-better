@@ -22,10 +22,6 @@ import {
 } from '@/services/api';
 import { BottomTabInset, Fonts, ScreenPadding } from '@/constants/theme';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type Risk = 'HIGH' | 'MEDIUM' | 'LOW';
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatNaira(value: number, fractionDigits = 0) {
@@ -42,23 +38,22 @@ function getGreeting(): string {
   return 'Good evening';
 }
 
-function normalizeRisk(risk: string | undefined): Risk {
-  if (risk === 'HIGH' || risk === 'MEDIUM' || risk === 'LOW') return risk;
-  return 'LOW';
+// ── Spending-regime presentation ──────────────────────────────────────────────
+// The regime gauge is the honest centerpiece: "where your spending is right now"
+// from lagged momentum vs baseline, not a near-random per-day forecast.
+type RegimeState = 'cool' | 'steady' | 'elevated' | 'hot';
+
+function regimeHeadline(state: RegimeState) {
+  if (state === 'hot') return 'Spending is running hot';
+  if (state === 'elevated') return 'Spending is a touch elevated';
+  if (state === 'cool') return "You're trending cool";
+  return 'Spending is steady';
 }
 
-function riskLabel(risk: Risk) {
-  if (risk === 'HIGH') return 'High';
-  if (risk === 'MEDIUM') return 'Medium';
-  return 'Low';
-}
-
-// Mirrors the mockup's single amber example (`riskColor: '#E0A11C'`) — extended
-// to a low/high pair using the same red/accent semantics used everywhere else
-// in the design (accent = good, #E5645B = bad).
-function riskColor(risk: Risk, accent: string) {
-  if (risk === 'HIGH') return '#E5645B';
-  if (risk === 'MEDIUM') return '#E0A11C';
+// accent = good (cool/steady), amber = elevated, red = hot.
+function regimeColor(state: RegimeState, accent: string) {
+  if (state === 'hot') return '#E5645B';
+  if (state === 'elevated') return '#E0A11C';
   return accent;
 }
 
@@ -90,14 +85,17 @@ const CATEGORY_DOT: Record<string, string> = {
 
 // ─── Outlook Ring ─────────────────────────────────────────────────────────────
 
-function OutlookRing({ probability, color, trackColor, cardColor }: {
-  probability: number; color: string; trackColor: string; cardColor: string;
+// Generic gauge ring. Used for the budget-pace dial: `fill` (0-1) drives the
+// arc, `label` is the text in the center (e.g. "84%" of budget, or a dash when
+// no budget is set).
+function GaugeRing({ fill, label, color, trackColor, cardColor }: {
+  fill: number; label: string; color: string; trackColor: string; cardColor: string;
 }) {
   const size = 62;
   const stroke = 7;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
-  const pct = Math.max(0, Math.min(1, probability));
+  const pct = Math.max(0, Math.min(1, fill));
 
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
@@ -119,7 +117,7 @@ function OutlookRing({ probability, color, trackColor, cardColor }: {
       <View style={StyleSheet.absoluteFill}>
         <View style={ringStyles.center}>
           <View style={[ringStyles.inner, { backgroundColor: cardColor }]}>
-            <Text style={[ringStyles.pct, { color }]}>{Math.round(pct * 100)}%</Text>
+            <Text style={[ringStyles.pct, { color }]}>{label}</Text>
           </View>
         </View>
       </View>
@@ -194,13 +192,20 @@ export default function MonikeHome() {
     );
   }
 
-  const risk = normalizeRisk(prediction?.risk_level);
   const pctChange = dashboard.pct_change_vs_last_month;
   const isUp = pctChange >= 0;
   const pctColor = isUp ? '#E5645B' : accent;
   const pctPillBg = isUp ? '#E5645B29' : accentTint;
   const transactions: RecentTransaction[] = dashboard.recent_transactions.slice(0, 6);
-  const riskCol = riskColor(risk, accent);
+
+  // Pace dial color: red when projected to blow the budget, otherwise track the
+  // regime (cool/steady = accent, elevated = amber, hot = red).
+  const regimeState = (prediction?.regime?.state ?? 'steady') as RegimeState;
+  const overBudget =
+    !!prediction?.budget_pace &&
+    prediction.budget_pace.budget > 0 &&
+    !prediction.budget_pace.on_track;
+  const paceColor = overBudget ? '#E5645B' : regimeColor(regimeState, accent);
 
   return (
     <View style={[styles.root, { backgroundColor: colors.bg }]}>
@@ -276,19 +281,35 @@ export default function MonikeHome() {
             <WeekBars dashboard={dashboard} accent={accent} neutralBar={neutralBar} ink3={colors.ink3} />
           </View>
 
-          {/* Tomorrow's outlook */}
+          {/* Spending outlook — honest regime + budget pace */}
           {prediction && prediction.target_date ? (
             <View style={[styles.outlookCard, { backgroundColor: colors.card, borderColor: colors.line }]}>
               <View style={styles.outlookCopy}>
-                <Text style={[styles.outlookLabel, { color: colors.ink3 }]}>TOMORROW&apos;S OUTLOOK</Text>
+                <Text style={[styles.outlookLabel, { color: colors.ink3 }]}>SPENDING OUTLOOK</Text>
                 <Text style={[styles.outlookHeadline, { color: colors.ink }]}>
-                  {riskLabel(risk)} chance of overspending
+                  {regimeHeadline((prediction.regime?.state ?? 'steady') as RegimeState)}
                 </Text>
                 <Text style={[styles.outlookNarrative, { color: colors.ink2 }]} numberOfLines={3}>
-                  {prediction.velocity?.narrative ?? 'Based on your recent spending pattern.'}
+                  {prediction.budget_pace?.narrative ??
+                    prediction.regime?.narrative ??
+                    'Based on your recent spending pattern.'}
                 </Text>
               </View>
-              <OutlookRing probability={prediction.probability} color={riskCol} trackColor={colors.line} cardColor={colors.card} />
+              <GaugeRing
+                fill={
+                  prediction.budget_pace && prediction.budget_pace.budget > 0
+                    ? prediction.budget_pace.pct_of_budget_projected / 100
+                    : Math.min(1, (prediction.regime?.ratio ?? 1) / 2)
+                }
+                label={
+                  prediction.budget_pace && prediction.budget_pace.budget > 0
+                    ? `${Math.round(prediction.budget_pace.pct_of_budget_projected)}%`
+                    : '—'
+                }
+                color={paceColor}
+                trackColor={colors.line}
+                cardColor={colors.card}
+              />
             </View>
           ) : null}
 

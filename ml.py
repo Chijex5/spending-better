@@ -1,6 +1,7 @@
 from __future__ import annotations
 from datetime import timedelta
 import pandas as pd
+import config
 from config import FEATURES
 from sklearn.ensemble import RandomForestClassifier
 
@@ -9,6 +10,24 @@ def _weekday(value) -> int:
     if hasattr(value, "dayofweek"):
         return int(value.dayofweek)
     return int(value.weekday())
+
+
+def apply_config_label(daily: pd.DataFrame) -> pd.DataFrame:
+    """
+    Recompute the `high_spend` label from the live config threshold instead
+    of the percentile frozen at upload time. This keeps what the model learns
+    consistent with the threshold the user controls via /settings (changing it
+    triggers a retrain), and makes the label stationary — a fixed naira bar
+    rather than a moving quantile that drifts as spending habits change.
+
+    Reads config.HIGH_SPEND_THRESHOLD at call time (not import time) so a live
+    settings change is always reflected on the next retrain.
+    """
+    if daily.empty or "total_debit" not in daily.columns:
+        return daily
+    df = daily.copy()
+    df["high_spend"] = (df["total_debit"] > config.HIGH_SPEND_THRESHOLD).astype(int)
+    return df
 
 
 def training_features(daily: pd.DataFrame) -> pd.DataFrame:
@@ -88,11 +107,12 @@ def train_model(daily: pd.DataFrame):
     if daily.empty:
         return None
 
-    required = {"date", "total_debit", "dow", "dom", "month", "high_spend"}
+    required = {"date", "total_debit", "dow", "dom", "month"}
     missing = required - set(daily.columns)
     if missing:
         raise ValueError(f"Missing training columns: {', '.join(sorted(missing))}")
 
+    daily = apply_config_label(daily)
     df = training_features(daily)
     X = df[FEATURES].fillna(0)
     y = df["high_spend"]
