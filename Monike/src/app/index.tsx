@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -12,13 +12,14 @@ import Svg, { Circle } from 'react-native-svg';
 import { User } from 'lucide-react-native';
 
 import { BottomNavigation } from '@/components/bottom-navigation';
+import { BottomSheet } from '@/components/bottom-sheet';
 import { useAccent } from '@/contexts/accent-context';
 import { useSWR } from '@/hooks/use-swr';
 import {
   apiFetch,
+  type DailyBar,
   type DashboardResponse,
   type PredictionResponse,
-  type RecentTransaction,
 } from '@/services/api';
 import { BottomTabInset, Fonts, ScreenPadding } from '@/constants/theme';
 
@@ -61,12 +62,15 @@ function todayKey() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function formatTxnSubtitle(category: string, isoDate: string) {
-  const parsed = new Date(isoDate);
-  if (Number.isNaN(parsed.getTime())) return category;
-  const dateLabel = parsed.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
-  const timeLabel = parsed.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  return `${category} · ${dateLabel}, ${timeLabel}`;
+function daysRemainingInMonth(): number {
+  const now = new Date();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  return Math.max(1, daysInMonth - now.getDate());
+}
+
+function daysInCurrentMonth(): number {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 }
 
 // Matches the exact per-category dot colors from the mockup's `txnRaw` data.
@@ -133,30 +137,65 @@ const ringStyles = StyleSheet.create({
 
 // ─── Week Bars ────────────────────────────────────────────────────────────────
 
-function WeekBars({ dashboard, accent, neutralBar, ink3 }: {
+function WeekBars({ dashboard, accent, neutralBar, ink3, dailyBudgetTarget, onDayPress }: {
   dashboard: DashboardResponse; accent: string; neutralBar: string; ink3: string;
+  dailyBudgetTarget: number; onDayPress: (bar: DailyBar) => void;
 }) {
   const bars = dashboard.seven_day_bars;
-  const max = Math.max(...bars.map((b) => b.total_debit), 1);
+  const max = Math.max(...bars.map((b) => b.total_debit), dailyBudgetTarget, 1);
   const today = todayKey();
+  const budgetLinePct = dailyBudgetTarget > 0 ? Math.min(1, dailyBudgetTarget / max) : 0;
 
   return (
-    <View style={styles.weekBarsRow}>
-      {bars.map((bar) => {
-        const isToday = bar.date === today;
-        const pct = Math.max(0.04, bar.total_debit / max);
-        const color = bar.is_high_spend ? '#E5645B' : isToday ? accent : neutralBar;
-        return (
-          <View key={bar.date} style={styles.weekBarCol}>
-            <View style={styles.weekBarTrack}>
-              <View style={[styles.weekBarFill, { height: `${pct * 100}%`, backgroundColor: color }]} />
-            </View>
-            <Text style={[styles.weekBarLabel, { color: isToday ? accent : ink3 }, isToday && { fontWeight: '700' }]}>
+    <View>
+      <View style={styles.weekTracksWrap}>
+        {dailyBudgetTarget > 0 ? (
+          <View
+            pointerEvents="none"
+            style={[styles.budgetLine, { bottom: `${budgetLinePct * 100}%`, borderColor: ink3 }]}
+          />
+        ) : null}
+        <View style={styles.weekBarsRow}>
+          {bars.map((bar) => {
+            const isToday = bar.date === today;
+            const pct = Math.max(0.04, bar.total_debit / max);
+            const color = bar.is_high_spend ? '#E5645B' : isToday ? accent : neutralBar;
+            return (
+              <Pressable key={bar.date} style={styles.weekBarCol} onPress={() => onDayPress(bar)}>
+                <View style={styles.weekBarTrack}>
+                  <View style={[styles.weekBarFill, { height: `${pct * 100}%`, backgroundColor: color }]} />
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+      <View style={styles.weekLabelsRow}>
+        {bars.map((bar) => {
+          const isToday = bar.date === today;
+          return (
+            <Text
+              key={bar.date}
+              style={[styles.weekBarLabel, styles.weekLabelCol, { color: isToday ? accent : ink3 }, isToday && { fontWeight: '700' }]}
+            >
               {bar.day_label}
             </Text>
-          </View>
-        );
-      })}
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+// ─── Detail row (used inside the verdict bottom sheet) ────────────────────────
+
+function DetailRow({ label, value, ink2, ink, highlight, accent }: {
+  label: string; value: string; ink2: string; ink: string; highlight?: boolean; accent?: string;
+}) {
+  return (
+    <View style={styles.detailRow}>
+      <Text style={[styles.detailLabel, { color: ink2 }]}>{label}</Text>
+      <Text style={[styles.detailValue, { color: highlight ? accent : ink }]}>{value}</Text>
     </View>
   );
 }
@@ -166,10 +205,13 @@ function WeekBars({ dashboard, accent, neutralBar, ink3 }: {
 export default function MonikeHome() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { colors, accent, accentTint, dark } = useAccent();
+  const { colors, accent, dark } = useAccent();
 
   const { data: dashboard, isLoading } = useSWR<DashboardResponse>('/dashboard', apiFetch);
   const { data: prediction } = useSWR<PredictionResponse>('/prediction', apiFetch);
+
+  const [verdictOpen, setVerdictOpen] = useState(false);
+  const [selectedDay, setSelectedDay] = useState<DailyBar | null>(null);
 
   const greeting = useMemo(() => getGreeting(), []);
   const neutralBar = dark ? '#2C352F' : '#D9DBD2';
@@ -195,17 +237,44 @@ export default function MonikeHome() {
   const pctChange = dashboard.pct_change_vs_last_month;
   const isUp = pctChange >= 0;
   const pctColor = isUp ? '#E5645B' : accent;
-  const pctPillBg = isUp ? '#E5645B29' : accentTint;
-  const transactions: RecentTransaction[] = dashboard.recent_transactions.slice(0, 6);
 
-  // Pace dial color: red when projected to blow the budget, otherwise track the
+  const budgetPace = prediction?.budget_pace;
+  const budget = budgetPace?.budget ?? 0;
+  const spent = dashboard.total_spent_this_month;
+  const remaining = budget - spent;
+
+  // Pace strip color: red when projected to blow the budget, otherwise track the
   // regime (cool/steady = accent, elevated = amber, hot = red).
   const regimeState = (prediction?.regime?.state ?? 'steady') as RegimeState;
-  const overBudget =
-    !!prediction?.budget_pace &&
-    prediction.budget_pace.budget > 0 &&
-    !prediction.budget_pace.on_track;
+  const overBudget = !!budgetPace && budget > 0 && !budgetPace.on_track;
   const paceColor = overBudget ? '#E5645B' : regimeColor(regimeState, accent);
+  const verdictNarrative = (budget > 0 ? budgetPace?.narrative : prediction?.regime?.narrative)
+    ?? 'Based on your recent spending pattern.';
+
+  const dailyBudgetTarget = budget > 0 ? budget / daysInCurrentMonth() : 0;
+  const recoveryTarget = budgetPace && budget > 0 && !budgetPace.on_track
+    ? Math.max(0, (budget - budgetPace.month_to_date) / daysRemainingInMonth())
+    : null;
+
+  const biggestDay = dashboard.seven_day_bars.length
+    ? dashboard.seven_day_bars.reduce((a, b) => (b.total_debit > a.total_debit ? b : a))
+    : null;
+  const biggestDayLabel = biggestDay
+    ? new Date(biggestDay.date).toLocaleDateString('en-US', { weekday: 'long' })
+    : '';
+  const hasInterestingCallout = (biggestDay?.total_debit ?? 0) > 0 || recoveryTarget !== null;
+
+  const dayTransactions = selectedDay
+    ? dashboard.recent_transactions.filter((t) => t.trans_date.slice(0, 10) === selectedDay.date)
+    : [];
+  const dayCategoryTotals = (() => {
+    const map = new Map<string, number>();
+    for (const t of dayTransactions) {
+      if (t.debit <= 0) continue;
+      map.set(t.category, (map.get(t.category) ?? 0) + t.debit);
+    }
+    return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
+  })();
 
   return (
     <View style={[styles.root, { backgroundColor: colors.bg }]}>
@@ -229,42 +298,43 @@ export default function MonikeHome() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + BottomTabInset + 28 }]}
         >
-          {/* Hero */}
+          {/* Hero — one truth line */}
           <View style={styles.hero}>
-            <Text style={[styles.heroLabel, { color: colors.ink2 }]}>SPENT IN {dashboard.month_label.toUpperCase()}</Text>
-            <Text style={[styles.heroAmount, { color: colors.ink }]}>{formatNaira(dashboard.total_spent_this_month)}</Text>
-            <View style={styles.pctRow}>
-              <View style={[styles.pctPill, { backgroundColor: pctPillBg }]}>
-                <Text style={[styles.pctPillText, { color: pctColor }]}>
-                  {isUp ? '↑' : '↓'} {Math.abs(pctChange).toFixed(1)}%
+            <Text style={[styles.heroLabel, { color: colors.ink2 }]}>{dashboard.month_label.toUpperCase()}</Text>
+            {budget > 0 ? (
+              <Text style={[styles.heroLine, { color: colors.ink }]}>
+                <Text style={styles.heroAmountInline}>{formatNaira(spent)}</Text> spent ·{' '}
+                <Text style={{ color: remaining >= 0 ? accent : '#E5645B' }}>
+                  {formatNaira(Math.abs(remaining))} {remaining >= 0 ? 'left' : 'over'}
                 </Text>
+              </Text>
+            ) : (
+              <View style={styles.heroNoBudgetRow}>
+                <Text style={[styles.heroLine, { color: colors.ink }]}>{formatNaira(spent)} spent this month</Text>
+                <Pressable onPress={() => router.navigate('/profile' as any)} hitSlop={6}>
+                  <Text style={[styles.setBudgetLink, { color: accent }]}>Set a budget</Text>
+                </Pressable>
               </View>
-              <Text style={[styles.pctCaption, { color: colors.ink2 }]}>{isUp ? 'above' : 'below'} last month</Text>
-            </View>
+            )}
+            <Text style={[styles.pctCaption, { color: colors.ink2 }]}>
+              {isUp ? '↑' : '↓'} <Text style={{ color: pctColor }}>{Math.abs(pctChange).toFixed(1)}%</Text>{' '}
+              {isUp ? 'above' : 'below'} last month
+            </Text>
           </View>
 
-          {/* Stat tile row */}
-          <View style={[styles.statRow, { backgroundColor: colors.card, borderColor: colors.line }]}>
-            <View style={styles.statCell}>
-              <Text style={[styles.statLabel, { color: colors.ink3 }]}>PACE</Text>
-              <View style={styles.paceValueRow}>
-                <View style={[styles.paceDot, { backgroundColor: accent }]} />
-                <Text style={[styles.statValue, { color: colors.ink }]}>{dashboard.spend_health.pace}</Text>
-              </View>
-            </View>
-            <View style={[styles.statSep, { backgroundColor: colors.line }]} />
-            <View style={styles.statCell}>
-              <Text style={[styles.statLabel, { color: colors.ink3 }]}>DAILY AVG</Text>
-              <Text style={[styles.statValue, { color: colors.ink }]}>{formatNaira(dashboard.avg_daily)}</Text>
-            </View>
-            <View style={[styles.statSep, { backgroundColor: colors.line }]} />
-            <View style={styles.statCell}>
-              <Text style={[styles.statLabel, { color: colors.ink3 }]}>SAVED</Text>
-              <Text style={[styles.statValue, { color: accent }]}>
-                {formatNaira(dashboard.spend_health.saved_this_month)}
+          {/* Verdict strip */}
+          {prediction && prediction.target_date ? (
+            <Pressable
+              style={[styles.verdictStrip, { backgroundColor: colors.card, borderColor: colors.line }]}
+              onPress={() => setVerdictOpen(true)}
+            >
+              <View style={[styles.verdictDot, { backgroundColor: paceColor }]} />
+              <Text style={[styles.verdictText, { color: colors.ink }]} numberOfLines={2}>
+                {verdictNarrative}
               </Text>
-            </View>
-          </View>
+              <Text style={[styles.verdictChevron, { color: colors.ink3 }]}>›</Text>
+            </Pressable>
+          ) : null}
 
           {/* This week */}
           <View>
@@ -278,73 +348,146 @@ export default function MonikeHome() {
                 {dashboard.high_spend_days} high-spend day{dashboard.high_spend_days === 1 ? '' : 's'} in {dashboard.month_label}
               </Text>
             </View>
-            <WeekBars dashboard={dashboard} accent={accent} neutralBar={neutralBar} ink3={colors.ink3} />
+            <WeekBars
+              dashboard={dashboard}
+              accent={accent}
+              neutralBar={neutralBar}
+              ink3={colors.ink3}
+              dailyBudgetTarget={dailyBudgetTarget}
+              onDayPress={setSelectedDay}
+            />
           </View>
 
-          {/* Spending outlook — honest regime + budget pace */}
-          {prediction && prediction.target_date ? (
-            <View style={[styles.outlookCard, { backgroundColor: colors.card, borderColor: colors.line }]}>
-              <View style={styles.outlookCopy}>
-                <Text style={[styles.outlookLabel, { color: colors.ink3 }]}>SPENDING OUTLOOK</Text>
-                <Text style={[styles.outlookHeadline, { color: colors.ink }]}>
-                  {regimeHeadline((prediction.regime?.state ?? 'steady') as RegimeState)}
-                </Text>
-                <Text style={[styles.outlookNarrative, { color: colors.ink2 }]} numberOfLines={3}>
-                  {prediction.budget_pace?.narrative ??
-                    prediction.regime?.narrative ??
-                    'Based on your recent spending pattern.'}
-                </Text>
-              </View>
-              <GaugeRing
-                fill={
-                  prediction.budget_pace && prediction.budget_pace.budget > 0
-                    ? prediction.budget_pace.pct_of_budget_projected / 100
-                    : Math.min(1, (prediction.regime?.ratio ?? 1) / 2)
-                }
-                label={
-                  prediction.budget_pace && prediction.budget_pace.budget > 0
-                    ? `${Math.round(prediction.budget_pace.pct_of_budget_projected)}%`
-                    : '—'
-                }
-                color={paceColor}
-                trackColor={colors.line}
-                cardColor={colors.card}
-              />
-            </View>
-          ) : null}
-
-          {/* Recent activity */}
+          {/* Smart callouts */}
           <View>
             <View style={styles.recentHeaderRow}>
-              <Text style={[styles.sectionTitle, { color: colors.ink }]}>Recent activity</Text>
-              <Text style={[styles.seeAll, { color: accent }]}>See all</Text>
+              <Text style={[styles.sectionTitle, { color: colors.ink }]}>Highlights</Text>
+              <Pressable onPress={() => router.navigate('/patterns' as any)} hitSlop={8}>
+                <Text style={[styles.seeAll, { color: accent }]}>See all</Text>
+              </Pressable>
             </View>
-            {transactions.length > 0 ? transactions.map((t, i) => {
-              const isCredit = t.credit > 0;
-              const amount = isCredit ? t.credit : t.debit;
-              return (
-                <View
-                  key={`${t.trans_date}-${i}`}
-                  style={[styles.txRow, { borderBottomColor: colors.line }]}
-                >
-                  <View style={[styles.txDot, { backgroundColor: CATEGORY_DOT[t.category] ?? colors.ink3 }]} />
-                  <View style={styles.txCenter}>
-                    <Text style={[styles.txDescription, { color: colors.ink }]} numberOfLines={1}>{t.description}</Text>
-                    <Text style={[styles.txSubtitle, { color: colors.ink2 }]}>{formatTxnSubtitle(t.category, t.trans_date)}</Text>
+
+            {hasInterestingCallout ? (
+              <View style={styles.calloutsWrap}>
+                {biggestDay && biggestDay.total_debit > 0 ? (
+                  <View style={[styles.calloutCard, { backgroundColor: colors.card, borderColor: colors.line }]}>
+                    <Text style={[styles.calloutLabel, { color: colors.ink3 }]}>BIGGEST SPEND THIS WEEK</Text>
+                    <Text style={[styles.calloutText, { color: colors.ink }]}>
+                      {biggestDayLabel} · {formatNaira(biggestDay.total_debit)}
+                    </Text>
                   </View>
-                  <Text style={[styles.txAmount, { color: isCredit ? accent : colors.ink }]}>
-                    {isCredit ? '+' : '−'}{formatNaira(amount)}
-                  </Text>
-                </View>
-              );
-            }) : (
-              <Text style={[styles.emptyText, { color: colors.ink2 }]}>No transactions yet this month.</Text>
+                ) : null}
+                {recoveryTarget !== null ? (
+                  <View style={[styles.calloutCard, { backgroundColor: colors.card, borderColor: colors.line }]}>
+                    <Text style={[styles.calloutLabel, { color: colors.ink3 }]}>STAY ON TRACK</Text>
+                    <Text style={[styles.calloutText, { color: colors.ink }]}>
+                      Spend under {formatNaira(recoveryTarget)} today to get back on pace
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : (
+              <Text style={[styles.emptyText, { color: colors.ink2 }]}>
+                Nothing unusual this week — spending looks steady.
+              </Text>
             )}
           </View>
         </ScrollView>
       </SafeAreaView>
 
       <BottomNavigation activeRoute="home" />
+
+      {/* Verdict detail sheet */}
+      <BottomSheet visible={verdictOpen} onClose={() => setVerdictOpen(false)}>
+        <View style={styles.sheetHeaderRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.sheetLabel, { color: colors.ink3 }]}>SPENDING OUTLOOK</Text>
+            <Text style={[styles.sheetHeadline, { color: colors.ink }]}>{regimeHeadline(regimeState)}</Text>
+          </View>
+          {budgetPace ? (
+            <GaugeRing
+              fill={budget > 0 ? budgetPace.pct_of_budget_projected / 100 : Math.min(1, (prediction?.regime?.ratio ?? 1) / 2)}
+              label={budget > 0 ? `${Math.round(budgetPace.pct_of_budget_projected)}%` : '—'}
+              color={paceColor}
+              trackColor={colors.line}
+              cardColor={colors.card}
+            />
+          ) : null}
+        </View>
+        <Text style={[styles.sheetNarrative, { color: colors.ink2 }]}>{verdictNarrative}</Text>
+
+        {budget > 0 && budgetPace ? (
+          <View style={styles.detailGrid}>
+            <DetailRow label="Month to date" value={formatNaira(budgetPace.month_to_date)} ink2={colors.ink2} ink={colors.ink} />
+            <DetailRow label="Projected month-end" value={formatNaira(budgetPace.projected_month_end)} ink2={colors.ink2} ink={colors.ink} />
+            <DetailRow label="Budget" value={formatNaira(budget)} ink2={colors.ink2} ink={colors.ink} />
+            {recoveryTarget !== null ? (
+              <DetailRow
+                label="Daily target to recover"
+                value={formatNaira(recoveryTarget)}
+                ink2={colors.ink2}
+                ink={colors.ink}
+                highlight
+                accent={accent}
+              />
+            ) : null}
+          </View>
+        ) : null}
+
+        <View style={[styles.statRow, { borderColor: colors.line }]}>
+          <View style={styles.statCell}>
+            <Text style={[styles.statLabel, { color: colors.ink3 }]}>DAILY AVG</Text>
+            <Text style={[styles.statValue, { color: colors.ink }]}>{formatNaira(dashboard.avg_daily)}</Text>
+          </View>
+          <View style={[styles.statSep, { backgroundColor: colors.line }]} />
+          <View style={styles.statCell}>
+            <Text style={[styles.statLabel, { color: colors.ink3 }]}>SAVED</Text>
+            <Text style={[styles.statValue, { color: accent }]}>{formatNaira(dashboard.spend_health.saved_this_month)}</Text>
+          </View>
+          <View style={[styles.statSep, { backgroundColor: colors.line }]} />
+          <View style={styles.statCell}>
+            <Text style={[styles.statLabel, { color: colors.ink3 }]}>STREAK</Text>
+            <Text style={[styles.statValue, { color: colors.ink }]}>{dashboard.spend_health.streak_days}d</Text>
+          </View>
+        </View>
+      </BottomSheet>
+
+      {/* Day detail sheet */}
+      <BottomSheet visible={!!selectedDay} onClose={() => setSelectedDay(null)}>
+        {selectedDay ? (
+          <>
+            <Text style={[styles.sheetLabel, { color: colors.ink3 }]}>
+              {new Date(selectedDay.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase()}
+            </Text>
+            <Text style={[styles.sheetHeadline, { color: selectedDay.is_high_spend ? '#E5645B' : colors.ink }]}>
+              {formatNaira(selectedDay.total_debit)} spent
+            </Text>
+            {dailyBudgetTarget > 0 ? (
+              <Text style={[styles.sheetNarrative, { color: colors.ink2 }]}>
+                {selectedDay.total_debit > dailyBudgetTarget
+                  ? `${formatNaira(selectedDay.total_debit - dailyBudgetTarget)} over your ${formatNaira(dailyBudgetTarget)} daily target`
+                  : `${formatNaira(dailyBudgetTarget - selectedDay.total_debit)} under your ${formatNaira(dailyBudgetTarget)} daily target`}
+              </Text>
+            ) : null}
+
+            {dayCategoryTotals.length > 0 ? (
+              <View style={styles.sheetCategoryList}>
+                {dayCategoryTotals.map(([category, total]) => (
+                  <View key={category} style={styles.sheetCategoryRow}>
+                    <View style={[styles.txDot, { backgroundColor: CATEGORY_DOT[category] ?? colors.ink3 }]} />
+                    <Text style={[styles.sheetCategoryLabel, { color: colors.ink }]}>{category}</Text>
+                    <Text style={[styles.sheetCategoryValue, { color: colors.ink }]}>{formatNaira(total)}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text style={[styles.emptyText, { color: colors.ink2 }]}>
+                {selectedDay.total_debit > 0 ? 'No itemized transactions available for this day.' : 'No spending recorded.'}
+              </Text>
+            )}
+          </>
+        ) : null}
+      </BottomSheet>
     </View>
   );
 }
@@ -374,26 +517,23 @@ const styles = StyleSheet.create({
 
   content: { paddingHorizontal: ScreenPadding, paddingTop: 6, gap: 28 },
 
-  // Hero
+  // Hero — one truth line
   hero: { paddingBottom: 0 },
   heroLabel: { fontFamily: Fonts.mono, fontSize: 11, letterSpacing: 1.96 },
-  heroAmount: { fontFamily: Fonts.heading, fontSize: 46, fontWeight: '600', letterSpacing: -1, lineHeight: 49, marginTop: 10 },
-  pctRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14 },
-  pctPill: { flexDirection: 'row', alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5, gap: 4 },
-  pctPillText: { fontFamily: Fonts.mono, fontSize: 12, fontWeight: '500' },
-  pctCaption: { fontFamily: Fonts.sans, fontSize: 13 },
+  heroLine: { fontFamily: Fonts.heading, fontSize: 22, fontWeight: '600', letterSpacing: -0.3, marginTop: 10 },
+  heroAmountInline: { fontFamily: Fonts.heading, fontSize: 22, fontWeight: '700' },
+  heroNoBudgetRow: { flexDirection: 'row', alignItems: 'baseline', gap: 10, marginTop: 10, flexWrap: 'wrap' },
+  setBudgetLink: { fontFamily: Fonts.sans, fontSize: 13, fontWeight: '600' },
+  pctCaption: { fontFamily: Fonts.sans, fontSize: 13, marginTop: 8 },
 
-  // Stat row
-  statRow: {
-    flexDirection: 'row', alignItems: 'center',
-    borderWidth: 1, borderRadius: 22, paddingVertical: 18,
+  // Verdict strip
+  verdictStrip: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    borderWidth: 1, borderRadius: 18, paddingVertical: 14, paddingHorizontal: 16,
   },
-  statCell: { flex: 1, alignItems: 'center', gap: 7 },
-  statSep: { width: 1, height: 32 },
-  statLabel: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 1 },
-  statValue: { fontFamily: Fonts.heading, fontSize: 16, fontWeight: '600' },
-  paceValueRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  paceDot: { width: 7, height: 7, borderRadius: 3.5 },
+  verdictDot: { width: 9, height: 9, borderRadius: 4.5, flexShrink: 0 },
+  verdictText: { flex: 1, fontFamily: Fonts.sans, fontSize: 13.5, lineHeight: 18 },
+  verdictChevron: { fontFamily: Fonts.sans, fontSize: 20, fontWeight: '600' },
 
   // This week
   weekHeaderRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
@@ -404,31 +544,49 @@ const styles = StyleSheet.create({
   highSpendText: { fontFamily: Fonts.sans, fontSize: 12 },
 
   // Week bars
-  weekBarsRow: { flexDirection: 'row', alignItems: 'flex-end', height: 150, gap: 8, marginTop: 20 },
-  weekBarCol: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', gap: 9, height: '100%' },
-  weekBarTrack: { width: '100%', flex: 1, justifyContent: 'flex-end' },
+  weekTracksWrap: { height: 120, marginTop: 20, position: 'relative' },
+  budgetLine: { position: 'absolute', left: 0, right: 0, borderTopWidth: 1.5, borderStyle: 'dashed', zIndex: 1 },
+  weekBarsRow: { flexDirection: 'row', alignItems: 'flex-end', height: '100%', gap: 8 },
+  weekBarCol: { flex: 1, height: '100%', justifyContent: 'flex-end' },
+  weekBarTrack: { width: '100%', height: '100%', justifyContent: 'flex-end' },
   weekBarFill: { width: '100%', maxWidth: 28, alignSelf: 'center', borderRadius: 8, minHeight: 6 },
+  weekLabelsRow: { flexDirection: 'row', gap: 8, marginTop: 9 },
+  weekLabelCol: { flex: 1, textAlign: 'center' },
   weekBarLabel: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 0.5 },
 
-  // Outlook
-  outlookCard: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16,
-    borderWidth: 1, borderRadius: 22, padding: 18,
-  },
-  outlookCopy: { flex: 1, gap: 0 },
-  outlookLabel: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 1.2 },
-  outlookHeadline: { fontFamily: Fonts.heading, fontSize: 16, fontWeight: '600', marginTop: 7 },
-  outlookNarrative: { fontFamily: Fonts.sans, fontSize: 12.5, lineHeight: 17, marginTop: 4 },
-
-  // Recent activity
-  recentHeaderRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 },
+  // Smart callouts
+  recentHeaderRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 },
   sectionTitle: { fontFamily: Fonts.heading, fontSize: 17, fontWeight: '600' },
   seeAll: { fontFamily: Fonts.sans, fontSize: 13, fontWeight: '500' },
-  txRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 13, borderBottomWidth: 1 },
+  calloutsWrap: { gap: 10 },
+  calloutCard: { borderWidth: 1, borderRadius: 16, padding: 14, gap: 5 },
+  calloutLabel: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 1 },
+  calloutText: { fontFamily: Fonts.sans, fontSize: 14, fontWeight: '500' },
+  emptyText: { fontFamily: Fonts.sans, fontSize: 12, paddingVertical: 4 },
+
+  // Bottom sheet — shared
+  sheetHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 },
+  sheetLabel: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 1.2 },
+  sheetHeadline: { fontFamily: Fonts.heading, fontSize: 19, fontWeight: '600', marginTop: 7 },
+  sheetNarrative: { fontFamily: Fonts.sans, fontSize: 13, lineHeight: 18, marginTop: 10 },
+
+  detailGrid: { marginTop: 18, gap: 12 },
+  detailRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  detailLabel: { fontFamily: Fonts.sans, fontSize: 13 },
+  detailValue: { fontFamily: Fonts.mono, fontSize: 14, fontWeight: '500' },
+
+  statRow: {
+    flexDirection: 'row', alignItems: 'center',
+    borderTopWidth: 1, paddingTop: 18, marginTop: 18,
+  },
+  statCell: { flex: 1, alignItems: 'center', gap: 7 },
+  statSep: { width: 1, height: 32 },
+  statLabel: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 1 },
+  statValue: { fontFamily: Fonts.heading, fontSize: 16, fontWeight: '600' },
+
+  sheetCategoryList: { marginTop: 16, gap: 12 },
+  sheetCategoryRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  sheetCategoryLabel: { flex: 1, fontFamily: Fonts.sans, fontSize: 13.5 },
+  sheetCategoryValue: { fontFamily: Fonts.mono, fontSize: 13.5, fontWeight: '500' },
   txDot: { width: 11, height: 11, borderRadius: 5.5, flexShrink: 0 },
-  txCenter: { flex: 1, minWidth: 0 },
-  txDescription: { fontFamily: Fonts.sans, fontSize: 14.5, fontWeight: '600' },
-  txSubtitle: { fontFamily: Fonts.mono, fontSize: 11, marginTop: 3 },
-  txAmount: { fontFamily: Fonts.mono, fontSize: 14, fontWeight: '500', flexShrink: 0 },
-  emptyText: { fontFamily: Fonts.sans, fontSize: 12, paddingVertical: 16 },
 });

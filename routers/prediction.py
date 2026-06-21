@@ -112,8 +112,9 @@ def _velocity(df: pd.DataFrame) -> dict:
             "direction": "flat",
             "narrative": "Not enough data yet.",
         }
-    last7 = as_float(df.tail(7)["total_debit"].sum())
-    prev7 = as_float(df.iloc[-14:-7]["total_debit"].sum()) if len(df) >= 14 else 0.0
+    spend = df["total_debit"] - df["savings_out"]
+    last7 = as_float(spend.tail(7).sum())
+    prev7 = as_float(spend.iloc[-14:-7].sum()) if len(df) >= 14 else 0.0
     pct   = ((last7 - prev7) / (prev7 + 1)) * 100
 
     if pct > 10:
@@ -244,7 +245,7 @@ def _spend_regime(df: pd.DataFrame) -> SpendRegime:
     it never depends on the most recent week being in yet. This is the strongest
     real signal in the data and is framed as 'where you are now', not a forecast.
     """
-    td = df["total_debit"]
+    td = df["total_debit"] - df["savings_out"]
     baseline = as_float(td.mean())
 
     # Drop the most recent LAG_DAYS, then take the trailing 21-day window.
@@ -296,7 +297,7 @@ def _budget_pace(df: pd.DataFrame) -> BudgetPace:
     year, month = last.year, last.month
 
     in_month = df[df["date"].apply(lambda d: d.year == year and d.month == month)]
-    mtd = as_float(in_month["total_debit"].sum())
+    mtd = as_float((in_month["total_debit"] - in_month["savings_out"]).sum())
 
     days_in_month = calendar.monthrange(year, month)[1]
     day_of_month = last.day
@@ -400,7 +401,7 @@ async def _fetch_prediction(request: Request) -> PredictionResponse:
         # ── new fields ──
         velocity=_velocity(df),
         advisor_tips=_advisor_tips(risk, last_row, df),
-        prev_day_spend=as_float(last_row.get("total_debit", 0)),
+        prev_day_spend=as_float(last_row.get("total_debit", 0) - last_row.get("savings_out", 0)),
         high_spend_threshold=float(config.HIGH_SPEND_THRESHOLD),
         # ── honest regime + pace ──
         regime=_spend_regime(df),
