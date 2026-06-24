@@ -35,7 +35,10 @@ CREATE TABLE IF NOT EXISTS model_metadata (
   trained_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   training_rows  INTEGER     NOT NULL,
   accuracy       NUMERIC,
-  model_version  TEXT        NOT NULL
+  model_version  TEXT        NOT NULL,
+  precision_score NUMERIC,
+  recall_score    NUMERIC,
+  roc_auc         NUMERIC
 );
 
 CREATE INDEX IF NOT EXISTS idx_model_metadata_trained_at

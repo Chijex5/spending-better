@@ -172,7 +172,35 @@ class WeekOutlookDay(BaseModel):
     day_label: str
     risk: str
     avg_spend: float    # NEW — historical average for that day-of-week
-    probability: int     
+    probability: int
+
+
+class SpendRegime(BaseModel):
+    """
+    Honest 'where is your spending right now' gauge. Built from a lagged
+    momentum window (the 3 weeks ending a week ago, so it never needs the
+    most recent 7 days logged) compared to the long-run baseline. This is
+    descriptive — situational awareness, not a per-day spike forecast.
+    """
+    state: str           # "cool" | "steady" | "elevated" | "hot"
+    momentum_avg: float  # avg daily spend over the lagged window
+    baseline_avg: float  # long-run daily average
+    ratio: float         # momentum / baseline  (1.0 == on baseline)
+    narrative: str
+
+
+class BudgetPace(BaseModel):
+    """
+    Deterministic month-end projection from the current run-rate vs the
+    user's monthly budget. No ML — just honest arithmetic.
+    """
+    month_to_date: float
+    projected_month_end: float
+    budget: float                  # 0.0 when the user hasn't set one
+    pct_of_budget_projected: float # projected / budget * 100 (0 if no budget)
+    on_track: bool
+    narrative: str
+
 
 class PredictionResponse(BaseModel):
     target_date: str
@@ -183,12 +211,17 @@ class PredictionResponse(BaseModel):
     rolling_14d_avg: float
     top_features: list[FeatureImportance]
     week_outlook: list[WeekOutlookDay]
- 
+
     # ── new fields ───────────────────────────────────────────────────────────
     velocity: SpendVelocity                # 7d vs prev-7d comparison + narrative
     advisor_tips: list[str]               # contextual, number-aware tips
     prev_day_spend: float                 # yesterday's actual total
     high_spend_threshold: float           # so frontend can show the threshold
+
+    # ── honest regime + pace (the primary, trustworthy signal) ───────────────
+    regime: SpendRegime
+    budget_pace: BudgetPace
+    confidence: str                        # "low" | "moderate" — trust in `probability`
  
 class LogEntry(BaseModel):
     date: str

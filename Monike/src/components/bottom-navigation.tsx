@@ -25,7 +25,7 @@ type NavigationTab = {
 const tabs: NavigationTab[] = [
   { key: 'home',     route: '/',          Icon: House,     label: 'Home' },
   { key: 'insights', route: '/insights',  Icon: BarChart2, label: 'Insights' },
-  { key: 'patterns', route: '/patterns',  Icon: Activity,  label: 'Patterns' },
+  { key: 'patterns', route: '/patterns',  Icon: Activity,  label: 'Habits' },
   { key: 'profile',  route: '/profile',   Icon: User,      label: 'Profile' },
 ];
 

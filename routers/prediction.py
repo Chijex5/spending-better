@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-from datetime import timedelta
+import calendar
 from typing import Any
 
 import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Request
 
+import config
 from cache import TTL_PREDICTION, get_cached
 from config import HIGH_SPEND_THRESHOLD
-from ml import predict_tomorrow
-from models import FeatureImportance, PredictionResponse
+from ml import build_feature_row, historical_snapshot, predict_tomorrow, predict_week_outlook
+from models import BudgetPace, FeatureImportance, PredictionResponse, SpendRegime
 from routers.utils import (
     DAY_LABELS,
     DAY_NAMES,
@@ -22,46 +23,34 @@ from routers.utils import (
 
 router = APIRouter()
 
+# We always treat the most recent LAG days as "not logged yet", so every
+# forward-looking signal is computable from data at least a week old.
+LAG_DAYS = 7
+
 FEATURES = [
-    "rolling_7d_avg",
-    "prev_day_spend",
-    "rolling_14d_avg",
-    "max_single",
-    "discretionary",
-    "num_transactions",
-    "total_credit",
-    "savings_out",
-    "is_weekend",
     "dow",
     "dom",
     "month",
-    "p2p_spend",
-    "pos_spend",
-    "data_spend",
-    "airtime_spend",
-    "online_spend",
-    "family_spend",
+    "is_weekend",
+    "dow_avg_spend",
+    "dom_avg_spend",
+    "month_avg_spend",
+    "overall_avg_spend",
+    "days_since_start",
+    "dow_high_spend_rate",
 ]
 
 FEATURE_LABELS = {
-    "rolling_7d_avg":    "Your 7-day trend",
-    "prev_day_spend":    "Yesterday's spending",
-    "rolling_14d_avg":   "2-week average",
-    "max_single":        "Largest recent transaction",
-    "discretionary":     "P2P + POS + Online transfers",
-    "num_transactions":  "Transaction frequency",
-    "total_credit":      "Money received recently",
-    "savings_out":       "Amount moved to savings",
-    "is_weekend":        "Weekend effect",
-    "dow":               "Day of week pattern",
-    "dom":               "Day of month pattern",
-    "month":             "Month of year pattern",
-    "p2p_spend":         "Person-to-person transfers",
-    "pos_spend":         "POS purchases",
-    "data_spend":        "Data bundle spend",
-    "airtime_spend":     "Airtime spend",
-    "online_spend":      "Online payment spend",
-    "family_spend":      "Family transfers",
+    "dow":                  "Day of week pattern",
+    "dom":                  "Day of month pattern",
+    "month":                "Month of year pattern",
+    "is_weekend":           "Weekend effect",
+    "dow_avg_spend":        "Typical spend on this day of week",
+    "dom_avg_spend":        "Typical spend on this day of month",
+    "month_avg_spend":      "Typical spend in this month",
+    "overall_avg_spend":    "Your long-run daily average",
+    "days_since_start":     "History length / trend maturity",
+    "dow_high_spend_rate":  "How often this weekday runs high",
 }
 
 
@@ -71,10 +60,15 @@ def _fmt_naira(value: float) -> str:
     return f"₦{value:,.0f}"
 
 
+RATE_FEATURES = {"dow_high_spend_rate"}
+
+
 def _format_feature_value(feature_key: str, value: Any) -> str:
     numeric = as_float(value)
     if feature_key in MONEY_FEATURES:
         return _fmt_naira(numeric)
+    if feature_key in RATE_FEATURES:
+        return f"{numeric * 100:.0f}%"
     return str(int(numeric))
 
 
@@ -118,8 +112,9 @@ def _velocity(df: pd.DataFrame) -> dict:
             "direction": "flat",
             "narrative": "Not enough data yet.",
         }
-    last7 = as_float(df.tail(7)["total_debit"].sum())
-    prev7 = as_float(df.iloc[-14:-7]["total_debit"].sum()) if len(df) >= 14 else 0.0
+    spend = df["total_debit"] - df["savings_out"]
+    last7 = as_float(spend.tail(7).sum())
+    prev7 = as_float(spend.iloc[-14:-7].sum()) if len(df) >= 14 else 0.0
     pct   = ((last7 - prev7) / (prev7 + 1)) * 100
 
     if pct > 10:
@@ -164,8 +159,8 @@ def _advisor_tips(
     mirroring what analyze.py did in the terminal.
     """
     tips: list[str] = []
-    r7  = as_float(last_row.get("rolling_7d_avg", 0))
-    r14 = as_float(last_row.get("rolling_14d_avg", 0))
+    r7  = as_float(df["total_debit"].tail(7).mean()) if not df.empty else 0.0
+    r14 = as_float(df["total_debit"].tail(14).mean()) if not df.empty else 0.0
     p2p = as_float(last_row.get("p2p_spend", 0))
     pos = as_float(last_row.get("pos_spend", 0))
     data_s = as_float(last_row.get("data_spend", 0))
@@ -222,28 +217,131 @@ def _advisor_tips(
 
 # ─── Week outlook ─────────────────────────────────────────────────────────────
 
-def _week_outlook(df: pd.DataFrame) -> list[dict]:
-    if df.empty:
-        return []
-    latest_date = df["date"].max()
+def _week_outlook(model: Any, df: pd.DataFrame) -> list[dict]:
+    """
+    Day+1..day+7 outlook, driven by the same trained model and the same
+    lag-tolerant historical features as predict_tomorrow — no longer a
+    separate heuristic, so it stays consistent with the main prediction.
+    """
     outlook = []
-    for offset in range(1, 8):
-        target_date = latest_date + timedelta(days=offset)
-        target_dow  = target_date.weekday()
-        dow_rows    = df[df["dow"] == target_dow]
-        avg_spend   = as_float(dow_rows["total_debit"].mean()) if not dow_rows.empty else 0.0
-        probability = (
-            min(1.0, max(0.0, avg_spend / (HIGH_SPEND_THRESHOLD * 2)))
-            if HIGH_SPEND_THRESHOLD else 0.0
-        )
+    for day in predict_week_outlook(model, df, n_days=7):
+        probability = as_float(day["probability"])
         outlook.append({
-            "date":       target_date.isoformat(),
-            "day_label":  DAY_LABELS[target_dow],
-            "risk":       risk_from_probability(probability),
-            "avg_spend":  round(avg_spend),          # ← NEW: historical avg for that dow
-            "probability": round(probability * 100),  # ← NEW: 0-100 for the bar
+            "date":        day["date"].isoformat(),
+            "day_label":   DAY_LABELS[day["dow"]],
+            "risk":        risk_from_probability(probability),
+            "avg_spend":   round(as_float(day["avg_spend"])),
+            "probability": round(probability * 100),
         })
     return outlook
+
+
+# ─── Spending regime (honest momentum gauge) ──────────────────────────────────
+
+def _spend_regime(df: pd.DataFrame) -> SpendRegime:
+    """
+    Compare recent momentum to the long-run baseline. Momentum is the average
+    daily spend over the 21 days ENDING 7 days before the latest logged day, so
+    it never depends on the most recent week being in yet. This is the strongest
+    real signal in the data and is framed as 'where you are now', not a forecast.
+    """
+    td = df["total_debit"] - df["savings_out"]
+    baseline = as_float(td.mean())
+
+    # Drop the most recent LAG_DAYS, then take the trailing 21-day window.
+    safe = td.iloc[:-LAG_DAYS] if len(td) > LAG_DAYS else td
+    window = safe.tail(21)
+    momentum = as_float(window.mean()) if len(window) else baseline
+
+    ratio = (momentum / baseline) if baseline > 0 else 1.0
+
+    if ratio >= 1.25:
+        state = "hot"
+        narrative = (
+            f"Your spending is running hot — about {_fmt_naira(momentum)}/day lately "
+            f"versus your {_fmt_naira(baseline)} norm. A good stretch to ease off."
+        )
+    elif ratio >= 1.08:
+        state = "elevated"
+        narrative = (
+            f"Spending is a touch elevated — roughly {_fmt_naira(momentum)}/day "
+            f"against your {_fmt_naira(baseline)} baseline."
+        )
+    elif ratio <= 0.75:
+        state = "cool"
+        narrative = (
+            f"You're trending cool — around {_fmt_naira(momentum)}/day, well under "
+            f"your {_fmt_naira(baseline)} norm. Nice room to save."
+        )
+    else:
+        state = "steady"
+        narrative = (
+            f"Spending is steady, near your {_fmt_naira(baseline)}/day baseline."
+        )
+
+    return SpendRegime(
+        state=state,
+        momentum_avg=round(momentum, 2),
+        baseline_avg=round(baseline, 2),
+        ratio=round(ratio, 3),
+        narrative=narrative,
+    )
+
+
+# ─── Budget pace (deterministic month-end projection) ─────────────────────────
+
+def _budget_pace(df: pd.DataFrame) -> BudgetPace:
+    """Project month-end spend from the current run-rate vs the monthly budget."""
+    budget = as_float(config.MONTHLY_BUDGET)
+    last = df["date"].max()
+    year, month = last.year, last.month
+
+    in_month = df[df["date"].apply(lambda d: d.year == year and d.month == month)]
+    mtd = as_float((in_month["total_debit"] - in_month["savings_out"]).sum())
+
+    days_in_month = calendar.monthrange(year, month)[1]
+    day_of_month = last.day
+    run_rate = (mtd / day_of_month) if day_of_month else 0.0
+    projected = run_rate * days_in_month
+
+    pct = (projected / budget * 100) if budget > 0 else 0.0
+    on_track = (projected <= budget) if budget > 0 else True
+
+    if budget <= 0:
+        narrative = (
+            f"You've spent {_fmt_naira(mtd)} so far this month; on this pace that's "
+            f"about {_fmt_naira(projected)} by month-end. Set a budget to track against it."
+        )
+    elif on_track:
+        narrative = (
+            f"On pace for {_fmt_naira(projected)} this month — within your "
+            f"{_fmt_naira(budget)} budget ({pct:.0f}%)."
+        )
+    else:
+        narrative = (
+            f"On pace for {_fmt_naira(projected)} — over your {_fmt_naira(budget)} "
+            f"budget ({pct:.0f}%). Worth easing off."
+        )
+
+    return BudgetPace(
+        month_to_date=round(mtd, 2),
+        projected_month_end=round(projected, 2),
+        budget=round(budget, 2),
+        pct_of_budget_projected=round(pct, 1),
+        on_track=on_track,
+        narrative=narrative,
+    )
+
+
+def _confidence(df: pd.DataFrame, model: Any) -> str:
+    """
+    Honest trust level for the binary probability. Day-level high-spend on a
+    single person's short history is near-chance, so we never claim 'high' —
+    only how much weight to give the number at all.
+    """
+    if model is None or len(df) < 60:
+        return "low"
+    return "moderate"
 
 
 # ─── Main fetch ───────────────────────────────────────────────────────────────
@@ -264,6 +362,16 @@ async def _fetch_prediction(request: Request) -> PredictionResponse:
             advisor_tips=[],
             prev_day_spend=0.0,
             high_spend_threshold=HIGH_SPEND_THRESHOLD,
+            regime=SpendRegime(
+                state="steady", momentum_avg=0.0, baseline_avg=0.0, ratio=1.0,
+                narrative="Not enough history yet to read your spending trend.",
+            ),
+            budget_pace=BudgetPace(
+                month_to_date=0.0, projected_month_end=0.0,
+                budget=as_float(config.MONTHLY_BUDGET), pct_of_budget_projected=0.0,
+                on_track=True, narrative="No spending logged yet this month.",
+            ),
+            confidence="low",
         )
 
     df["date"] = pd.to_datetime(df["date"]).dt.date
@@ -275,20 +383,30 @@ async def _fetch_prediction(request: Request) -> PredictionResponse:
     last_row      = dict(df.iloc[-1])
     risk          = risk_from_probability(probability)
 
+    # The model's own view of "tomorrow" — used for the top-features display
+    # so current_value reflects the engineered (lag-tolerant) features that
+    # actually drove the prediction, not the raw same-day DB row.
+    snapshot     = historical_snapshot(df)
+    feature_row  = build_feature_row(snapshot, target_date) if target_date is not None else {}
+
     return PredictionResponse(
         target_date=target_date.isoformat() if hasattr(target_date, "isoformat") else str(target_date),
         day_name=DAY_NAMES[target_dow] if 0 <= target_dow < len(DAY_NAMES) else "",
         probability=probability,
         risk_level=risk,
-        rolling_7d_avg=as_float(last_row.get("rolling_7d_avg", 0)),
-        rolling_14d_avg=as_float(last_row.get("rolling_14d_avg", 0)),
-        top_features=_top_features(model, last_row),
-        week_outlook=_week_outlook(df),
+        rolling_7d_avg=as_float(df["total_debit"].tail(7).mean()),
+        rolling_14d_avg=as_float(df["total_debit"].tail(14).mean()),
+        top_features=_top_features(model, feature_row),
+        week_outlook=_week_outlook(model, df),
         # ── new fields ──
         velocity=_velocity(df),
         advisor_tips=_advisor_tips(risk, last_row, df),
-        prev_day_spend=as_float(last_row.get("total_debit", 0)),
-        high_spend_threshold=float(HIGH_SPEND_THRESHOLD),
+        prev_day_spend=as_float(last_row.get("total_debit", 0) - last_row.get("savings_out", 0)),
+        high_spend_threshold=float(config.HIGH_SPEND_THRESHOLD),
+        # ── honest regime + pace ──
+        regime=_spend_regime(df),
+        budget_pace=_budget_pace(df),
+        confidence=_confidence(df, model),
     )
 
 

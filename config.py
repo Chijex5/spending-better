@@ -6,11 +6,9 @@ HIGH_SPEND_THRESHOLD: float = 5000.0
 MONTHLY_BUDGET: float = 0.0
 
 FEATURES = [
-    'dow', 'dom', 'month', 'is_weekend', 'prev_day_spend',
-    'prev_week_same_day', 'rolling_7d_avg', 'rolling_14d_avg',
-    'num_transactions', 'max_single', 'p2p_spend', 'pos_spend',
-    'data_spend', 'savings_out', 'online_spend', 'family_spend',
-    'airtime_spend', 'discretionary', 'total_credit',
+    'dow', 'dom', 'month', 'is_weekend',
+    'dow_avg_spend', 'dom_avg_spend', 'month_avg_spend',
+    'overall_avg_spend', 'days_since_start', 'dow_high_spend_rate',
 ]
 
 
